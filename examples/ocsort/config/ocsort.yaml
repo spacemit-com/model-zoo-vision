@@ -1,0 +1,22 @@
+# OC-SORT 目标追踪模型配置（YOLOv8 detector + OC-SORT）
+model_path: ~/.cache/models/vision/ocsort/yolov8n.q.onnx
+test_video: ~/.cache/assets/video/003_palace.mp4
+label_file_path: assets/labels/coco.txt
+class: deploy.ocsort.OCSortTracker
+default_params:
+  # detector params (YOLOv8)
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider
+  # tracker params
+  track_thresh: 0.6
+  track_iou_thresh: 0.3
+  track_buffer: 60
+  min_hits: 3
+  delta_t: 3
+  asso_func: "iou"
+  inertia: 0.2
+  use_byte: false
+

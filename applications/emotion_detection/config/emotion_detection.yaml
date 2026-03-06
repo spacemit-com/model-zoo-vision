@@ -1,0 +1,21 @@
+# 情绪检测应用配置（example_emotion 从此文件读取默认值，命令行可覆盖）
+# 不包含 class/model_path：情绪模型与人脸检测推荐使用 config_path 指向单一 yaml
+
+# 情绪识别模型：指向 examples 下的 yaml（该 yaml 内含 class、default_params）
+emotion_config_path: examples/emotion/config/emotion.yaml
+# 本应用使用的情绪模型路径（相对 cv 根目录），可与 examples 的 yaml 不同
+emotion_model_path: ~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx
+
+# 人脸检测模型：指向 examples 下的 yaml
+face_detector_config_path: examples/yolov5-face/config/yolov5-face.yaml
+# 本应用使用的人脸检测模型路径（相对 cv 根目录）
+face_detector_path: ~/.cache/models/vision/yolov5-face/yolov5n-face_cut.q.onnx
+
+# 默认测试图片（未指定 --image 时使用）
+test_image: ~/.cache/assets/image/001_emotion.jpg
+
+# 情绪标签文件（用于显示）
+label_file_path: assets/labels/emotion.txt
+
+# 情绪模型输入尺寸（用于显示/预处理），人脸检测固定 [640, 640]
+image_size: [224, 224]

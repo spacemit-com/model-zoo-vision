@@ -1,0 +1,14 @@
+# Emotion 情绪识别模型配置（vision_model_factory 通过 config/{model_name}.yaml 加载，与 C++ 统一用 model_path）
+model_path: ~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx
+
+label_file_path: assets/labels/emotion.txt
+test_image: ~/.cache/assets/image/003_face0.png
+# image_size 指 emotion_model 的输入尺寸，face_detector 固定为 [640, 640]
+image_size: [224, 224]
+class: deploy.emotion.EmotionRecognizer
+default_params:
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider
+
+

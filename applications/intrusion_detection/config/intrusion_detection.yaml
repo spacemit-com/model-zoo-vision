@@ -1,0 +1,16 @@
+# 区域闯入识别应用配置（example_intrusion_identification 从此文件读取默认值，命令行可覆盖）
+# 不包含 class/model_path：追踪模型推荐使用 tracker_config_path 指向单一 yaml
+
+# ByteTrack 追踪模型：指向 examples 下的 yaml（该 yaml 内含 class、default_params）
+tracker_config_path: examples/bytetrack/config/bytetrack.yaml
+# 本应用使用的追踪/检测模型路径（相对 cv 根目录）
+tracker_model_path: ~/.cache/models/vision/yolov8/yolov8n.q.onnx
+
+# 默认测试视频（未指定 --video 且未 --use-camera 时使用）
+test_video: ~/.cache/assets/video/001_crowd.mp4
+
+# 检测类别标签文件（用于判断“人”及显示）
+label_file_path: assets/labels/coco.txt
+
+# 模型输入尺寸 [H, W]（与 tracker 模型一致，用于显示等）
+image_size: [640, 640]

@@ -1,0 +1,14 @@
+# YOLOv8-Seg 实例分割模型配置
+# 默认模型路径为 yolov8n-seg；可通过参数 model_path 覆盖该路径
+model_path: ~/.cache/models/vision/yolov8_seg/yolov8n-seg.q.onnx
+test_image: ~/.cache/assets/image/006_test.jpg
+label_file_path: assets/labels/coco.txt
+image_size: [640, 640]
+class: deploy.yolov8_seg.YOLOv8SegDetector
+default_params:
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider
+

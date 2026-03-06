@@ -1,0 +1,62 @@
+# --- 编译产物 ---
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+# --- Python 缓存 ---
+__pycache__/
+*.py[cod]
+*$py.class
+dist/
+build/
+*.egg-info/
+venv/
+.venv/
+test_env/
+modelzoo_vision.egg-info/
+/config/
+
+# --- 模型与大数据（见大文件策略） ---
+*.onnx
+*.gguf
+*.weights
+*.bin
+*.tar.gz
+*.zip
+*.mp4
+*.jpg
+# --- IDE 与系统 ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Legacy per-example/per-app model dirs (no longer used; models go to ~/.cache/models/vision/)
+examples/*/model/
+applications/*/models/
+
+# Model dirs in src/deploy that have no example (ignore to avoid untracked deploy-only models)
+src/deploy/efficientnet/
+src/deploy/mobilesam/
+src/deploy/sam/
+src/deploy/yolov8_obb/
+src/deploy/clip/
+src/deploy/inception_v1/
+src/deploy/inception_v3/
+src/deploy/mobilenet_v2/
+src/deploy/swin_tiny/
+src/deploy/yoloe/
+src/deploy/ocr/
+src/deploy/igev/
+src/deploy/pp_liteseg/
+src/deploy/yolo_world/
+src/deploy/yolov6/
+examples/pp_liteseg/
+.cursorignore
+src/deploy/yolo26/
+web/
+docs/design_roadmap.md

@@ -1,0 +1,17 @@
+# 火焰检测应用配置（example_fire_detection 从此文件读取默认值，命令行可覆盖）
+# 使用 YOLOv8 检测模型（火焰等），推荐使用 detector_config_path 指向单一 yaml
+
+# 检测模型：指向 examples/yolov8 的 yaml（该 yaml 内含 class、default_params）
+detector_config_path: examples/yolov8/config/yolov8.yaml
+# 本应用使用的模型路径（相对 cv 根目录），火焰检测专用权重
+detector_model_path: ~/.cache/models/vision/yolov8/yolov8_fire.q.onnx
+
+# 默认测试图片（未指定 --image 时使用）
+test_image: ~/.cache/assets/image/002_fire.jpg
+
+
+# 类别标签文件（用于显示，如 fire）
+label_file_path: assets/labels/fire.txt
+
+# 模型输入尺寸 [H, W]
+image_size: [640, 640]

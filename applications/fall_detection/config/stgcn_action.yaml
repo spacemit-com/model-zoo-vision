@@ -1,0 +1,11 @@
+# STGCN/TSSTG 动作识别模型配置（30 帧骨架序列，7 类含 Fall Down）
+# example_fall_detection 通过 model_factory 从此配置创建
+
+model_path: ~/.cache/models/vision/stgcn/stgcn.onnx
+class: deploy.stgcn.StgcnActionRecognizer
+
+default_params:
+  num_threads: 4
+  lazy_load: false
+  providers:
+    - CPUExecutionProvider

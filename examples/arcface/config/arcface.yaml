@@ -1,0 +1,11 @@
+# ArcFace 人脸识别模型配置
+model_path: ~/.cache/models/vision/arcface/arcface_mobilefacenet_cut.q.onnx
+test_image1: ~/.cache/assets/image/003_face0.png
+test_image2: ~/.cache/assets/image/004_face1.png
+image_size: [112, 112]
+class: deploy.arcface.ArcFaceRecognizer
+default_params:
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider
+

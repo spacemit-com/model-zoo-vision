@@ -1,0 +1,10 @@
+# ResNet 图像分类模型配置
+model_path: ~/.cache/models/vision/resnet/resnet50.q.onnx
+test_image: ~/.cache/assets/image/005_kitten.jpg
+label_file_path: assets/labels/imagenet.txt
+image_size: [224, 224]
+class: deploy.resnet.ResNetClassifier
+default_params:
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

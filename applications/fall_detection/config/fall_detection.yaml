@@ -1,0 +1,24 @@
+# 跌倒检测应用配置（example_fall_detection 从此文件读取默认值，命令行可覆盖）
+# 不包含 class/model_path：姿态模型推荐使用 pose_config_path 指向单一 yaml
+
+# 姿态估计：指向 examples 下的 yaml（该 yaml 内含 class、default_params）
+pose_config_path: examples/yolov8_pose/config/yolov8_pose.yaml
+# 本应用使用的姿态模型路径（相对 cv 根目录）
+pose_model_path: ~/.cache/models/vision/yolov8_pose/yolov8n-pose.q.onnx
+
+# 默认测试视频（未指定 --video 且未 --use-camera 时使用）
+test_video: ~/.cache/assets/video/002_fall.mp4
+
+# 关键点标签文件（用于显示）
+label_file_path: assets/labels/coco.txt
+
+# 应用侧：关键点可见度阈值，用于跌倒判定逻辑
+kp_threshold: 0.3
+
+# STGCN 动作识别（从 model_factory 创建，配置为本目录下 stgcn_action.yaml）
+stgcn_model_name: stgcn_action
+# 本应用使用的 STGCN 模型路径（相对 cv 根目录）
+stgcn_model_path: ~/.cache/models/vision/stgcn/stgcn.onnx
+stgcn_wait_frames: 10
+# 预测平滑：最近 N 次推理中超过一半为 Fall Down 才判跌倒
+stgcn_smooth_window: 5

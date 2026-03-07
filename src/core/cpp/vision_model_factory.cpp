@@ -46,7 +46,7 @@ namespace {
     }
 
     YAML::Node loadYamlConfigFromPath(const std::string& config_file,
-                                       const std::string& model_path_override) {
+                                        const std::string& model_path_override) {
         if (!std::filesystem::exists(config_file)) {
             throw std::runtime_error("Config file not found: " + config_file);
         }

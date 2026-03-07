@@ -50,7 +50,7 @@ public:
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     std::vector<vision_common::Result> postprocess(std::vector<Ort::Value>& outputs,
-                                                   const cv::Size& orig_size);
+                                                    const cv::Size& orig_size);
 
 private:
     float conf_threshold_;

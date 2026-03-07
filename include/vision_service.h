@@ -47,19 +47,19 @@ public:
     static const std::string& LastCreateError();
 
     VisionServiceStatus InferImage(const std::string& image_path,
-                                   std::vector<VisionServiceResult>* out_results);
+                                    std::vector<VisionServiceResult>* out_results);
     VisionServiceStatus InferImage(const cv::Mat& image,
-                                   std::vector<VisionServiceResult>* out_results);
+                                    std::vector<VisionServiceResult>* out_results);
     VisionServiceStatus InferEmbedding(const std::string& image_path,
-                                       std::vector<float>* out_embedding);
+                                        std::vector<float>* out_embedding);
     VisionServiceStatus InferEmbedding(const cv::Mat& image,
-                                       std::vector<float>* out_embedding);
+                                        std::vector<float>* out_embedding);
     static float EmbeddingSimilarity(const std::vector<float>& embedding_a,
-                                     const std::vector<float>& embedding_b);
+                                    const std::vector<float>& embedding_b);
 
     /** Sequence action (e.g. STGCN): 30-frame skeleton -> class probabilities. */
     VisionServiceStatus InferSequence(const float* pts, int image_width, int image_height,
-                                     std::vector<float>* out_scores);
+                                        std::vector<float>* out_scores);
     /** Class names for sequence model (e.g. STGCN). Empty if not a sequence model. */
     std::vector<std::string> GetSequenceClassNames();
     /** Fall-down class index for STGCN (typically 6). -1 if N/A. */
@@ -68,7 +68,7 @@ public:
     VisionServiceStatus Draw(const cv::Mat& image, cv::Mat* out_image);
 
     VisionServiceStatus GetLastKeypoints(int result_index,
-                                         std::vector<VisionServiceKeypoint>* out_keypoints);
+                                            std::vector<VisionServiceKeypoint>* out_keypoints);
 
     std::string GetDefaultImage();
     std::string GetConfigPathValue(const std::string& config_key);

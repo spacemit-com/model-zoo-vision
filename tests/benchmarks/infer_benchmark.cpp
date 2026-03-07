@@ -136,8 +136,8 @@ cv::Mat preprocess_blob(vision_core::BaseModel* model, const cv::Mat& image) {
 
 // Call concrete postprocess (no common base method); used for postprocess timing only.
 void call_postprocess(vision_core::BaseModel* model,
-                     std::vector<Ort::Value>& outputs,
-                     const cv::Size& orig_size) {
+                    std::vector<Ort::Value>& outputs,
+                    const cv::Size& orig_size) {
     using vision_deploy::ArcFaceRecognizer;
     using vision_deploy::EmotionRecognizer;
     using vision_deploy::ResNetClassifier;

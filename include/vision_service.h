@@ -42,8 +42,8 @@ enum VisionServiceStatus {
 class VisionService {
 public:
     static std::unique_ptr<VisionService> Create(const std::string& config_path,
-                                                 const std::string& model_path_override = "",
-                                                 bool lazy_load = false);
+                                                const std::string& model_path_override = "",
+                                                bool lazy_load = false);
     static const std::string& LastCreateError();
 
     VisionServiceStatus InferImage(const std::string& image_path,
@@ -59,7 +59,7 @@ public:
 
     /** Sequence action (e.g. STGCN): 30-frame skeleton -> class probabilities. */
     VisionServiceStatus InferSequence(const float* pts, int image_width, int image_height,
-                                      std::vector<float>* out_scores);
+                                        std::vector<float>* out_scores);
     /** Class names for sequence model (e.g. STGCN). Empty if not a sequence model. */
     std::vector<std::string> GetSequenceClassNames();
     /** Fall-down class index for STGCN (typically 6). -1 if N/A. */

@@ -266,7 +266,7 @@ float VisionService::EmbeddingSimilarity(const std::vector<float>& embedding_a,
 }
 
 VisionServiceStatus VisionService::InferSequence(const float* pts, int image_width, int image_height,
-                                                  std::vector<float>* out_scores) {
+                                                    std::vector<float>* out_scores) {
     if (impl_ == nullptr || impl_->model == nullptr || out_scores == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "invalid argument");
     }

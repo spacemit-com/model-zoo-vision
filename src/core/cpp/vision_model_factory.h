@@ -29,9 +29,9 @@ public:
     bool registerModel(const std::string& class_name, CreatorFunc creator);
 
     std::unique_ptr<BaseModel> createModelFromConfigPath(const std::string& config_path,
-                                                         const std::string& model_path_override,
-                                                         bool lazy_load = true,
-                                                         YAML::Node* preloaded_config = nullptr);
+                                                        const std::string& model_path_override,
+                                                        bool lazy_load = true,
+                                                        YAML::Node* preloaded_config = nullptr);
 
 private:
     ModelFactory() = default;
@@ -57,9 +57,9 @@ public:
 };
 
 std::unique_ptr<BaseModel> createModelFromConfigPath(const std::string& config_path,
-                                                     const std::string& model_path_override = "",
-                                                     bool lazy_load = true,
-                                                     YAML::Node* preloaded_config = nullptr);
+                                                    const std::string& model_path_override = "",
+                                                    bool lazy_load = true,
+                                                    YAML::Node* preloaded_config = nullptr);
 
 std::string resolveResourcePath(const std::string& raw_path, const std::string& config_file);
 

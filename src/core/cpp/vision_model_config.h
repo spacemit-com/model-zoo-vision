@@ -22,8 +22,8 @@ inline std::string getString(const YAML::Node& node,
 }
 
 inline float getFloat(const YAML::Node& node,
-                       const std::string& key,
-                       float default_val = 0.0f) {
+                        const std::string& key,
+                        float default_val = 0.0f) {
     if (node && node[key]) {
         return node[key].as<float>();
     }
@@ -31,8 +31,8 @@ inline float getFloat(const YAML::Node& node,
 }
 
 inline int getInt(const YAML::Node& node,
-                   const std::string& key,
-                   int default_val = 0) {
+                    const std::string& key,
+                    int default_val = 0) {
     if (node && node[key]) {
         return node[key].as<int>();
     }

@@ -72,8 +72,8 @@ void ConvertResults(const std::vector<vision_common::Result>& raw_results,
 VisionService::~VisionService() = default;
 
 std::unique_ptr<VisionService> VisionService::Create(const std::string& config_path,
-                                                       const std::string& model_path_override,
-                                                       bool lazy_load) {
+                                                    const std::string& model_path_override,
+                                                    bool lazy_load) {
     g_last_error_.clear();
     if (config_path.empty()) {
         g_last_error_ = "config_path is empty";
@@ -135,7 +135,7 @@ const std::string& VisionService::LastError() const {
 }
 
 VisionServiceStatus VisionService::InferImage(const std::string& image_path,
-                                               std::vector<VisionServiceResult>* out_results) {
+                                                std::vector<VisionServiceResult>* out_results) {
     if (out_results == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_results must not be null");
     }
@@ -152,7 +152,7 @@ VisionServiceStatus VisionService::InferImage(const std::string& image_path,
 }
 
 VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
-                                               std::vector<VisionServiceResult>* out_results) {
+                                                std::vector<VisionServiceResult>* out_results) {
     if (out_results == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_results must not be null");
     }
@@ -178,16 +178,16 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
                 return SetError(VISION_SERVICE_INFER_FAILED, "Model advertises tracking but ITrackingModel is missing");
             }
         } else if (auto* pose_model = dynamic_cast<vision_core::IPoseModel*>(model);
-                   pose_model != nullptr) {
+                    pose_model != nullptr) {
             impl_->last_raw_results = pose_model->estimate_pose(image);
         } else if (auto* seg_model = dynamic_cast<vision_core::ISegmentationModel*>(model);
-                   seg_model != nullptr) {
+                    seg_model != nullptr) {
             impl_->last_raw_results = seg_model->segment(image);
         } else if (auto* det_model = dynamic_cast<vision_core::IDetectionModel*>(model);
-                   det_model != nullptr) {
+                    det_model != nullptr) {
             impl_->last_raw_results = det_model->detect(image);
         } else if (auto* cls_model = dynamic_cast<vision_core::IClassificationModel*>(model);
-                   cls_model != nullptr) {
+                    cls_model != nullptr) {
             impl_->last_raw_results = cls_model->classify(image);
         } else {
             return SetError(VISION_SERVICE_INFER_FAILED, "Model does not provide a supported image task interface");
@@ -208,7 +208,7 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
 }
 
 VisionServiceStatus VisionService::InferEmbedding(const std::string& image_path,
-                                                   std::vector<float>* out_embedding) {
+                                                    std::vector<float>* out_embedding) {
     if (impl_ == nullptr || impl_->model == nullptr || out_embedding == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "invalid argument");
     }
@@ -224,7 +224,7 @@ VisionServiceStatus VisionService::InferEmbedding(const std::string& image_path,
 }
 
 VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
-                                                   std::vector<float>* out_embedding) {
+                                                    std::vector<float>* out_embedding) {
     if (impl_ == nullptr || impl_->model == nullptr || out_embedding == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "invalid argument");
     }
@@ -258,7 +258,7 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
 }
 
 float VisionService::EmbeddingSimilarity(const std::vector<float>& embedding_a,
-                                         const std::vector<float>& embedding_b) {
+                                        const std::vector<float>& embedding_b) {
     if (embedding_a.empty() || embedding_b.empty() || embedding_a.size() != embedding_b.size()) {
         return 0.0f;
     }
@@ -266,7 +266,7 @@ float VisionService::EmbeddingSimilarity(const std::vector<float>& embedding_a,
 }
 
 VisionServiceStatus VisionService::InferSequence(const float* pts, int image_width, int image_height,
-                                                 std::vector<float>* out_scores) {
+                                                    std::vector<float>* out_scores) {
     if (impl_ == nullptr || impl_->model == nullptr || out_scores == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "invalid argument");
     }

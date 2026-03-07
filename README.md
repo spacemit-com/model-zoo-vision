@@ -31,7 +31,7 @@ sudo apt-get install  libeigen3-dev
 
 **Python 安装（推荐先用于跑通示例）：**
 ```bash
-cd /path/to/vision
+cd components/model_zoo/vision
 pip install -e .
 ```
 
@@ -124,7 +124,7 @@ bianbu@k3:~/.cache/assets# tree
 本节提供示例程序的编译与运行方式，便于开发者快速验证效果。使用前需先按下列两种方式之一完成编译，再运行对应示例。
 
 - **在 SDK 中验证**（2.4.1）：在已拉取的 SpacemiT Robot SDK 工程内用 `mm` 编译，产物部署到 `output/staging`，适合整机集成或与其他模块联调。
-- **独立构建下验证**（2.4.2）：在 CV 组件目录下用 CMake 本地编译，不依赖完整 SDK，适合快速体验或在不使用 repo 的环境下使用。
+- **独立构建下验证**（2.4.2）：在 Vision 组件目录下用 CMake 本地编译，不依赖完整 SDK，适合快速体验或在不使用 repo 的环境下使用。
 
 #### 2.4.1. 在 SDK 中验证
 
@@ -157,7 +157,7 @@ yolov8 config/yolov8.yaml --image /path/to/image.jpg
 
 #### 2.4.2. 独立构建下验证
 
-在 CV 组件目录下完成编译后，运行下列示例。
+在 Vision 组件目录下完成编译后，运行下列示例。
 
 **Python 示例（以 YOLOv8 为例）：**
 

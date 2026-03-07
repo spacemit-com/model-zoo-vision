@@ -1,4 +1,4 @@
-# CV 组件
+# Vision 组件
 
 ## 1. 项目简介
 
@@ -25,11 +25,13 @@
 # 系统依赖示例（Linux）
 sudo apt-get update
 sudo apt-get install -y python3-spacemit-ort opencv-spacemit
+sudo apt-get install  libeigen3-dev
+
 ```
 
 **Python 安装（推荐先用于跑通示例）：**
 ```bash
-cd /path/to/cv
+cd components/model_zoo/vision
 pip install -e .
 ```
 
@@ -42,7 +44,7 @@ pip install -e .
 bash examples/yolov8/scripts/download_models.sh
 ```
 
-也可以一键下载所有示例/应用所需模型（在 cv 组件根目录执行）：
+也可以一键下载所有示例/应用所需模型（在 vision 组件根目录执行）：
 
 ```bash
 bash scripts/download_all_models.sh
@@ -122,7 +124,7 @@ bianbu@k3:~/.cache/assets# tree
 本节提供示例程序的编译与运行方式，便于开发者快速验证效果。使用前需先按下列两种方式之一完成编译，再运行对应示例。
 
 - **在 SDK 中验证**（2.4.1）：在已拉取的 SpacemiT Robot SDK 工程内用 `mm` 编译，产物部署到 `output/staging`，适合整机集成或与其他模块联调。
-- **独立构建下验证**（2.4.2）：在 CV 组件目录下用 CMake 本地编译，不依赖完整 SDK，适合快速体验或在不使用 repo 的环境下使用。
+- **独立构建下验证**（2.4.2）：在 Vision 组件目录下用 CMake 本地编译，不依赖完整 SDK，适合快速体验或在不使用 repo 的环境下使用。
 
 #### 2.4.1. 在 SDK 中验证
 
@@ -130,7 +132,7 @@ bianbu@k3:~/.cache/assets# tree
 
 ```bash
 source build/envsetup.sh
-cd components/model_zoo/cv
+cd components/model_zoo/vision
 mm
 ```
 
@@ -141,7 +143,7 @@ mm
 **Python 示例（以 YOLOv8 为例）：**
 
 ```bash
-cd components/model_zoo/cv/examples/yolov8/python
+cd components/model_zoo/vision/examples/yolov8/python
 python yolov8.py --config ../config/yolov8.yaml
 python yolov8.py --config ../config/yolov8.yaml --image /path/to/image.jpg --conf-threshold 0.3
 ```
@@ -155,7 +157,7 @@ yolov8 config/yolov8.yaml --image /path/to/image.jpg
 
 #### 2.4.2. 独立构建下验证
 
-在 CV 组件目录下完成编译后，运行下列示例。
+在 Vision 组件目录下完成编译后，运行下列示例。
 
 **Python 示例（以 YOLOv8 为例）：**
 
@@ -254,7 +256,7 @@ else
 // 使用 vis 显示或保存
 ```
 
-**CMake 集成示例**：将本组件作为子目录添加后，对目标执行 `target_link_libraries(your_app PRIVATE vision ${OpenCV_LIBS} onnxruntime spacemit_ep yaml-cpp)`，并 `target_include_directories(your_app PRIVATE path/to/cv/include)`。
+**CMake 集成示例**：将本组件作为子目录添加后，对目标执行 `target_link_libraries(your_app PRIVATE vision ${OpenCV_LIBS} onnxruntime spacemit_ep yaml-cpp)`，并 `target_include_directories(your_app PRIVATE path/to/vision/include)`。
 
 ## 4. 常见问题
 

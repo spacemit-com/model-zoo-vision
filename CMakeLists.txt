@@ -53,6 +53,12 @@ else()
 endif()
 
 
+# Eigen3 (system)
+find_package(Eigen3 REQUIRED)
+if(Eigen3_FOUND)
+    message(STATUS "Eigen3 found: ${Eigen3_VERSION}")
+endif()
+
 # yaml-cpp Configuration
 find_package(yaml-cpp REQUIRED)
 if(yaml-cpp_FOUND)
@@ -119,6 +125,7 @@ add_library(vision SHARED
 
 target_link_libraries(vision
     ${LIBS}
+    Eigen3::Eigen
 )
 
 target_include_directories(vision PRIVATE
@@ -138,7 +145,7 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/ocsort/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../rvv_libs/eigen-rvv/eigen
+    Eigen3::Eigen
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${OpenCV_INCLUDE_DIRS}
     ${SPACEMIT_DIR}/include

@@ -128,6 +128,19 @@ target_link_libraries(vision
     Eigen3::Eigen
 )
 
+# ONNX Runtime float16: use __fp16 if available, else define for dependency headers
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_QUIET TRUE)
+check_cxx_source_compiles(
+    "int main() { __fp16 x = 0; (void)x; return 0; }"
+    HAVE_NATIVE_FP16
+)
+unset(CMAKE_REQUIRED_QUIET)
+if(NOT HAVE_NATIVE_FP16)
+    target_compile_definitions(vision PRIVATE __fp16=_Float16)
+    message(STATUS "vision: defining __fp16=_Float16 for dependency headers (no native __fp16)")
+endif()
+
 target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src

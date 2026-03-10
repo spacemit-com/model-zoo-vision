@@ -31,7 +31,7 @@ set(CMAKE_INSTALL_RPATH "\$ORIGIN/../lib:\$ORIGIN")
 
 # Build Options
 option(BUILD_EXAMPLES "Build example programs" ON)
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_TESTS "Build tests" ON)
 
 # ============================================================================
 # Dependencies Configuration

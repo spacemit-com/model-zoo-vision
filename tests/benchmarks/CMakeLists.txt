@@ -19,11 +19,13 @@ endfunction()
 add_executable(vision_infer_benchmark infer_benchmark.cpp)
 
 # OpenCV Configuration
-set(OpenCV_INSTALL_DIR "/home/user/code/test_lib/opencv4x")
-#set(OpenCV_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rvv_libs/opencv-rvv")
-set(OpenCV_DIR "${OpenCV_INSTALL_DIR}/lib/cmake/opencv4")
-include("${OpenCV_INSTALL_DIR}/lib/cmake/opencv4/OpenCVConfig.cmake")
-find_package(OpenCV 4 REQUIRED)
+if(NOT OpenCV_FOUND)
+    if(NOT DEFINED OpenCV_DIR)
+        set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4" CACHE PATH "OpenCV config directory")
+    endif()
+    find_package(OpenCV 4 REQUIRED NO_DEFAULT_PATH)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui NO_DEFAULT_PATH)
+endif()
 
 find_package(OpenCV REQUIRED
     COMPONENTS core imgproc highgui
@@ -46,6 +48,20 @@ set(LIBS
 )
 link_vision_with_registration(vision_infer_benchmark)
 target_link_libraries(vision_infer_benchmark PRIVATE ${LIBS})
+
+# ONNX Runtime float16: same as vision target (x86 may lack native __fp16)
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_QUIET TRUE)
+check_cxx_source_compiles(
+    "int main() { __fp16 x = 0; (void)x; return 0; }"
+    HAVE_NATIVE_FP16_BENCHMARK
+)
+unset(CMAKE_REQUIRED_QUIET)
+if(NOT HAVE_NATIVE_FP16_BENCHMARK)
+    target_compile_definitions(vision_infer_benchmark PRIVATE __fp16=_Float16)
+    message(STATUS "vision_infer_benchmark: defining __fp16=_Float16 for ONNX Runtime headers")
+endif()
+
 
 target_include_directories(vision_infer_benchmark PRIVATE
     ${VISION_ROOT}/include

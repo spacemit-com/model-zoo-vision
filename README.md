@@ -291,7 +291,29 @@ else
 
 **包含前后处理：**
 
-> 说明：以下数据基于 K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+> 说明：以下数据基于K1/ K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+
+K1:
+
+|  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) |
+| :---------: | :-------------------: | :-----------: | :------: | :-------: |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   26.2    |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   31.3    |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    5.5    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   11.8    |
+|             |        yolov8s        | [1,3,640,640] |   int8   |    6.6    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |    3.4    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   10.0    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    5.9    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.2    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |    2.0    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    1.5    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    1.1    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |    5.4    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |    3.0    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |    1.2    |
+
+K3:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
@@ -311,6 +333,8 @@ else
 |             |        yolo11s        | [1,3,640,640] |   int8   |    7.1    |           |
 |             |        yolo11m        | [1,3,640,640] |   int8   |    4.0    |           |
 
+
+
 **复现方法**：
 
 参照 3.1 节完成 C++ 构建，可执行下面命令测试性能（以 yolov8 为例）：
@@ -323,7 +347,29 @@ else
 
 **不包含前后处理：**
 
-> 说明：以下数据基于 K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+> 说明：以下数据基于 K1/K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+
+K1:
+
+|  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) |
+| :---------: | :-------------------: | :-----------: | :------: | :-------: |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   30.7    |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   38.0    |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    6.8    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   14.8    |
+|             |        yolov8s        | [1,3,640,640] |   int8   |    7.5    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |    3.6    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   12.3    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    6.6    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.3    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   11.6    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    5.7    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    2.8    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |    5.9    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |    3.1    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |    1.2    |
+
+K3:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
@@ -348,7 +394,7 @@ else
 参照 2.1 节安装 C++ 依赖后，再按照2.2下载模型，之后可使用 onnxruntime_perf_test 复现（以 yolov8n 为例）：
 
 ```shell
-onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -e spacemit -r 100 -x 1 -S 1 -s -I -c 1 -i "SPACEMIT_EP_INTRA_THREAD_NUM|4"
+onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -r 20 -x 4 -S 1 -s -I -c 1 -e spacemit
 ```
 
 详细参考：https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md 中 onnxruntime_perf_test 章节。

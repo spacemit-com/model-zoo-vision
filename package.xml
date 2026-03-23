@@ -5,7 +5,7 @@
   <description>Computer vision model deployment (detection, classification, segmentation, tracking) using ONNX Runtime and OpenCV</description>
   <system_depend>opencv-spacemit</system_depend>
   <system_depend>libyaml-cpp-dev</system_depend>
-  <system_depend>onnxruntime</system_depend>
+  <system_depend>spacemit-onnxruntime</system_depend>
   <system_depend>python3-spacemit-ort</system_depend>
   <system_depend>libeigen3-dev</system_depend>
 

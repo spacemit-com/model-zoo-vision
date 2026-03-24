@@ -29,6 +29,7 @@
 #include "deploy/yolov8_pose/cpp/yolov8_pose_detector.h"
 #include "deploy/yolov8_seg/cpp/yolov8_seg_detector.h"
 
+
 namespace {
 
 struct Args {
@@ -134,10 +135,30 @@ cv::Mat preprocess_blob(vision_core::BaseModel* model, const cv::Mat& image) {
     return cv::Mat();
 }
 
-// Call concrete postprocess (no common base method); used for postprocess timing only.
-void call_postprocess(vision_core::BaseModel* model,
-                    std::vector<Ort::Value>& outputs,
-                    const cv::Size& orig_size) {
+void direct_pipeline_infer_timed(vision_core::BaseModel* model,
+                                const cv::Mat& image,
+                                double& preprocess_ms,
+                                double& onnx_ms,
+                                double& postprocess_ms,
+                                std::vector<vision_common::Result>& out_results) {
+                                            
+    const cv::Size orig_size = image.size();
+    out_results.clear();
+
+    const auto t0 = std::chrono::steady_clock::now();
+    cv::Mat input_tensor = preprocess_blob(model, image);
+    const auto t1 = std::chrono::steady_clock::now();
+    if (input_tensor.empty()) {
+        preprocess_ms = to_ms(t1 - t0);
+        onnx_ms = 0.0;
+        postprocess_ms = 0.0;
+        return;
+    }
+
+    std::vector<Ort::Value> outputs = model->run_session(input_tensor);
+    const auto t2 = std::chrono::steady_clock::now();
+
+    
     using vision_deploy::ArcFaceRecognizer;
     using vision_deploy::EmotionRecognizer;
     using vision_deploy::ResNetClassifier;
@@ -146,40 +167,36 @@ void call_postprocess(vision_core::BaseModel* model,
     using vision_deploy::YOLOv8Detector;
     using vision_deploy::YOLOv8PoseDetector;
     using vision_deploy::YOLOv8SegDetector;
+
     if (auto* p = dynamic_cast<YOLOv8Detector*>(model)) {
-        (void)p->postprocess(outputs, orig_size);
-        return;
+        out_results = p->postprocess(outputs, orig_size);
+    } else if (auto* p = dynamic_cast<YOLOv8PoseDetector*>(model)) {
+        out_results = p->postprocess(outputs, orig_size);
+    } else if (auto* p = dynamic_cast<YOLOv8SegDetector*>(model)) {
+        out_results = p->postprocess(outputs, orig_size);
+    } else if (auto* p = dynamic_cast<YOLOv5FaceDetector*>(model)) {
+        out_results = p->postprocess(outputs, orig_size);
+    } else if (auto* p = dynamic_cast<YOLOv5GestureDetector*>(model)) {
+        out_results = p->postprocess(outputs, orig_size);
+    } else if (auto* p = dynamic_cast<ResNetClassifier*>(model)) {
+        out_results = p->postprocess(outputs);
+    } else if (auto* p = dynamic_cast<EmotionRecognizer*>(model)) {
+        out_results = p->postprocess(outputs);
+    } else if (auto* p = dynamic_cast<ArcFaceRecognizer*>(model)) {
+        std::vector<float> embedding = p->postprocess(outputs);
+        if (!embedding.empty()) {
+            vision_common::Result result;
+            result.embedding = std::move(embedding);
+            result.score = 1.0f;
+            result.label = -1;
+            out_results.push_back(std::move(result));
+        }
     }
-    if (auto* p = dynamic_cast<YOLOv8PoseDetector*>(model)) {
-        (void)p->postprocess(outputs, orig_size);
-        return;
-    }
-    if (auto* p = dynamic_cast<YOLOv8SegDetector*>(model)) {
-        (void)p->postprocess(outputs, orig_size);
-        return;
-    }
-    if (auto* p = dynamic_cast<YOLOv5FaceDetector*>(model)) {
-        (void)p->postprocess(outputs, orig_size);
-        return;
-    }
-    if (auto* p = dynamic_cast<YOLOv5GestureDetector*>(model)) {
-        (void)p->postprocess(outputs, orig_size);
-        return;
-    }
-    if (auto* p = dynamic_cast<ResNetClassifier*>(model)) {
-        (void)p->postprocess(outputs);
-        return;
-    }
-    if (auto* p = dynamic_cast<EmotionRecognizer*>(model)) {
-        (void)p->postprocess(outputs);
-        return;
-    }
-    if (auto* p = dynamic_cast<ArcFaceRecognizer*>(model)) {
-        (void)p->postprocess(outputs);
-        return;
-    }
-    (void)outputs;
-    (void)orig_size;
+    const auto t3 = std::chrono::steady_clock::now();
+
+    preprocess_ms = to_ms(t1 - t0);
+    onnx_ms = to_ms(t2 - t1);
+    postprocess_ms = to_ms(t3 - t2);
 }
 
 }  // namespace
@@ -227,51 +244,39 @@ int main(int argc, char** argv) {
         model->ensure_model_loaded();
     }
 
-    // Preprocess timing (concrete preprocess per model type).
     double preprocess_total = 0.0;
+    double onnx_total = 0.0;
+    double postprocess_total = 0.0;
+
+    // Main benchmark total: direct pipeline timing avoids task-dispatch overhead.
+    double infer_total = 0.0;
+    std::vector<vision_common::Result> last_results;
+
+    // Stage timing is measured separately, and direct pipeline total is measured without task-interface dispatch.
     cv::Mat preprocessed = preprocess_blob(model.get(), image);
     if (!preprocessed.empty()) {
         for (int i = 0; i < args.runs; ++i) {
+            double preprocess_ms = 0.0;
+            double onnx_ms = 0.0;
+            double postprocess_ms = 0.0;
             const auto t0 = std::chrono::steady_clock::now();
-            cv::Mat blob = preprocess_blob(model.get(), image);
+            direct_pipeline_infer_timed(
+                model.get(), image, preprocess_ms, onnx_ms, postprocess_ms, last_results);
             const auto t1 = std::chrono::steady_clock::now();
-            preprocess_total += to_ms(t1 - t0);
-            (void)blob;
-        }
-    }
 
-    double onnx_total = 0.0;
-    const cv::Size orig_size = image.size();
-    if (!preprocessed.empty()) {
+            preprocess_total += preprocess_ms;
+            onnx_total += onnx_ms;
+            postprocess_total += postprocess_ms;
+            infer_total += to_ms(t1 - t0);            
+        }
+    } else {
+        // Fallback for unsupported models where preprocess/postprocess helpers are unavailable.
         for (int i = 0; i < args.runs; ++i) {
             const auto t0 = std::chrono::steady_clock::now();
-            std::vector<Ort::Value> outputs = model->run_session(preprocessed);
+            last_results = run_task(model.get(), image);
             const auto t1 = std::chrono::steady_clock::now();
-            onnx_total += to_ms(t1 - t0);
-            (void)outputs;
+            infer_total += to_ms(t1 - t0);
         }
-    }
-
-    // Postprocess timing (run_session + postprocess per iteration; postprocess is timed only).
-    double postprocess_total = 0.0;
-    if (!preprocessed.empty()) {
-        for (int i = 0; i < args.runs; ++i) {
-            std::vector<Ort::Value> outputs = model->run_session(preprocessed);
-            const auto t0 = std::chrono::steady_clock::now();
-            call_postprocess(model.get(), outputs, orig_size);
-            const auto t1 = std::chrono::steady_clock::now();
-            postprocess_total += to_ms(t1 - t0);
-        }
-    }
-
-    // Full task timing (detect/classify/track/estimate_pose/segment/infer_embedding).
-    double infer_total = 0.0;
-    std::vector<vision_common::Result> last_results;
-    for (int i = 0; i < args.runs; ++i) {
-        const auto t0 = std::chrono::steady_clock::now();
-        last_results = run_task(model.get(), image);
-        const auto t1 = std::chrono::steady_clock::now();
-        infer_total += to_ms(t1 - t0);
     }
 
     // Draw timing (same logic as vision_service_draw: pick draw_* by result type).
@@ -319,8 +324,8 @@ int main(int argc, char** argv) {
                 << "Avg preprocess: " << avg_pre << " ms\n"
                 << "Avg ONNX Runtime: " << avg_onnx << " ms\n"
                 << "Avg postprocess (measured): " << avg_post << " ms\n"
+                << "Avg infer (benchmark total, direct pipeline, no draw): " << avg_infer << " ms\n"
                 << "Avg draw: " << avg_draw << " ms\n"
-                << "Avg infer (total, no draw): " << avg_infer << " ms\n"
                 << "FPS (avg infer): " << fps << "\n";
 
     return 0;

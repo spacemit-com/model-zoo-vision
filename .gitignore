@@ -60,3 +60,4 @@ examples/pp_liteseg/
 src/deploy/yolo26/
 web/
 docs/design_roadmap.md
+tests/benchmarks/track_benchmark.cpp

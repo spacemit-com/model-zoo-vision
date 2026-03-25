@@ -24,11 +24,11 @@ if(NOT OpenCV_FOUND)
         set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4" CACHE PATH "OpenCV config directory")
     endif()
     find_package(OpenCV 4 REQUIRED NO_DEFAULT_PATH)
-    find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui NO_DEFAULT_PATH)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs highgui NO_DEFAULT_PATH)
 endif()
 
 find_package(OpenCV REQUIRED
-    COMPONENTS core imgproc highgui
+    COMPONENTS core imgproc imgcodecs highgui
     NO_DEFAULT_PATH
 )
 
@@ -48,6 +48,19 @@ set(LIBS
 )
 link_vision_with_registration(vision_infer_benchmark)
 target_link_libraries(vision_infer_benchmark PRIVATE ${LIBS})
+
+# Installed binary: global CMAKE_INSTALL_RPATH only has $ORIGIN paths; OpenCV and
+# SpaceMIT libs live under fixed prefixes (e.g. /opt/opencv-spacemit/lib), so
+# embed those or the loader fails on device without LD_LIBRARY_PATH.
+set(_vision_infer_install_rpath "\$ORIGIN/../lib;\$ORIGIN")
+if(DEFINED OpenCV_DIR)
+    get_filename_component(_opencv_install_libdir "${OpenCV_DIR}/../.." ABSOLUTE)
+    list(APPEND _vision_infer_install_rpath "${_opencv_install_libdir}")
+endif()
+if(DEFINED SPACEMIT_DIR)
+    list(APPEND _vision_infer_install_rpath "${SPACEMIT_DIR}/lib")
+endif()
+set_target_properties(vision_infer_benchmark PROPERTIES INSTALL_RPATH "${_vision_infer_install_rpath}")
 
 # ONNX Runtime float16: same as vision target (x86 may lack native __fp16)
 include(CheckCXXSourceCompiles)
@@ -76,3 +89,7 @@ endif()
 if(DEFINED SPACEMIT_DIR)
     target_include_directories(vision_infer_benchmark PRIVATE ${SPACEMIT_DIR}/include)
 endif()
+
+install(TARGETS vision_infer_benchmark
+    RUNTIME DESTINATION bin
+)

@@ -128,7 +128,7 @@ bianbu@k3:~/.cache/assets# tree
 
 #### 2.4.1. 在 SDK 中验证
 
-**编译**：本组件已纳入 SpacemiT Robot SDK 时，在 SDK 根目录下执行。SDK 拉取与初始化见 [SpacemiT Robot SDK Manifest](https://github.com/spacemit-robotics/manifest)（使用 repo 时需先完成 `repo init`、`repo sync` 等）。
+**编译**：环境准备、源码拉取与 Model Zoo 在 SDK 中的编译与集成说明见 SpacemiT 社区文档 [SpacemiT Model Zoo](https://www.spacemit.com/community/document/info?lang=zh&nodepath=software/SDK/bianbu/ai/model-zoo.md)（使用 repo 时需先完成 `repo init`、`repo sync` 等）。
 
 ```bash
 source build/envsetup.sh
@@ -340,7 +340,7 @@ K3:
 参照 3.1 节完成 C++ 构建，可执行下面命令测试性能（以 yolov8 为例）：
 
 ```shell
-./tests/benchmarks/vision_infer_benchmark --config ../examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg
+vision_infer_benchmark --config components/model_zoo/vision/examples/yolov8/config/yolov8.yaml --image ~/.cache/assets/image/006_test.jpg
 ```
 
 > 以上命令默认使用 yolov8n 模型；如需指定其他模型，可使用 `--model-path` 参数，例如：`--model-path /path/to/yolov8s.onnx`。
@@ -392,5 +392,5 @@ K3:
 onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -e spacemit -r 100 -x 1 -S 1 -s -I -c 1 -i "SPACEMIT_EP_INTRA_THREAD_NUM|4"
 ```
 
-详细参考：https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md 中 onnxruntime_perf_test 章节。
+详细说明见 SpacemiT 社区文档 [AI 计算栈 · ONNX Runtime](https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md) 中的 **onnxruntime_perf_test** 章节。
 

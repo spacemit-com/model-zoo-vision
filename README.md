@@ -373,28 +373,23 @@ K3:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
-|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   131.9   |           |
-|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |    49     |           |
-| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   28.8    |           |
-|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   55.6    |           |
-|             |        yolov8s        | [1,3,640,640] |   int8   |   27.5    |           |
-|             |        yolov8m        | [1,3,640,640] |   int8   |   19.6    |           |
-| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   45.3    |           |
-|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   30.8    |           |
-|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   17.9    |           |
-| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   24.1    |           |
-|             |      yolov8s-seg      | [1,3,640,640] |   int8   |   13.9    |           |
-|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    8.5    |           |
-|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |    9.5    |           |
-|             |        yolo11s        | [1,3,640,640] |   int8   |    7.1    |           |
-|             |        yolo11m        | [1,3,640,640] |   int8   |    4.0    |           |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   129.0   |           |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   50.9    |           |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   30.9    |           |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   59.8    |           |
+|             |        yolov8s        | [1,3,640,640] |   int8   |   37.2    |           |
+|             |        yolov8m        | [1,3,640,640] |   int8   |   19.8    |           |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   52.4    |           |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   33.0    |           |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   18.6    |           |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   44.1    |           |
 
 **复现方法**：
 
 参照 2.1 节安装 C++ 依赖后，再按照2.2下载模型，之后可使用 onnxruntime_perf_test 复现（以 yolov8n 为例）：
 
 ```shell
-onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -r 20 -x 4 -S 1 -s -I -c 1 -e spacemit
+onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -e spacemit -r 100 -x 1 -S 1 -s -I -c 1 -i "SPACEMIT_EP_INTRA_THREAD_NUM|4"
 ```
 
 详细参考：https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md 中 onnxruntime_perf_test 章节。

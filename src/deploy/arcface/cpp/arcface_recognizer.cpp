@@ -97,11 +97,10 @@ cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
     cv::Rect roi(pad_w, pad_h, new_w, new_h);
     resized.copyTo(padded(roi));
 
-    // Convert to float and normalize: (img / 255.0 - 0.5) / 0.5
-    // Same as Python: img = (img / 255.0 - 0.5) / 0.5
+    // Convert to float and normalize to [-1, 1].
+    // Use convertTo(scale, shift) to avoid OpenCV multi-channel MatExpr warnings.
     cv::Mat normalized;
-    padded.convertTo(normalized, CV_32F, 1.0 / 255.0);
-    normalized = (normalized - 0.5f) / 0.5f;
+    padded.convertTo(normalized, CV_32F, 1.0 / 127.5, -1.0);
 
     // HWC to CHW and add batch dimension (same as Python: np.transpose(img, (2, 0, 1)))
     cv::Mat blob = cv::dnn::blobFromImage(normalized, 1.0,

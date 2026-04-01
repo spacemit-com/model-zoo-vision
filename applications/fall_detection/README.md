@@ -7,7 +7,7 @@
 - **模型类型**：姿态估计（YOLOv8-Pose）+ 动作识别（STGCN/TSSTG，30 帧骨架序列，含 Fall Down 等 7 类）
 - **默认模型文件**：
   - 姿态模型：`~/.cache/models/vision/yolov8_pose/yolov8n-pose.q.onnx`（`pose_model_path`）
-  - STGCN 模型：`~/.cache/models/vision/stgcn/stgcn.onnx`（`stgcn_model_path`，由 `config/stgcn_action.yaml` 引用）
+  - STGCN 模型：`~/.cache/models/vision/stgcn/stgcn.fp32.onnx`（`stgcn_model_path`，由 `config/stgcn_action.yaml` 引用）
 - **下载**：在本应用目录下执行 `bash scripts/download_models.sh` 会将姿态模型与 STGCN 模型下载到缓存路径。
 
 **数据（测试视频）**：默认测试视频 `test_video` 指向 `~/.cache/assets/video/002_fall.mp4`。若尚未下载资源，请在 **cv 组件根目录** 执行：

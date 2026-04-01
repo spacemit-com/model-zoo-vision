@@ -21,6 +21,11 @@ sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
 from core.python.vision_model_factory import ModelFactory
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ArcFace Face Recognition Example")
     parser.add_argument("--config", type=str, default=None,
@@ -54,15 +59,15 @@ def main():
                     config = yaml.safe_load(f) or {}
             image1_path = args.image1 or config.get("test_image1")
             image2_path = args.image2 or config.get("test_image2")
-            if image1_path and not Path(image1_path).is_absolute():
-                image1_path = project_root / image1_path
-            if image2_path and not Path(image2_path).is_absolute():
-                image2_path = project_root / image2_path
+            if image1_path:
+                image1_path = resolve_path(image1_path, project_root)
+            if image2_path:
+                image2_path = resolve_path(image2_path, project_root)
             if not image1_path or not image2_path:
                 raise ValueError("请指定 --image1 和 --image2，或在 config 的 yaml 中配置 test_image1、test_image2")
         else:
-            image1_path = args.image1
-            image2_path = args.image2
+            image1_path = resolve_path(args.image1, project_root)
+            image2_path = resolve_path(args.image2, project_root)
 
         # Create model factory
         factory = ModelFactory()

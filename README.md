@@ -58,13 +58,13 @@ bianbu@k3:~/.cache/models/vision# tree
 ├── arcface
 │   └── arcface_mobilefacenet_cut.q.onnx
 ├── ocsort
-│   ├── ocsort_yoloxs_sim.onnx
+│   ├── ocsort_yoloxs_sim.fp32.onnx
 │   └── yolov8n.q.onnx
 ├── resnet
 │   ├── emotion_resnet50_final.q.onnx
 │   └── resnet50.q.onnx
 ├── stgcn
-│   └── stgcn.onnx
+│   └── stgcn.fp32.onnx
 ├── yolov11
 │   ├── yolo11m.q.onnx
 │   ├── yolo11n.q.onnx

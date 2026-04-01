@@ -421,7 +421,7 @@ int main(int argc, char** argv) {
         } else {
             stgcn_cfg["class"] = "deploy.stgcn.StgcnActionRecognizer";
             stgcn_cfg["model_path"] = stgcn_model_path.empty()
-                ? resolve_under_root(project_root_path, "applications/fall_detection/models/stgcn.onnx")
+                ? resolve_under_root(project_root_path, "applications/fall_detection/models/stgcn.fp32.onnx")
                 : stgcn_model_path;
             stgcn_cfg["default_params"] = YAML::Node();
             stgcn_cfg["default_params"]["num_threads"] = 4;

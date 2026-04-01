@@ -18,7 +18,7 @@ kp_threshold: 0.3
 # STGCN 动作识别（从 model_factory 创建，配置为本目录下 stgcn_action.yaml）
 stgcn_model_name: stgcn_action
 # 本应用使用的 STGCN 模型路径（相对 cv 根目录）
-stgcn_model_path: ~/.cache/models/vision/stgcn/stgcn.onnx
+stgcn_model_path: ~/.cache/models/vision/stgcn/stgcn.fp32.onnx
 stgcn_wait_frames: 10
 # 预测平滑：最近 N 次推理中超过一半为 Fall Down 才判跌倒
 stgcn_smooth_window: 5

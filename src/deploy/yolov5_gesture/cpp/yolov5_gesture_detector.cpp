@@ -5,6 +5,7 @@
 
 #include "yolov5_gesture_detector.h"
 
+#include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -84,11 +85,29 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
 
 std::vector<vision_common::Result> YOLOv5GestureDetector::detect(const cv::Mat& image) {
     ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t0 = std::chrono::steady_clock::now();
 
     const cv::Size orig_size = image.size();
+    const auto t_pre0 = std::chrono::steady_clock::now();
     cv::Mat inputTensor = preprocess(image);
+    const auto t_pre1 = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+
+    const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = run_session(inputTensor);
-    return postprocess(outputs, orig_size);
+    const auto t_infer1 = std::chrono::steady_clock::now();
+    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
+
+    const auto t_post0 = std::chrono::steady_clock::now();
+    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    const auto t_post1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
+
+    const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
+
+    return results;
 }
 
 std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilities() const {

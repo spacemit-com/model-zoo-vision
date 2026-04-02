@@ -5,6 +5,7 @@
 
 #include "vision_model_base.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -31,7 +32,6 @@ static fs::path get_vision_root_dir() {
     return fs::current_path();
 #endif
 }
-#include <chrono>
 static std::string download_script_hint() {
     const fs::path hint =
         get_vision_root_dir() / "examples" / "<model>" / "scripts" / "download_models.sh";
@@ -148,6 +148,38 @@ std::string BaseModel::get_model_info() const {
     return info;
 }
 
+RuntimeProfile BaseModel::get_runtime_profile() const {
+    return runtime_profile_;
+}
+
+void BaseModel::reset_runtime_profile() {
+    runtime_profile_ = RuntimeProfile{};
+}
+
+void BaseModel::set_runtime_preprocess_ms(double ms) {
+    runtime_profile_.preprocess_ms = ms;
+}
+
+void BaseModel::set_runtime_model_infer_ms(double ms) {
+    runtime_profile_.model_infer_ms = ms;
+}
+
+void BaseModel::set_runtime_postprocess_ms(double ms) {
+    runtime_profile_.postprocess_ms = ms;
+}
+
+void BaseModel::set_runtime_detect_ms(double ms) {
+    runtime_profile_.detect_ms = ms;
+}
+
+void BaseModel::set_runtime_track_ms(double ms) {
+    runtime_profile_.track_ms = ms;
+}
+
+void BaseModel::set_runtime_total_ms(double ms) {
+    runtime_profile_.total_ms = ms;
+}
+
 void BaseModel::ensure_model_loaded() {
     if (!model_loaded_) {
         load_model();
@@ -221,6 +253,7 @@ std::vector<Ort::Value> BaseModel::run_session(const cv::Mat& input_blob) {
         tensor_shape.data(),
         tensor_shape.size());
 
+    const auto t0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = session_->Run(
         Ort::RunOptions{nullptr},
         input_node_names_.data(),
@@ -228,6 +261,8 @@ std::vector<Ort::Value> BaseModel::run_session(const cv::Mat& input_blob) {
         1,
         output_node_names_.data(),
         output_node_names_.size());
+    const auto t1 = std::chrono::steady_clock::now();
+    runtime_profile_.model_infer_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     return outputs;
 }

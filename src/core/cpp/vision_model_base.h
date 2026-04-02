@@ -17,6 +17,15 @@
 
 namespace vision_core {
 
+struct RuntimeProfile {
+    double preprocess_ms = 0.0;
+    double model_infer_ms = 0.0;
+    double postprocess_ms = 0.0;
+    double detect_ms = 0.0;
+    double track_ms = 0.0;
+    double total_ms = 0.0;
+};
+
 enum class ModelCapability {
     kImageInput,
     kSequenceInput,
@@ -44,6 +53,10 @@ public:
 
     virtual std::string get_model_info() const;
 
+    RuntimeProfile get_runtime_profile() const;
+
+    void reset_runtime_profile();
+
 protected:
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;
@@ -66,6 +79,14 @@ protected:
     std::vector<Ort::Value> run_session(const cv::Mat& input_blob);
 
     Ort::MemoryInfo memory_info_{nullptr};
+    RuntimeProfile runtime_profile_;
+
+    void set_runtime_preprocess_ms(double ms);
+    void set_runtime_model_infer_ms(double ms);
+    void set_runtime_postprocess_ms(double ms);
+    void set_runtime_detect_ms(double ms);
+    void set_runtime_track_ms(double ms);
+    void set_runtime_total_ms(double ms);
 };
 
 }  // namespace vision_core

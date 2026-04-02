@@ -31,6 +31,30 @@ struct VisionServiceKeypoint {
     float visibility;
 };
 
+struct VisionServiceTiming {
+    // Generic image pipeline stages (most models)
+    double preprocess_ms = 0.0;
+    double model_infer_ms = 0.0;
+    double postprocess_ms = 0.0;
+
+    // Tracking pipeline stages (tracking models)
+    double detect_ms = 0.0;
+    double track_ms = 0.0;
+
+    // Aggregated totals
+    double infer_ms = 0.0;
+    double draw_ms = 0.0;
+
+    // Other task types
+    double embedding_ms = 0.0;
+    double sequence_ms = 0.0;
+};
+
+struct VisionServiceTimingOptions {
+    bool enabled = false;
+    bool print_to_stdout = false;
+};
+
 enum VisionServiceStatus {
     VISION_SERVICE_OK = 0,
     VISION_SERVICE_INVALID_ARGUMENT = 1,
@@ -69,6 +93,10 @@ public:
 
     VisionServiceStatus GetLastKeypoints(int result_index,
                                             std::vector<VisionServiceKeypoint>* out_keypoints);
+
+    bool SupportsDraw() const;
+    void SetTimingOptions(const VisionServiceTimingOptions& options);
+    VisionServiceTiming GetLastTiming() const;
 
     std::string GetDefaultImage();
     std::string GetConfigPathValue(const std::string& config_key);

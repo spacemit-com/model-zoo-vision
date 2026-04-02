@@ -23,19 +23,16 @@ if(NOT OpenCV_FOUND)
     if(NOT DEFINED OpenCV_DIR)
         set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4" CACHE PATH "OpenCV config directory")
     endif()
-    find_package(OpenCV 4 REQUIRED NO_DEFAULT_PATH)
     find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs highgui NO_DEFAULT_PATH)
 endif()
 
-find_package(OpenCV REQUIRED
-    COMPONENTS core imgproc imgcodecs highgui
-    NO_DEFAULT_PATH
-)
-
 if(OpenCV_FOUND)
-    message(STATUS "OpenCV found: ${OpenCV_VERSION}")
-    message(STATUS "  Includes: ${OpenCV_INCLUDE_DIRS}")
-    message(STATUS "  Libraries: ${OpenCV_LIBS}")
+    if(NOT DEFINED MODELZOO_OPENCV_PRINTED)
+        message(STATUS "OpenCV found: ${OpenCV_VERSION}")
+        message(STATUS "  Includes: ${OpenCV_INCLUDE_DIRS}")
+        message(STATUS "  Libraries: ${OpenCV_LIBS}")
+        set(MODELZOO_OPENCV_PRINTED TRUE CACHE INTERNAL "OpenCV info already printed")
+    endif()
 else()
     message(FATAL_ERROR "OpenCV not found! Check OpenCV_DIR or install OpenCV.")
 endif()

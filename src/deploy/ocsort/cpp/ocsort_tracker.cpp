@@ -5,6 +5,7 @@
 
 #include "ocsort_tracker.h"
 
+#include <chrono>
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
@@ -108,17 +109,31 @@ cv::Mat OCSortTracker::preprocess(const cv::Mat& image) {
 
 std::vector<vision_common::Result> OCSortTracker::track(const cv::Mat& image) {
     ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t0 = std::chrono::steady_clock::now();
 
     // Run detection
+    const auto t_det0 = std::chrono::steady_clock::now();
     std::vector<vision_common::Result> detections = detector_->detect(image);
+    const auto t_det1 = std::chrono::steady_clock::now();
+    set_runtime_detect_ms(std::chrono::duration<double, std::milli>(t_det1 - t_det0).count());
+
     // Convert to Eigen matrix format for OC-SORT tracker
+    const auto t_track0 = std::chrono::steady_clock::now();
     Eigen::MatrixXf dets = convert_results_to_dets(detections);
 
     // Update tracker
     std::vector<Eigen::RowVectorXf> tracks = tracker_->update(dets);
 
     // Convert back to Result format with track_id and preserve label information
-    return convert_tracks_to_results(tracks, detections);
+    std::vector<vision_common::Result> results = convert_tracks_to_results(tracks, detections);
+    const auto t_track1 = std::chrono::steady_clock::now();
+    set_runtime_track_ms(std::chrono::duration<double, std::milli>(t_track1 - t_track0).count());
+
+    const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
+
+    return results;
 }
 
 std::vector<vision_core::ModelCapability> OCSortTracker::get_capabilities() const {

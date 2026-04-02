@@ -38,9 +38,8 @@ option(BUILD_TESTS "Build tests" ON)
 # ============================================================================
 
 set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4")
-find_package(OpenCV 4 REQUIRED)
 find_package(OpenCV REQUIRED
-    COMPONENTS core imgproc highgui
+    COMPONENTS core imgproc imgcodecs highgui dnn
     NO_DEFAULT_PATH
 )
 
@@ -48,6 +47,7 @@ if(OpenCV_FOUND)
     message(STATUS "OpenCV found: ${OpenCV_VERSION}")
     message(STATUS "  Includes: ${OpenCV_INCLUDE_DIRS}")
     message(STATUS "  Libraries: ${OpenCV_LIBS}")
+    set(MODELZOO_OPENCV_PRINTED TRUE CACHE INTERNAL "OpenCV info already printed")
 else()
     message(FATAL_ERROR "OpenCV not found! Check OpenCV_DIR or install OpenCV.")
 endif()

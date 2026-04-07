@@ -5,6 +5,7 @@
 
 #include "yolov8_detector.h"
 
+#include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -97,11 +98,28 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
 
 std::vector<vision_common::Result> YOLOv8Detector::detect(const cv::Mat& image) {
     ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t0 = std::chrono::steady_clock::now();
 
     cv::Size orig_size = image.size();
+    const auto t_pre0 = std::chrono::steady_clock::now();
     cv::Mat inputTensor = preprocess(image);
+    const auto t_pre1 = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+
+    const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = run_session(inputTensor);
-    return postprocess(outputs, orig_size);
+    const auto t_infer1 = std::chrono::steady_clock::now();
+    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
+
+    const auto t_post0 = std::chrono::steady_clock::now();
+    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    const auto t_post1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
+
+    const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
+    return results;
 }
 
 std::vector<vision_core::ModelCapability> YOLOv8Detector::get_capabilities() const {
@@ -187,7 +205,6 @@ std::vector<vision_common::Result> YOLOv8Detector::postprocess(
         // Note: swap width and height as in original code (inputHeight, inputWidth)
         get_dets(orig_size, boxes, scores, score_sum, dims, inputHeight, inputWidth, objects);
     }
-
     // Apply multi-class NMS using common function
     return vision_common::multi_class_nms(objects, iou_threshold_);
 }

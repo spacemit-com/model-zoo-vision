@@ -6,6 +6,7 @@
 #include "stgcn_action_recognizer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -80,6 +81,10 @@ std::vector<float> StgcnActionRecognizer::predict(const float* pts,
                                                 int image_width,
                                                 int image_height) {
     ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t_total0 = std::chrono::steady_clock::now();
+
+    const auto t_pre0 = std::chrono::steady_clock::now();
 
     const int T = kSequenceLength;
     const int V = kNumKeypoints;
@@ -151,9 +156,17 @@ std::vector<float> StgcnActionRecognizer::predict(const float* pts,
 
     std::vector<int64_t> pts_shape_vec(pts_shape, pts_shape + 4);
     std::vector<int64_t> mot_shape_vec(mot_shape, mot_shape + 4);
+    const auto t_pre1 = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+
+    const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = run_session_two_inputs(
         pts_tensor.data(), pts_shape_vec,
         mot_padded.data(), mot_shape_vec);
+    const auto t_infer1 = std::chrono::steady_clock::now();
+    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
+
+    const auto t_post0 = std::chrono::steady_clock::now();
 
     if (outputs.empty()) {
         throw std::runtime_error("StgcnActionRecognizer::predict no output");
@@ -164,7 +177,14 @@ std::vector<float> StgcnActionRecognizer::predict(const float* pts,
     if (out_data == nullptr) {
         throw std::runtime_error("StgcnActionRecognizer::predict output data is null");
     }
-    return std::vector<float>(out_data, out_data + num_elem);
+    std::vector<float> scores(out_data, out_data + num_elem);
+    const auto t_post1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
+
+    const auto t_total1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t_total1 - t_total0).count());
+
+    return scores;
 }
 
 std::vector<float> StgcnActionRecognizer::infer_sequence(const float* pts,

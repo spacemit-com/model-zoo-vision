@@ -5,9 +5,12 @@
 
 #include "vision_service.h"
 
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <filesystem>  // NOLINT(build/c++17)
+#include <iostream>
 #include <memory>
 #include <new>
 #include <string>
@@ -31,11 +34,126 @@ struct VisionService::Impl {
     std::vector<std::string> labels;
     std::string default_image_path;
     std::string last_config_path_value;
+    VisionServiceTimingOptions timing_options;
+    VisionServiceTiming last_timing;
+    uint64_t timed_tracking_frame_count = 0;
+    uint64_t timed_tracking_object_sum = 0;
 };
 
 thread_local std::string VisionService::g_last_error_;
 
 namespace {
+
+double ToMs(const std::chrono::steady_clock::duration& duration) {
+    return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+void ResetAllTiming(VisionServiceTiming* timing) {
+    if (timing == nullptr) {
+        return;
+    }
+    timing->preprocess_ms = 0.0;
+    timing->model_infer_ms = 0.0;
+    timing->postprocess_ms = 0.0;
+    timing->detect_ms = 0.0;
+    timing->track_ms = 0.0;
+    timing->infer_ms = 0.0;
+    timing->draw_ms = 0.0;
+    timing->embedding_ms = 0.0;
+    timing->sequence_ms = 0.0;
+}
+
+void ResetImageTiming(VisionServiceTiming* timing) {
+    ResetAllTiming(timing);
+}
+
+void ResetDrawTiming(VisionServiceTiming* timing) {
+    if (timing == nullptr) {
+        return;
+    }
+    timing->draw_ms = 0.0;
+}
+
+void FillTimingFromRuntimeProfile(const vision_core::RuntimeProfile& profile,
+                                    bool is_tracking,
+                                    VisionServiceTiming* timing) {
+    if (timing == nullptr) {
+        return;
+    }
+    if (is_tracking) {
+        timing->detect_ms = profile.detect_ms;
+        timing->track_ms = profile.track_ms;
+        timing->infer_ms = profile.total_ms;
+    } else {
+        timing->preprocess_ms = profile.preprocess_ms;
+        timing->model_infer_ms = profile.model_infer_ms;
+        timing->postprocess_ms = profile.postprocess_ms;
+        timing->infer_ms = profile.total_ms;
+    }
+}
+
+void MaybePrintImageTiming(const VisionServiceTimingOptions& options,
+                            const VisionServiceTiming& timing,
+                            bool is_tracking,
+                            int tracked_count = -1,
+                            double avg_tracked_count = 0.0) {
+    if (!options.enabled || !options.print_to_stdout) {
+        return;
+    }
+
+    if (is_tracking) {
+        std::cout << "[VisionService][Timing][Image][tracking] "
+                    << "detect=" << timing.detect_ms << "ms, "
+                    << "track=" << timing.track_ms << "ms, "
+                    << "tracked=" << tracked_count << ", "
+                    << "avg_tracked=" << avg_tracked_count << ", "
+                    << "total=" << timing.infer_ms << "ms"
+                    << std::endl;
+    } else {
+        std::cout << "[VisionService][Timing][Image][generic] "
+                    << "preprocess=" << timing.preprocess_ms << "ms, "
+                    << "model_infer=" << timing.model_infer_ms << "ms, "
+                    << "postprocess=" << timing.postprocess_ms << "ms, "
+                    << "total=" << timing.infer_ms << "ms"
+                    << std::endl;
+    }
+}
+
+void MaybePrintEmbeddingTiming(const VisionServiceTimingOptions& options,
+                                const VisionServiceTiming& timing) {
+    if (!options.enabled || !options.print_to_stdout) {
+        return;
+    }
+    std::cout << "[VisionService][Timing][Embedding] "
+                << "preprocess=" << timing.preprocess_ms << "ms, "
+                << "model_infer=" << timing.model_infer_ms << "ms, "
+                << "postprocess=" << timing.postprocess_ms << "ms, "
+                << "total=" << timing.embedding_ms << "ms"
+                << std::endl;
+}
+
+void MaybePrintSequenceTiming(const VisionServiceTimingOptions& options,
+                                const VisionServiceTiming& timing) {
+    if (!options.enabled || !options.print_to_stdout) {
+        return;
+    }
+    std::cout << "[VisionService][Timing][Sequence] "
+                << "preprocess=" << timing.preprocess_ms << "ms, "
+                << "model_infer=" << timing.model_infer_ms << "ms, "
+                << "postprocess=" << timing.postprocess_ms << "ms, "
+                << "total=" << timing.sequence_ms << "ms"
+                << std::endl;
+}
+
+void MaybePrintDrawTiming(const VisionServiceTimingOptions& options,
+                            const VisionServiceTiming& timing) {
+    if (!options.enabled || !options.print_to_stdout) {
+        return;
+    }
+    std::cout << "[VisionService][Timing][Draw] "
+                << "total=" << timing.draw_ms << "ms"
+                << std::endl;
+}
 
 std::vector<std::string> loadLabelsForConfig(const YAML::Node& config, const std::string& config_file) {
     try {
@@ -169,8 +287,15 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
     }
 
     try {
+        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        std::chrono::steady_clock::time_point t0;
+        if (timing_enabled) {
+            ResetImageTiming(&impl_->last_timing);
+            t0 = std::chrono::steady_clock::now();
+        }
         vision_core::BaseModel* model = impl_->model.get();
-        if (model->supports_capability(vision_core::ModelCapability::kTrackUpdate)) {
+        const bool is_tracking = model->supports_capability(vision_core::ModelCapability::kTrackUpdate);
+        if (is_tracking) {
             auto* tracking_model = dynamic_cast<vision_core::ITrackingModel*>(model);
             if (tracking_model != nullptr) {
                 impl_->last_raw_results = tracking_model->track(image);
@@ -193,10 +318,40 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             return SetError(VISION_SERVICE_INFER_FAILED, "Model does not provide a supported image task interface");
         }
 
+        if (timing_enabled) {
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto profile = model->get_runtime_profile();
+            FillTimingFromRuntimeProfile(profile, is_tracking, &impl_->last_timing);
+            if (impl_->last_timing.infer_ms <= 0.0) {
+                impl_->last_timing.infer_ms = ToMs(t1 - t0);
+            }
+            if (is_tracking) {
+                int tracked_count = 0;
+                for (const auto& r : impl_->last_raw_results) {
+                    if (r.track_id >= 0) {
+                        ++tracked_count;
+                    }
+                }
+                ++impl_->timed_tracking_frame_count;
+                impl_->timed_tracking_object_sum += static_cast<uint64_t>(tracked_count);
+                const double avg_tracked_count =
+                    (impl_->timed_tracking_frame_count > 0)
+                        ? (static_cast<double>(impl_->timed_tracking_object_sum) /
+                            static_cast<double>(impl_->timed_tracking_frame_count))
+                        : 0.0;
+                MaybePrintImageTiming(
+                    impl_->timing_options, impl_->last_timing, is_tracking,
+                    tracked_count, avg_tracked_count);
+            } else {
+                MaybePrintImageTiming(impl_->timing_options, impl_->last_timing, is_tracking);
+            }
+        }
+
         if (impl_->last_raw_results.empty()) {
             last_error_.clear();
             return VISION_SERVICE_OK;
         }
+
         ConvertResults(impl_->last_raw_results, out_results);
         last_error_.clear();
         return VISION_SERVICE_OK;
@@ -236,6 +391,12 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "image must be 3-channel BGR");
     }
     try {
+        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        std::chrono::steady_clock::time_point t0;
+        if (timing_enabled) {
+            ResetAllTiming(&impl_->last_timing);
+            t0 = std::chrono::steady_clock::now();
+        }
         vision_core::BaseModel* model = impl_->model.get();
         if (!model->supports_capability(vision_core::ModelCapability::kEmbedding)) {
             return SetError(VISION_SERVICE_INFER_FAILED, "current model does not support embedding");
@@ -247,6 +408,16 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
         *out_embedding = embedding_model->infer_embedding(image);
         if (out_embedding->empty()) {
             return SetError(VISION_SERVICE_INFER_FAILED, "Embedding output is empty");
+        }
+        if (timing_enabled) {
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto profile = model->get_runtime_profile();
+            impl_->last_timing.preprocess_ms = profile.preprocess_ms;
+            impl_->last_timing.model_infer_ms = profile.model_infer_ms;
+            impl_->last_timing.postprocess_ms = profile.postprocess_ms;
+            impl_->last_timing.embedding_ms =
+                (profile.total_ms > 0.0) ? profile.total_ms : ToMs(t1 - t0);
+            MaybePrintEmbeddingTiming(impl_->timing_options, impl_->last_timing);
         }
         last_error_.clear();
         return VISION_SERVICE_OK;
@@ -275,6 +446,12 @@ VisionServiceStatus VisionService::InferSequence(const float* pts, int image_wid
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "pts must not be null");
     }
     try {
+        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        std::chrono::steady_clock::time_point t0;
+        if (timing_enabled) {
+            ResetAllTiming(&impl_->last_timing);
+            t0 = std::chrono::steady_clock::now();
+        }
         vision_core::BaseModel* model = impl_->model.get();
         if (!model->supports_capability(vision_core::ModelCapability::kSequenceInput)) {
             return SetError(VISION_SERVICE_INFER_FAILED, "current model does not support sequence inference");
@@ -285,6 +462,16 @@ VisionServiceStatus VisionService::InferSequence(const float* pts, int image_wid
                 "Model advertises sequence but ISequenceActionModel is missing");
         }
         *out_scores = seq_model->infer_sequence(pts, image_width, image_height);
+        if (timing_enabled) {
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto profile = model->get_runtime_profile();
+            impl_->last_timing.preprocess_ms = profile.preprocess_ms;
+            impl_->last_timing.model_infer_ms = profile.model_infer_ms;
+            impl_->last_timing.postprocess_ms = profile.postprocess_ms;
+            impl_->last_timing.sequence_ms =
+                (profile.total_ms > 0.0) ? profile.total_ms : ToMs(t1 - t0);
+            MaybePrintSequenceTiming(impl_->timing_options, impl_->last_timing);
+        }
         last_error_.clear();
         return VISION_SERVICE_OK;
     } catch (const std::exception& e) {
@@ -335,6 +522,11 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image, cv::Mat* out_image
     }
 
     try {
+        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        if (timing_enabled) {
+            ResetDrawTiming(&impl_->last_timing);
+        }
+        const auto t0 = timing_enabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         *out_image = image.clone();
         bool has_keypoints = false;
         bool has_mask = false;
@@ -353,6 +545,12 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image, cv::Mat* out_image
             vision_common::draw_tracking_results(*out_image, results, impl_->labels);
         } else {
             vision_common::draw_detections(*out_image, results, impl_->labels);
+        }
+
+        if (timing_enabled) {
+            const auto t1 = std::chrono::steady_clock::now();
+            impl_->last_timing.draw_ms = ToMs(t1 - t0);
+            MaybePrintDrawTiming(impl_->timing_options, impl_->last_timing);
         }
 
         last_error_.clear();
@@ -386,6 +584,35 @@ VisionServiceStatus VisionService::GetLastKeypoints(int result_index,
     }
     last_error_.clear();
     return VISION_SERVICE_OK;
+}
+
+bool VisionService::SupportsDraw() const {
+    return impl_ != nullptr && impl_->model != nullptr &&
+            impl_->model->supports_capability(vision_core::ModelCapability::kDraw);
+}
+
+void VisionService::SetTimingOptions(const VisionServiceTimingOptions& options) {
+    if (impl_ == nullptr) {
+        return;
+    }
+    const bool was_enabled = impl_->timing_options.enabled;
+    impl_->timing_options = options;
+    if (!options.enabled) {
+        ResetAllTiming(&impl_->last_timing);
+        impl_->timed_tracking_frame_count = 0;
+        impl_->timed_tracking_object_sum = 0;
+    } else if (!was_enabled) {
+        ResetAllTiming(&impl_->last_timing);
+        impl_->timed_tracking_frame_count = 0;
+        impl_->timed_tracking_object_sum = 0;
+    }
+}
+
+VisionServiceTiming VisionService::GetLastTiming() const {
+    if (impl_ == nullptr) {
+        return VisionServiceTiming{};
+    }
+    return impl_->last_timing;
 }
 
 std::string VisionService::GetDefaultImage() {

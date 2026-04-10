@@ -8,7 +8,7 @@ cd "$CV_ROOT"
 
 echo "========== Examples =========="
 for dir in examples/resnet examples/yolov8 examples/yolov8_pose examples/yolov8_seg examples/yolov11 \
-           examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
+           examples/yolov5 examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
            examples/bytetrack examples/emotion; do
   if [ -f "$dir/scripts/download_models.sh" ]; then
     echo ">>> $dir"

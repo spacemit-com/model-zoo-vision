@@ -71,7 +71,9 @@ include_directories(
     ${ONNXRUNTIME_INCLUDE_DIR}
     ${SPACEMIT_ORT_INCLUDE_DIR}
     src/deploy/resnet/cpp
+    src/deploy/yolov5/cpp
     src/deploy/yolov8_seg/cpp
+    src/deploy/pp_liteseg/cpp
 )
 
 if(USE_OPENCL)
@@ -104,6 +106,10 @@ set(ARC_FACE_SOURCES
     deploy/arcface/cpp/arcface_recognizer.cpp
 )
 
+set(YOLOV5_SOURCES
+    deploy/yolov5/cpp/yolov5_detector.cpp
+)
+
 set(YOLOV5_FACE_SOURCES
     deploy/yolov5_face/cpp/yolov5_face_detector.cpp
 )
@@ -116,6 +122,10 @@ set(YOLOV8_SEG_SOURCES
     deploy/yolov8_seg/cpp/yolov8_seg_detector.cpp
 )
 
+set(PP_LITESEG_SOURCES
+    deploy/pp_liteseg/cpp/pp_liteseg.cpp
+)
+
 # Create shared library (output: libvision.so)
 add_library(vision SHARED
     ${CORE_SOURCES}
@@ -123,9 +133,11 @@ add_library(vision SHARED
     ${YOLOV8_SOURCES}
     ${YOLOV8_POSE_SOURCES}
     ${ARC_FACE_SOURCES}
+    ${YOLOV5_SOURCES}
     ${YOLOV5_FACE_SOURCES}
     ${RESNET_SOURCES}
     ${YOLOV8_SEG_SOURCES}
+    ${PP_LITESEG_SOURCES}
 )
 
 # Link libraries
@@ -202,6 +214,11 @@ install(DIRECTORY deploy/arcface/cpp/
     FILES_MATCHING PATTERN "*.h"
 )
 
+install(DIRECTORY deploy/yolov5/cpp/
+    DESTINATION include/vision_models/deploy/yolov5
+    FILES_MATCHING PATTERN "*.h"
+)
+
 install(DIRECTORY deploy/yolov5_face/cpp/
     DESTINATION include/vision_models/deploy/yolov5_face
     FILES_MATCHING PATTERN "*.h"
@@ -214,6 +231,11 @@ install(DIRECTORY deploy/resnet/cpp/
 
 install(DIRECTORY deploy/yolov8_seg/cpp/
     DESTINATION include/vision_models/deploy/yolov8_seg
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(DIRECTORY deploy/pp_liteseg/cpp/
+    DESTINATION include/vision_models/deploy/pp_liteseg
     FILES_MATCHING PATTERN "*.h"
 )
 

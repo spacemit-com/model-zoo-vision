@@ -52,12 +52,12 @@ src/deploy/swin_tiny/
 src/deploy/yoloe/
 src/deploy/ocr/
 src/deploy/igev/
-src/deploy/pp_liteseg/
 src/deploy/yolo_world/
 src/deploy/yolov6/
-examples/pp_liteseg/
 .cursorignore
 src/deploy/yolo26/
 web/
 docs/design_roadmap.md
 tests/benchmarks/track_benchmark.cpp
+.cursor/
+bindings/

@@ -1,0 +1,10 @@
+# PP-LiteSeg 语义分割（Cityscapes 19 类 ONNX，与 pp-liteseg/python/utils.py 对齐）
+# 下载：pp-liteseg/model/download_model.sh
+model_path: ~/.cache/models/vision/pp_liteseg/pp_liteseg.q.onnx
+test_image: ~/.cache/assets/image/009_test_unet.jpg
+class: deploy.pp_liteseg.PPLiteSeg
+default_params:
+  num_threads: 4
+  num_classes: 19
+  providers:
+    - SpaceMITExecutionProvider

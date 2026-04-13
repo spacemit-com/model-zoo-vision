@@ -127,22 +127,26 @@ void draw_segmentation(
     const cv::Scalar& box_color,
     int line_thickness) {
     if (results.empty()) return;
-    // Generate random colors for each mask
-    std::vector<cv::Scalar> colors;
-    cv::RNG rng(12345);
-    for (size_t i = 0; i < results.size(); ++i) {
-        colors.push_back(cv::Scalar(
-            rng.uniform(0, 255),
-            rng.uniform(0, 255),
-            rng.uniform(0, 255)));
-    }
+    // Fixed palette for stable and visually pleasing mask colors (BGR).
+    static const std::vector<cv::Scalar> kPalette = {
+        cv::Scalar(56, 56, 255),   cv::Scalar(151, 157, 255), cv::Scalar(31, 112, 255),
+        cv::Scalar(29, 178, 255),  cv::Scalar(49, 210, 207),  cv::Scalar(10, 249, 72),
+        cv::Scalar(23, 204, 146),  cv::Scalar(134, 219, 61),  cv::Scalar(52, 147, 26),
+        cv::Scalar(187, 212, 0),   cv::Scalar(212, 188, 0),   cv::Scalar(255, 157, 151),
+        cv::Scalar(255, 56, 132),  cv::Scalar(255, 102, 187), cv::Scalar(255, 149, 200),
+        cv::Scalar(44, 153, 168),  cv::Scalar(0, 194, 255),   cv::Scalar(52, 69, 147),
+        cv::Scalar(100, 115, 255), cv::Scalar(152, 251, 152)
+    };
 
     // Create overlay image for masks only
     cv::Mat overlay = image.clone();
 
     for (size_t i = 0; i < results.size(); ++i) {
         const auto& result = results[i];
-        cv::Scalar color = colors[i];
+        const int color_index = (result.label >= 0)
+            ? (result.label % static_cast<int>(kPalette.size()))
+            : (static_cast<int>(i) % static_cast<int>(kPalette.size()));
+        cv::Scalar color = kPalette[static_cast<size_t>(color_index)];
 
         // Draw mask if available
         if (result.mask != nullptr && !result.mask->empty()) {
@@ -191,6 +195,11 @@ void draw_segmentation(
 
     for (size_t i = 0; i < results.size(); ++i) {
         const auto& result = results[i];
+        // Negative bbox (e.g. x1 < 0) skips box/label overlay for mask-only semantic layers.
+        if (result.x1 < 0.0f) {
+            continue;
+        }
+
         int x1 = static_cast<int>(result.x1);
         int y1 = static_cast<int>(result.y1);
         int x2 = static_cast<int>(result.x2);

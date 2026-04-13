@@ -89,10 +89,12 @@ file(GLOB_RECURSE CV_COMMON_SOURCES "src/common/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_SOURCES "src/deploy/yolov8/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_POSE_SOURCES "src/deploy/yolov8_pose/cpp/*.cpp")
 file(GLOB_RECURSE CV_ARCFACE_SOURCES "src/deploy/arcface/cpp/*.cpp")
+file(GLOB_RECURSE CV_YOLOV5_SOURCES "src/deploy/yolov5/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV5_FACE_SOURCES "src/deploy/yolov5_face/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV5_GESTURE_SOURCES "src/deploy/yolov5_gesture/cpp/*.cpp")
 file(GLOB_RECURSE CV_RESNET_SOURCES "src/deploy/resnet/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_SEG_SOURCES "src/deploy/yolov8_seg/cpp/*.cpp")
+file(GLOB_RECURSE CV_PP_LITESEG_SOURCES "src/deploy/pp_liteseg/cpp/*.cpp")
 file(GLOB_RECURSE CV_EMOTION_SOURCES "src/deploy/emotion/cpp/*.cpp")
 file(GLOB_RECURSE CV_STGCN_SOURCES "src/deploy/stgcn/cpp/*.cpp")
 file(GLOB_RECURSE CV_BYTETRACK_SOURCES "src/deploy/bytetrack/cpp/src/*.cpp")
@@ -111,10 +113,12 @@ add_library(vision SHARED
     ${CV_YOLOV8_SOURCES}
     ${CV_YOLOV8_POSE_SOURCES}
     ${CV_ARCFACE_SOURCES}
+    ${CV_YOLOV5_SOURCES}
     ${CV_YOLOV5_FACE_SOURCES}
     ${CV_YOLOV5_GESTURE_SOURCES}
     ${CV_RESNET_SOURCES}
     ${CV_YOLOV8_SEG_SOURCES}
+    ${CV_PP_LITESEG_SOURCES}
     ${CV_EMOTION_SOURCES}
     ${CV_STGCN_SOURCES}
     ${CV_BYTETRACK_SOURCES}
@@ -149,10 +153,12 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_pose/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/arcface/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_face/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_gesture/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/resnet/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_seg/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/pp_liteseg/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/emotion/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/stgcn/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp

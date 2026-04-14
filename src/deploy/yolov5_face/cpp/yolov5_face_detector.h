@@ -83,7 +83,7 @@ private:
 
     std::vector<vision_common::Result> non_max_suppression_face(
         const std::vector<Prediction>& predictions);
-    std::vector<std::vector<float>> make_grid(int nx, int ny);
+    std::vector<float> make_grid(int nx, int ny);
 };
 
 }  // namespace vision_deploy

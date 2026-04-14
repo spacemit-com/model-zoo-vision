@@ -61,37 +61,15 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
 
     ensure_model_loaded();
 
-    // Resize to target size (224, 224) - same as Python:
-    // cv2.resize(face_image, (224, 224), interpolation=cv2.INTER_NEAREST)
+    // Resize to target size (224, 224)
     cv::Mat resized;
     cv::resize(image, resized, target_size_, 0, 0, cv::INTER_NEAREST);
 
-    // Convert to float32
-    cv::Mat img_float;
-    resized.convertTo(img_float, CV_32F);
-
-    // Subtract mean values (same as Python)
-    // Python: img_preprocessed[..., 0] -= 91.4953  # B
-    //         img_preprocessed[..., 1] -= 103.8827  # G
-    //         img_preprocessed[..., 2] -= 131.0912  # R
-    std::vector<cv::Mat> channels;
-    cv::split(img_float, channels);
-
-    channels[0] -= 91.4953f;   // B
-    channels[1] -= 103.8827f;  // G
-    channels[2] -= 131.0912f;  // R
-
-    cv::Mat img_preprocessed;
-    cv::merge(channels, img_preprocessed);
-
-    // HWC to CHW and add batch dimension
-    // Python: img_tensor = np.transpose(img_preprocessed, (2, 0, 1))
-    //         img_tensor = np.expand_dims(img_tensor, axis=0)
-    cv::Mat blob = cv::dnn::blobFromImage(img_preprocessed, 1.0,
-                                            target_size_,
-                                            cv::Scalar(0, 0, 0), false, false, CV_32F);
-
-    return blob;
+    // blobFromImage: float conversion, mean subtraction, and HWC->CHW in one call
+    // swapRB=false because emotion model expects BGR order
+    return cv::dnn::blobFromImage(resized, 1.0, target_size_,
+                                    cv::Scalar(91.4953, 103.8827, 131.0912),
+                                    false, false, CV_32F);
 }
 
 std::vector<vision_common::Result> EmotionRecognizer::classify(const cv::Mat& image) {

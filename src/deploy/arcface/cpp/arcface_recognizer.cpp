@@ -64,51 +64,32 @@ cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
     int inputWidth = static_cast<int>(input_shape_[3]);  // width
     int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
-    // Convert BGR to RGB (same as Python: cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    cv::Mat rgb_image;
-    cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
+    // Resize with letterbox using BICUBIC interpolation on uint8 first
+    int orig_h = image.rows;
+    int orig_w = image.cols;
 
-    // Resize with letterbox using BICUBIC interpolation (same as Python PIL Image.BICUBIC)
-    // Python: scale = min(w / iw, h / ih), then resize with BICUBIC
-    int orig_h = rgb_image.rows;
-    int orig_w = rgb_image.cols;
-
-    // Calculate scale ratio (same as Python: scale = min(w / iw, h / ih))
     float scale = std::min(static_cast<float>(inputWidth) / orig_w,
                             static_cast<float>(inputHeight) / orig_h);
 
-    // Compute new dimensions (same as Python: nw = int(iw * scale), nh = int(ih * scale))
     int new_w = static_cast<int>(orig_w * scale);
     int new_h = static_cast<int>(orig_h * scale);
 
-    // Resize with BICUBIC interpolation (same as Python PIL Image.BICUBIC)
     cv::Mat resized;
-    cv::resize(rgb_image, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_CUBIC);
+    cv::resize(image, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_CUBIC);
 
-    // Add padding (same as Python: new_image.paste(image, ((w - nw) // 2, (h - nh) // 2)))
-    // Python uses integer division, so we use the same
     int pad_w = (inputWidth - new_w) / 2;
     int pad_h = (inputHeight - new_h) / 2;
 
-    // Create padded image with gray background (128, 128, 128)
-    cv::Mat padded = cv::Mat::zeros(inputHeight, inputWidth, rgb_image.type());
-    padded.setTo(cv::Scalar(128, 128, 128));
+    // Create padded image with gray background (128, 128, 128) in BGR
+    cv::Mat padded(inputHeight, inputWidth, image.type(), cv::Scalar(128, 128, 128));
+    resized.copyTo(padded(cv::Rect(pad_w, pad_h, new_w, new_h)));
 
-    // Paste resized image in the center (same as Python: new_image.paste(image, (pad_w, pad_h)))
-    cv::Rect roi(pad_w, pad_h, new_w, new_h);
-    resized.copyTo(padded(roi));
-
-    // Convert to float and normalize to [-1, 1].
-    // Use convertTo(scale, shift) to avoid OpenCV multi-channel MatExpr warnings.
-    cv::Mat normalized;
-    padded.convertTo(normalized, CV_32F, 1.0 / 127.5, -1.0);
-
-    // HWC to CHW and add batch dimension (same as Python: np.transpose(img, (2, 0, 1)))
-    cv::Mat blob = cv::dnn::blobFromImage(normalized, 1.0,
-                                        cv::Size(inputWidth, inputHeight),
-                                        cv::Scalar(0, 0, 0), false, false, CV_32F);
-
-    return blob;
+    // blobFromImage: BGR->RGB (swapRB=true), float conversion, scale 1/127.5,
+    // shift -1.0 to normalize to [-1, 1], and HWC->CHW — all in one call
+    return cv::dnn::blobFromImage(padded, 1.0 / 127.5,
+                                    cv::Size(inputWidth, inputHeight),
+                                    cv::Scalar(127.5, 127.5, 127.5),
+                                    true, false, CV_32F);
 }
 
 std::vector<float> ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {

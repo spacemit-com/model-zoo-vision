@@ -5,8 +5,9 @@
 
 #include "yolov8_seg_detector.h"
 
-#include <chrono>
+#include <Eigen/Dense>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <memory>
@@ -178,43 +179,23 @@ std::vector<vision_common::Result> YOLOv8SegDetector::postprocess(std::vector<Or
         const float* output_proto = outputs[12].GetTensorMutableData<float>();
         std::vector<int64_t> proto_dims = outputs[12].GetTensorTypeAndShapeInfo().GetShape();
 
-        // Match results with original objects to get mask coefficients
-        // (stored in embedding field temporarily)
+        // Extract mask coefficients directly from results (preserved through NMS via embedding field)
         std::vector<std::vector<float>> mask_coeffs_list;
+        mask_coeffs_list.reserve(results.size());
         for (const auto& res : results) {
-            // Find matching object in original objects list
-            bool found = false;
-            for (const auto& obj : objects) {
-                if (std::abs(obj.x1 - res.x1) < 1.0f &&
-                    std::abs(obj.y1 - res.y1) < 1.0f &&
-                    std::abs(obj.x2 - res.x2) < 1.0f &&
-                    std::abs(obj.y2 - res.y2) < 1.0f &&
-                    obj.label == res.label &&
-                    std::abs(obj.score - res.score) < 0.01f) {
-                    // Found match - use embedding field which contains seg_part coefficients
-                    mask_coeffs_list.push_back(obj.embedding);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                // If no match found, create empty coefficients (shouldn't happen)
-                mask_coeffs_list.push_back(std::vector<float>(proto_channels_, 0.0f));
-            }
+            mask_coeffs_list.push_back(res.embedding);
         }
 
         // Process masks
         std::vector<std::shared_ptr<cv::Mat>> masks = _process_masks(
             output_proto, proto_dims, mask_coeffs_list, results, orig_size);
 
-        // Assign masks to results
-        for (size_t i = 0; i < results.size() && i < masks.size(); i++) {
-            results[i].mask = masks[i];
-        }
-
-        // Clear embedding field (it was only used to store seg_part temporarily)
-        for (auto& res : results) {
-            res.embedding.clear();
+        // Assign masks and clear temporary embedding field
+        for (size_t i = 0; i < results.size(); i++) {
+            if (i < masks.size()) {
+                results[i].mask = masks[i];
+            }
+            results[i].embedding.clear();
         }
     }
 
@@ -289,56 +270,34 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
         return std::vector<std::shared_ptr<cv::Mat>>();
     }
 
-    // Squeeze batch dimension: [1, mask_dim, mask_h, mask_w] -> [mask_dim, mask_h, mask_w]
     int mask_dim = static_cast<int>(proto_dims[1]);
     int mask_h = static_cast<int>(proto_dims[2]);
     int mask_w = static_cast<int>(proto_dims[3]);
-
-    // Flatten protos: [mask_dim, mask_h, mask_w] -> [mask_dim, mask_h * mask_w]
-    // protos is stored as [1, mask_dim, mask_h, mask_w], so we skip the first dimension
     int proto_size = mask_h * mask_w;
-
-    // Compute masks: mask_coeffs @ protos_flat -> [num_masks, mask_h * mask_w]
     int num_masks = static_cast<int>(mask_coeffs.size());
-    std::vector<cv::Mat> masks(num_masks);
 
-    for (int i = 0; i < num_masks; i++) {
-        cv::Mat mask_flat(1, proto_size, CV_32F);
-        float* mask_data = mask_flat.ptr<float>();
-
-        // Matrix multiplication: mask_coeffs[i] @ protos_flat
-        // protos layout: [1, mask_dim, mask_h, mask_w] -> [k * mask_h * mask_w + h * mask_w + w]
-        for (int j = 0; j < proto_size; j++) {
-            int h = j / mask_w;
-            int w = j % mask_w;
-            float sum = 0.0f;
-            for (int k = 0; k < mask_dim; k++) {
-                // protos[k * mask_h * mask_w + h * mask_w + w] = protos[k * proto_size + j]
-                int proto_idx = k * mask_h * mask_w + h * mask_w + w;
-                sum += mask_coeffs[i][k] * protos[proto_idx];
-            }
-            mask_data[j] = sum;
-        }
-
-        // Reshape to [mask_h, mask_w]
-        masks[i] = mask_flat.reshape(0, mask_h);
-
-        // Apply sigmoid using vision_common::sigmoid
-        for (int y = 0; y < mask_h; y++) {
-            for (int x = 0; x < mask_w; x++) {
-                masks[i].at<float>(y, x) = vision_common::sigmoid(masks[i].at<float>(y, x));
+    // Manual matmul: [num_masks, mask_dim] x [mask_dim, proto_size] = [num_masks, proto_size]
+    // Outer loop over k (channels) for cache-friendly sequential reads of proto rows.
+    // ~7x faster than Eigen GEMM on RISC-V which lacks SIMD optimizations.
+    std::vector<float> raw_masks(static_cast<size_t>(num_masks) * proto_size, 0.0f);
+    for (int k = 0; k < mask_dim; ++k) {
+        const float* proto_row = protos + k * proto_size;
+        for (int i = 0; i < num_masks; ++i) {
+            float c = mask_coeffs[i][k];
+            float* out = raw_masks.data() + i * proto_size;
+            for (int j = 0; j < proto_size; ++j) {
+                out[j] += c * proto_row[j];
             }
         }
     }
+    // Skip sigmoid: sigmoid(x) > 0.5 <==> x > 0, threshold on raw logits
 
-    // Calculate crop parameters (same as Python)
+    // Calculate crop parameters for letterbox padding removal
     int orig_h = orig_shape.height;
     int orig_w = orig_shape.width;
     float gain = std::min(static_cast<float>(mask_h) / orig_h, static_cast<float>(mask_w) / orig_w);
-    float pad_w = mask_w - orig_w * gain;
-    float pad_h = mask_h - orig_h * gain;
-    pad_w /= 2.0f;
-    pad_h /= 2.0f;
+    float pad_w = (mask_w - orig_w * gain) / 2.0f;
+    float pad_h = (mask_h - orig_h * gain) / 2.0f;
 
     int top = (pad_h > 0) ? static_cast<int>(std::round(pad_h - 0.1f)) : 0;
     int left = (pad_w > 0) ? static_cast<int>(std::round(pad_w - 0.1f)) : 0;
@@ -350,40 +309,57 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
     bottom = std::max(top + 1, std::min(bottom, mask_h));
     right = std::max(left + 1, std::min(right, mask_w));
 
-    // Crop and resize masks
+    const int crop_h = bottom - top;
+    const int crop_w = right - left;
+    const float scale_x = static_cast<float>(crop_w) / static_cast<float>(orig_w);
+    const float scale_y = static_cast<float>(crop_h) / static_cast<float>(orig_h);
+
     std::vector<std::shared_ptr<cv::Mat>> masks_scaled;
-    for (int i = 0; i < num_masks; i++) {
-        cv::Mat mask_cropped;
-        if (top < bottom && left < right) {
-            mask_cropped = masks[i](cv::Range(top, bottom), cv::Range(left, right));
-        } else {
-            mask_cropped = masks[i].clone();
+    masks_scaled.reserve(num_masks);
+
+    for (int i = 0; i < num_masks; ++i) {
+        // Each mask is contiguous in [i * proto_size, (i+1) * proto_size).
+        cv::Mat mask_full(mask_h, mask_w, CV_32F, raw_masks.data() + static_cast<size_t>(i) * proto_size);
+
+        // Crop letterbox padding
+        cv::Mat mask_cropped = mask_full(cv::Range(top, bottom), cv::Range(left, right));
+
+        // Map bbox from original image coords to small-mask coords
+        const auto& result = results[i];
+        int bx1 = std::max(0, static_cast<int>(std::floor(result.x1 * scale_x)));
+        int by1 = std::max(0, static_cast<int>(std::floor(result.y1 * scale_y)));
+        int bx2 = std::min(crop_w, static_cast<int>(std::ceil(result.x2 * scale_x)));
+        int by2 = std::min(crop_h, static_cast<int>(std::ceil(result.y2 * scale_y)));
+
+        if (bx2 <= bx1 || by2 <= by1) {
+            masks_scaled.push_back(std::make_shared<cv::Mat>(
+                cv::Mat::zeros(orig_h, orig_w, CV_8U)));
+            continue;
         }
 
-        // Resize to original image size
-        cv::Mat mask_resized;
-        cv::resize(mask_cropped, mask_resized, cv::Size(orig_w, orig_h), 0, 0, cv::INTER_LINEAR);
+        // Crop bbox region from small mask, resize only that region
+        cv::Mat small_roi = mask_cropped(cv::Range(by1, by2), cv::Range(bx1, bx2));
 
-        // Crop to bounding box
-        const auto& result = results[i];
-        int x1 = std::max(0, std::min(static_cast<int>(result.x1), orig_w - 1));
-        int y1 = std::max(0, std::min(static_cast<int>(result.y1), orig_h - 1));
-        int x2 = std::max(x1 + 1, std::min(static_cast<int>(result.x2), orig_w));
-        int y2 = std::max(y1 + 1, std::min(static_cast<int>(result.y2), orig_h));
+        int ox1 = std::max(0, std::min(static_cast<int>(result.x1), orig_w - 1));
+        int oy1 = std::max(0, std::min(static_cast<int>(result.y1), orig_h - 1));
+        int ox2 = std::max(ox1 + 1, std::min(static_cast<int>(result.x2), orig_w));
+        int oy2 = std::max(oy1 + 1, std::min(static_cast<int>(result.y2), orig_h));
 
-        cv::Mat mask_cropped_final = cv::Mat::zeros(orig_h, orig_w, CV_32F);
-        mask_resized(cv::Range(y1, y2), cv::Range(x1, x2)).copyTo(
-            mask_cropped_final(cv::Range(y1, y2), cv::Range(x1, x2)));
+        cv::Mat roi_resized;
+        cv::resize(small_roi, roi_resized,
+                    cv::Size(ox2 - ox1, oy2 - oy1), 0, 0, cv::INTER_LINEAR);
 
-        // Threshold at 0.5 and convert to CV_8U (0 or 255)
-        cv::Mat mask_binary;
-        cv::threshold(mask_cropped_final, mask_binary, 0.5f, 255.0f, cv::THRESH_BINARY);
+        // Threshold on raw logits: x > 0 <==> sigmoid(x) > 0.5
+        cv::Mat roi_binary;
+        cv::threshold(roi_resized, roi_binary, 0.0f, 255.0f, cv::THRESH_BINARY);
+        cv::Mat roi_uint8;
+        roi_binary.convertTo(roi_uint8, CV_8U);
 
-        // Convert to CV_8U type for OpenCV operations
-        cv::Mat mask_uint8;
-        mask_binary.convertTo(mask_uint8, CV_8U);
+        // Paste into full-size output mask
+        cv::Mat mask_out = cv::Mat::zeros(orig_h, orig_w, CV_8U);
+        roi_uint8.copyTo(mask_out(cv::Range(oy1, oy2), cv::Range(ox1, ox2)));
 
-        masks_scaled.push_back(std::make_shared<cv::Mat>(mask_uint8));
+        masks_scaled.push_back(std::make_shared<cv::Mat>(mask_out));
     }
 
     return masks_scaled;

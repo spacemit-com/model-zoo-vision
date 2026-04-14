@@ -45,7 +45,7 @@ cv::Mat letterbox(
     if (orig_w != new_w || orig_h != new_h) {
         cv::resize(image, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
     } else {
-        resized = image.clone();
+        resized = image;
     }
 
     // Add padding (similar to Python: top, bottom = round(dh-0.1), round(dh+0.1))
@@ -68,50 +68,40 @@ cv::Mat preprocess_classification(
     const cv::Scalar& std,
     const cv::Size& resize_size,
     bool center_crop) {
-    // Convert to float and normalize to [0, 1]
-    cv::Mat img_float;
-    image.convertTo(img_float, CV_32F, 1.0 / 255.0);
+    cv::Mat img = image;
 
-    // Convert BGR to RGB
-    cv::Mat img_rgb;
-    cv::cvtColor(img_float, img_rgb, cv::COLOR_BGR2RGB);
-
-    // Resize if needed
+    // Resize on uint8 first — much faster than resizing float32 data
     if (resize_size.width > 0 && resize_size.height > 0) {
-        cv::resize(img_rgb, img_rgb, resize_size, 0, 0, cv::INTER_LINEAR);
+        cv::resize(img, img, resize_size, 0, 0, cv::INTER_LINEAR);
     }
 
-    // Center crop
+    // Center crop on uint8
     if (center_crop && (resize_size.width > 0 && resize_size.height > 0)) {
-        int h = img_rgb.rows;
-        int w = img_rgb.cols;
-        int th = input_shape.first;   // height
-        int tw = input_shape.second;  // width
-        int y0 = (h - th) / 2;
-        int x0 = (w - tw) / 2;
-        img_rgb = img_rgb(cv::Rect(x0, y0, tw, th));
+        int y0 = (img.rows - input_shape.first) / 2;
+        int x0 = (img.cols - input_shape.second) / 2;
+        img = img(cv::Rect(x0, y0, input_shape.second, input_shape.first)).clone();
     } else {
-        // Direct resize to input shape
-        cv::resize(img_rgb, img_rgb, cv::Size(input_shape.second, input_shape.first),
+        cv::resize(img, img, cv::Size(input_shape.second, input_shape.first),
                     0, 0, cv::INTER_LINEAR);
     }
 
-    // Normalize with mean and std
-    std::vector<cv::Mat> channels;
-    cv::split(img_rgb, channels);
+    // blobFromImage: BGR->RGB (swapRB), float conversion, 1/255 scale,
+    // and HWC->CHW in one optimized call
+    cv::Mat blob = cv::dnn::blobFromImage(img, 1.0 / 255.0,
+                                            cv::Size(), cv::Scalar(),
+                                            true, false, CV_32F);
 
-    for (int i = 0; i < 3; ++i) {
-        channels[i] = (channels[i] - mean[i] / 255.0f) / (std[i] / 255.0f);
+    // Per-channel mean/std normalization directly on contiguous CHW memory
+    const int channel_size = input_shape.first * input_shape.second;
+    float* blob_data = blob.ptr<float>();
+    for (int c = 0; c < 3; ++c) {
+        float* ch = blob_data + c * channel_size;
+        const float m = static_cast<float>(mean[c]) / 255.0f;
+        const float inv_s = 255.0f / static_cast<float>(std[c]);
+        for (int i = 0; i < channel_size; ++i) {
+            ch[i] = (ch[i] - m) * inv_s;
+        }
     }
-
-    // Merge channels and convert to CHW format
-    cv::Mat img_chw;
-    cv::merge(channels, img_chw);
-
-    // HWC to CHW and add batch dimension
-    cv::Mat blob = cv::dnn::blobFromImage(img_chw, 1.0,
-                                            cv::Size(input_shape.second, input_shape.first),
-                                            cv::Scalar(0, 0, 0), false, false, CV_32F);
 
     return blob;
 }

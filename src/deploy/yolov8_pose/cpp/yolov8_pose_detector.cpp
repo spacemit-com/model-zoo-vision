@@ -155,16 +155,8 @@ std::vector<vision_common::Result> YOLOv8PoseDetector::postprocess(
     float dw = (inputWidth - unpad_w) / 2.0f;
     float dh = (inputHeight - unpad_h) / 2.0f;
 
-    // Temporary structure to store detection with source keypoints (before decoding)
-    struct DetectionWithSource {
-        vision_common::Result result;
-        std::vector<float> source_keypoints;  // Raw keypoint data (51 values: 17 * 3)
-        int anchor_idx;  // Store anchor index for keypoint decoding
-    };
-
     // First pass: extract all detections with confidence > threshold
-    // Store source keypoints data before decoding (as in reference code)
-    std::vector<DetectionWithSource> objects_with_source;
+    std::vector<vision_common::Result> objects;
     for (int j = 0; j < anchors; ++j) {
         if (output_data[4 * anchors + j] > conf_threshold_) {
             // Decode box
@@ -179,83 +171,30 @@ std::vector<vision_common::Result> YOLOv8PoseDetector::postprocess(
             float y2 = (output_data[anchors + j] + half_height - dh) / ratio;
             y2 = std::max(0.0f, y2);
 
-            DetectionWithSource det;
-            det.result.x1 = x1;
-            det.result.y1 = y1;
-            det.result.x2 = x2;
-            det.result.y2 = y2;
-            det.result.score = output_data[4 * anchors + j];
-            det.result.label = 0;  // Person class for pose detection
-            det.anchor_idx = j;
+            vision_common::Result det;
+            det.x1 = x1;
+            det.y1 = y1;
+            det.x2 = x2;
+            det.y2 = y2;
+            det.score = output_data[4 * anchors + j];
+            det.label = 0;  // Person class for pose detection
 
-            // Store source keypoints data (51 values: k=5 to 55)
-            det.source_keypoints.clear();
-            for (int k = 5; k < 56; ++k) {
-                det.source_keypoints.push_back(output_data[k * anchors + j]);
-            }
-
-            objects_with_source.push_back(det);
-        }
-    }
-
-    // Convert to Result for NMS (only using bounding box info)
-    std::vector<vision_common::Result> objects_for_nms;
-    for (const auto& det : objects_with_source) {
-        objects_for_nms.push_back(det.result);
-    }
-
-    // Apply NMS on bounding boxes first (as in reference code)
-    std::vector<vision_common::Result> objects_nms = nms(objects_for_nms);
-
-    // Second pass: decode keypoints for NMS-filtered detections only
-    // Match NMS results back to source data by anchor index
-    // We need to track which objects survived NMS
-    std::vector<vision_common::Result> final_results;
-
-    // Create a map from Result to anchor index for efficient lookup
-    // Since NMS may change order, we match by finding the closest box
-    for (const auto& nms_result : objects_nms) {
-        // Find the best matching detection in objects_with_source
-        int best_match_idx = -1;
-        float best_match_score = -1.0f;
-
-        for (size_t i = 0; i < objects_with_source.size(); ++i) {
-            const auto& det_with_source = objects_with_source[i];
-            // Match by bounding box and score (with tolerance for floating point)
-            if (std::abs(det_with_source.result.x1 - nms_result.x1) < 1.0f &&
-                std::abs(det_with_source.result.y1 - nms_result.y1) < 1.0f &&
-                std::abs(det_with_source.result.x2 - nms_result.x2) < 1.0f &&
-                std::abs(det_with_source.result.y2 - nms_result.y2) < 1.0f &&
-                std::abs(det_with_source.result.score - nms_result.score) < 0.01f) {
-                // Use score as tie-breaker for best match
-                if (det_with_source.result.score > best_match_score) {
-                    best_match_idx = static_cast<int>(i);
-                    best_match_score = det_with_source.result.score;
-                }
-            }
-        }
-
-        if (best_match_idx >= 0) {
-            // Decode keypoints for this detection (as in reference code)
-            const auto& det_with_source = objects_with_source[best_match_idx];
-            vision_common::Result final_result = nms_result;
-            final_result.keypoints.clear();
-
-            // Decode keypoints: k=0 to 16, each has 3 values (x, y, visibility)
-            // source_keypoints has 51 values: indices 0-50 correspond to k=5-55 in output
-            // So k-th keypoint is at indices [k*3, k*3+1, k*3+2] in source_keypoints
+            // Decode keypoints directly — no need to store raw data separately
+            det.keypoints.reserve(17);
             for (int k = 0; k < 17; ++k) {
                 vision_common::KeyPoint kp;
-                kp.x = (det_with_source.source_keypoints[k * 3] - dw) / ratio;
-                kp.y = (det_with_source.source_keypoints[k * 3 + 1] - dh) / ratio;
-                kp.visibility = det_with_source.source_keypoints[k * 3 + 2];
-                final_result.keypoints.push_back(kp);
+                kp.x = (output_data[(5 + k * 3) * anchors + j] - dw) / ratio;
+                kp.y = (output_data[(5 + k * 3 + 1) * anchors + j] - dh) / ratio;
+                kp.visibility = output_data[(5 + k * 3 + 2) * anchors + j];
+                det.keypoints.push_back(kp);
             }
-            final_results.push_back(final_result);
+
+            objects.push_back(std::move(det));
         }
     }
 
-    return final_results;
+    // NMS preserves keypoints since they're already in the Result objects
+    return nms(objects);
 }
 
 float YOLOv8PoseDetector::calculate_iou(const vision_common::Result& det1, const vision_common::Result& det2) {

@@ -167,7 +167,7 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::postprocess(
         int features = static_cast<int>(dims[4]);  // 16 features
 
         // Create grid
-        std::vector<std::vector<float>> grid = make_grid(nx, ny);
+        std::vector<float> grid = make_grid(nx, ny);
 
         // Process predictions for batch 0
         for (int anchor = 0; anchor < channels; ++anchor) {
@@ -195,9 +195,9 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::postprocess(
                     // Decode coordinates: (y_tmp * 2. - 0.5 + grid) * strides[idx]
                     // Python: y[..., :2] = (y_tmp[..., :2] * 2. - 0.5 + grid) * strides[idx]
                     // grid has shape (1, 1, ny, nx, 2), accessed as grid[h][w] = [x, y]
-                    int grid_idx = h * nx + w;
-                    float x = (x_tmp * 2.0f - 0.5f + grid[grid_idx][0]) * strides[idx];
-                    float y = (y_tmp * 2.0f - 0.5f + grid[grid_idx][1]) * strides[idx];
+                    int grid_idx = (h * nx + w) * 2;
+                    float x = (x_tmp * 2.0f - 0.5f + grid[grid_idx]) * strides[idx];
+                    float y = (y_tmp * 2.0f - 0.5f + grid[grid_idx + 1]) * strides[idx];
 
                     // Decode width/height: (y_tmp[..., 2:4] * 2) ** 2 * init_anchors[idx]
                     // Python: y[..., 2:4] = (y_tmp[..., 2:4] * 2) ** 2 * init_anchors[idx]
@@ -314,17 +314,14 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::non_max_suppression_face(
     return final_results;
 }
 
-std::vector<std::vector<float>> YOLOv5FaceDetector::make_grid(int nx, int ny) {
-    // Same as Python: xv, yv = np.meshgrid(np.arange(ny), np.arange(nx))
-    // Python meshgrid: xv has shape (nx, ny) with xv[i, j] = j, yv has shape (nx, ny) with yv[i, j] = i
-    // After stack: grid[i, j] = [j, i] = [x, y]
-    // Reshape to (1, 1, ny, nx, 2) means grid[h, w] = [w, h] for h in [0, ny), w in [0, nx)
-    std::vector<std::vector<float>> grid;
-    grid.reserve(ny * nx);
+std::vector<float> YOLOv5FaceDetector::make_grid(int nx, int ny) {
+    // Flat array: [w0, h0, w1, h1, ...] — 2 floats per grid cell
+    std::vector<float> grid(static_cast<size_t>(ny * nx * 2));
     for (int h = 0; h < ny; ++h) {
         for (int w = 0; w < nx; ++w) {
-            // grid[h, w] = [w, h] to match Python's reshape(1, 1, ny, nx, 2)
-            grid.push_back({static_cast<float>(w), static_cast<float>(h)});
+            size_t idx = static_cast<size_t>((h * nx + w) * 2);
+            grid[idx] = static_cast<float>(w);
+            grid[idx + 1] = static_cast<float>(h);
         }
     }
     return grid;

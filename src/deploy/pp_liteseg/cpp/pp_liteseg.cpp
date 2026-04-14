@@ -5,6 +5,7 @@
 
 #include "pp_liteseg.h"
 
+#include <Eigen/Dense>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -95,11 +96,9 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
         throw std::runtime_error("PPLiteSeg: invalid input spatial dims in ONNX (expected positive H,W)");
     }
 
-    cv::Mat rgb;
-    cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB);
-
-    const int h = rgb.rows;
-    const int w = rgb.cols;
+    // Compute scale and valid region on original uint8 image
+    const int h = image.rows;
+    const int w = image.cols;
     const float scale = std::min(static_cast<float>(in_h) / static_cast<float>(h),
                                     static_cast<float>(in_w) / static_cast<float>(w));
     const int new_h = static_cast<int>(std::lround(static_cast<float>(h) * scale));
@@ -107,27 +106,27 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
     valid_h = new_h;
     valid_w = new_w;
 
+    // Resize on uint8 first — much cheaper than resizing float32
     cv::Mat resized;
-    cv::resize(rgb, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
+    cv::resize(image, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
 
     cv::Mat padded = cv::Mat::zeros(in_h, in_w, CV_8UC3);
     resized.copyTo(padded(cv::Rect(0, 0, new_w, new_h)));
 
-    cv::Mat f32;
-    padded.convertTo(f32, CV_32FC3, 1.0 / 255.0);
-    cv::subtract(f32, cv::Scalar(mean_val_, mean_val_, mean_val_), f32);
-    cv::divide(f32, cv::Scalar(std_val_, std_val_, std_val_), f32);
+    // blobFromImage: BGR->RGB (swapRB=true), float conversion, 1/255 scale,
+    // and HWC->CHW in one optimized call
+    cv::Mat blob = cv::dnn::blobFromImage(padded, 1.0 / 255.0,
+                                            cv::Size(), cv::Scalar(),
+                                            true, false, CV_32F);
 
-    std::vector<cv::Mat> ch(3);
-    cv::split(f32, ch);
-
-    int sizes[] = {1, 3, in_h, in_w};
-    cv::Mat blob(4, sizes, CV_32F);
-    float* dst = blob.ptr<float>();
+    // Per-channel mean/std normalization directly on contiguous CHW memory
+    const int channel_size = in_h * in_w;
+    float* blob_data = blob.ptr<float>();
     for (int c = 0; c < 3; ++c) {
-        const float* src = ch[static_cast<size_t>(c)].ptr<float>();
-        std::memcpy(dst + static_cast<size_t>(c) * in_h * in_w, src,
-                    static_cast<size_t>(in_h * in_w) * sizeof(float));
+        float* ch = blob_data + c * channel_size;
+        for (int i = 0; i < channel_size; ++i) {
+            ch[i] = (ch[i] - mean_val_) / std_val_;
+        }
     }
 
     return blob;

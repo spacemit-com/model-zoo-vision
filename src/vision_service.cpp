@@ -14,6 +14,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <opencv2/imgcodecs.hpp>  // NOLINT(build/include_order)
@@ -181,13 +182,38 @@ void ConvertResults(const std::vector<vision_common::Result>& raw_results,
         dst.score = src.score;
         dst.label = src.label;
         dst.track_id = src.track_id;
-        out_results->push_back(dst);
+        if (!src.keypoints.empty()) {
+            dst.keypoints.resize(src.keypoints.size());
+            for (size_t i = 0; i < src.keypoints.size(); ++i) {
+                dst.keypoints[i].x = src.keypoints[i].x;
+                dst.keypoints[i].y = src.keypoints[i].y;
+                dst.keypoints[i].visibility = src.keypoints[i].visibility;
+            }
+        }
+        if (src.mask != nullptr && !src.mask->empty()) {
+            dst.mask = src.mask->clone();
+        }
+        out_results->push_back(std::move(dst));
     }
 }
 
 }  // namespace
 
 VisionService::~VisionService() = default;
+
+void VisionService::Release() {
+    if (impl_ == nullptr) {
+        return;
+    }
+    impl_->model.reset();
+    impl_->last_raw_results.clear();
+    impl_->labels.clear();
+    impl_->default_image_path.clear();
+    impl_->last_config_path_value.clear();
+    ResetAllTiming(&impl_->last_timing);
+    impl_->timed_tracking_frame_count = 0;
+    impl_->timed_tracking_object_sum = 0;
+}
 
 std::unique_ptr<VisionService> VisionService::Create(const std::string& config_path,
                                                     const std::string& model_path_override,
@@ -560,30 +586,6 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image, cv::Mat* out_image
     } catch (...) {
         return SetError(VISION_SERVICE_INFER_FAILED, "Unknown error during draw");
     }
-}
-
-VisionServiceStatus VisionService::GetLastKeypoints(int result_index,
-                                                    std::vector<VisionServiceKeypoint>* out_keypoints) {
-    if (impl_ == nullptr || out_keypoints == nullptr) {
-        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "service/out_keypoints must not be null");
-    }
-    out_keypoints->clear();
-    const std::vector<vision_common::Result>& results = impl_->last_raw_results;
-    if (result_index < 0 || static_cast<size_t>(result_index) >= results.size()) {
-        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "result_index out of range");
-    }
-    const std::vector<vision_common::KeyPoint>& kps = results[static_cast<size_t>(result_index)].keypoints;
-    if (kps.empty()) {
-        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "no keypoints in result");
-    }
-    out_keypoints->resize(kps.size());
-    for (size_t i = 0; i < kps.size(); ++i) {
-        (*out_keypoints)[i].x = kps[i].x;
-        (*out_keypoints)[i].y = kps[i].y;
-        (*out_keypoints)[i].visibility = kps[i].visibility;
-    }
-    last_error_.clear();
-    return VISION_SERVICE_OK;
 }
 
 bool VisionService::SupportsDraw() const {

@@ -15,6 +15,12 @@
 
 #include <opencv2/core.hpp>
 
+struct VisionServiceKeypoint {
+    float x;
+    float y;
+    float visibility;
+};
+
 struct VisionServiceResult {
     float x1;
     float y1;
@@ -23,12 +29,8 @@ struct VisionServiceResult {
     float score;
     int label;
     int track_id;
-};
-
-struct VisionServiceKeypoint {
-    float x;
-    float y;
-    float visibility;
+    std::vector<VisionServiceKeypoint> keypoints;  // empty if not a pose result
+    cv::Mat mask;                                    // empty if not a segmentation result
 };
 
 struct VisionServiceTiming {
@@ -91,10 +93,8 @@ public:
 
     VisionServiceStatus Draw(const cv::Mat& image, cv::Mat* out_image);
 
-    VisionServiceStatus GetLastKeypoints(int result_index,
-                                            std::vector<VisionServiceKeypoint>* out_keypoints);
-
     bool SupportsDraw() const;
+    void Release();
     void SetTimingOptions(const VisionServiceTimingOptions& options);
     VisionServiceTiming GetLastTiming() const;
 

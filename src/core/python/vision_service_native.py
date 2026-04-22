@@ -102,10 +102,17 @@ class VisionServiceNative:
         config_path: str,
         model_path_override: str = "",
         lazy_load: bool = False,
+        timing_enabled: bool = True,
+        timing_print_to_stdout: bool = True,
     ) -> VisionServiceNative:
         _require_ext()
         impl = _ext.VisionService.create(config_path, model_path_override, lazy_load)
-        return VisionServiceNative(impl)
+        svc = VisionServiceNative(impl)
+        options = VisionServiceTimingOptions()
+        options.enabled = timing_enabled
+        options.print_to_stdout = timing_print_to_stdout
+        svc.set_timing_options(options)
+        return svc
 
     @staticmethod
     def last_create_error() -> str:
@@ -165,6 +172,9 @@ class VisionServiceNative:
 
     def supports_draw(self) -> bool:
         return self._svc.supports_draw()
+
+    def release(self) -> None:
+        self._svc.release()
 
     def set_timing_options(self, options: object) -> None:
         self._svc.set_timing_options(options)

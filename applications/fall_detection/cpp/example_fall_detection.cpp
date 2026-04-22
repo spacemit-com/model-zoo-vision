@@ -526,9 +526,8 @@ int main(int argc, char** argv) {
             }
             const VisionServiceResult& cr = pose_results[best_idx];
 
-            std::vector<VisionServiceKeypoint> kpts;
-            if (pose_service->GetLastKeypoints(static_cast<int>(best_idx), &kpts) == VISION_SERVICE_OK
-                    && kpts.size() >= 17) {
+            const std::vector<VisionServiceKeypoint>& kpts = cr.keypoints;
+            if (kpts.size() >= 17) {
                 std::vector<float> frame_pts = keypoints_to_stgcn_frame(
                     kpts.data(), static_cast<int>(kpts.size()), frame.cols, frame.rows);
                 keypoint_buffer.push_back(std::move(frame_pts));

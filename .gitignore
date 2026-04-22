@@ -40,24 +40,10 @@ examples/*/model/
 applications/*/models/
 
 # Model dirs in src/deploy that have no example (ignore to avoid untracked deploy-only models)
-src/deploy/efficientnet/
-src/deploy/mobilesam/
-src/deploy/sam/
-src/deploy/yolov8_obb/
-src/deploy/clip/
-src/deploy/inception_v1/
-src/deploy/inception_v3/
-src/deploy/mobilenet_v2/
-src/deploy/swin_tiny/
-src/deploy/yoloe/
-src/deploy/ocr/
-src/deploy/igev/
-src/deploy/yolo_world/
-src/deploy/yolov6/
 .cursorignore
-src/deploy/yolo26/
-web/
 docs/design_roadmap.md
 tests/benchmarks/track_benchmark.cpp
 .cursor/
 bindings/
+ai_gateway.md
+vision_openapi/

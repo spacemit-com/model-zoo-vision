@@ -19,6 +19,7 @@ struct Args {
     std::string config_path;
     std::string image_path;
     std::string image_path2;
+    bool enable_similarity = false;
     std::string model_path_override;
     int runs = 100;
     int warmup = 5;
@@ -44,6 +45,7 @@ bool parse_args(int argc, char** argv, Args& args) {
             args.image_path = argv[++i];
         } else if (a == "--image2" && i + 1 < argc) {
             args.image_path2 = argv[++i];
+            args.enable_similarity = true;
         } else if (a == "--model-path" && i + 1 < argc) {
             args.model_path_override = argv[++i];
         } else if (a == "--runs" && i + 1 < argc) {
@@ -120,10 +122,6 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    if (args.image_path2.empty()) {
-        args.image_path2 = service->GetConfigPathValue("test_image2");
-    }
-
     cv::Mat image;
     const std::string test_video_from_config = service->GetConfigPathValue("test_video");
     if (!test_video_from_config.empty() && args.image_path == test_video_from_config) {
@@ -185,7 +183,6 @@ int main(int argc, char** argv) {
 
     double infer_total = 0.0;
     double draw_total = 0.0;
-    double service_embedding_total = 0.0;
     double service_preprocess_total = 0.0;
     double service_model_infer_total = 0.0;
     double service_postprocess_total = 0.0;
@@ -213,7 +210,6 @@ int main(int argc, char** argv) {
 
         infer_total += to_ms(t1 - t0);
         VisionServiceTiming timing_after_infer = service->GetLastTiming();
-        service_embedding_total += timing_after_infer.embedding_ms;
         service_preprocess_total += timing_after_infer.preprocess_ms;
         service_model_infer_total += timing_after_infer.model_infer_ms;
         service_postprocess_total += timing_after_infer.postprocess_ms;
@@ -243,7 +239,6 @@ int main(int argc, char** argv) {
     }
 
     const double avg_infer = infer_total / args.runs;
-    const double avg_service_embedding = service_embedding_total / args.runs;
     const double avg_service_preprocess = service_preprocess_total / args.runs;
     const double avg_service_model_infer = service_model_infer_total / args.runs;
     const double avg_service_postprocess = service_postprocess_total / args.runs;
@@ -262,7 +257,9 @@ int main(int argc, char** argv) {
         << "Runs: " << args.runs << ", warmup " << args.warmup << "\n"
         << "Avg infer: " << avg_infer << " ms\n";
     if (is_embedding_mode) {
-        std::cout << "Avg embedding: " << avg_service_embedding << " ms\n";
+        std::cout << "Avg preprocess: " << avg_service_preprocess << " ms\n"
+            << "Avg model infer: " << avg_service_model_infer << " ms\n"
+            << "Avg postprocess: " << avg_service_postprocess << " ms\n";
     } else if (looks_like_tracking) {
         std::cout << "Avg detect: " << avg_service_detect << " ms\n"
             << "Avg track: " << avg_service_track << " ms\n";
@@ -276,7 +273,7 @@ int main(int argc, char** argv) {
         << "Avg draw: " << avg_draw << " ms\n"
         << "FPS: " << fps << "\n";
 
-    if (mode == BenchMode::kEmbeddingInfer && !args.image_path2.empty()) {
+    if (mode == BenchMode::kEmbeddingInfer && args.enable_similarity && !args.image_path2.empty()) {
         cv::Mat image2 = cv::imread(args.image_path2);
         if (image2.empty()) {
             std::cerr << "Warning: could not read image2 for similarity: " << args.image_path2 << std::endl;

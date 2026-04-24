@@ -167,9 +167,6 @@ class VisionServiceNative:
             raise TypeError("image must be uint8 BGR (HxWx3)")
         return self._svc.draw(image_bgr_uint8=arr)
 
-    def get_last_keypoints(self, result_index: int) -> Tuple[object, List]:
-        return self._svc.get_last_keypoints(result_index=result_index)
-
     def supports_draw(self) -> bool:
         return self._svc.supports_draw()
 

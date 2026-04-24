@@ -57,3 +57,4 @@ add_application(example_fall_detection fall_detection/cpp/example_fall_detection
 add_application(example_intrusion_identification intrusion_detection/cpp/example_intrusion_identification.cpp bytetrack
     EXTRA_INCLUDES ${CMAKE_SOURCE_DIR}/../../rvv_libs/eigen-rvv/eigen)
 add_application(example_fire_detection fire_detection/cpp/example_fire_detection.cpp yolov8)
+

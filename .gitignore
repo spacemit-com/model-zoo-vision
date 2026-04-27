@@ -47,3 +47,6 @@ tests/benchmarks/track_benchmark.cpp
 bindings/
 ai_gateway.md
 vision_openapi/
+mpp/
+applications/rtsp_detection/
+applications/rtsp_tracking/

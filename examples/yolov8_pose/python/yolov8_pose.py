@@ -26,6 +26,11 @@ from core.python.vision_model_factory import ModelFactory
 from common.python.drawing import draw_keypoints
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="YOLOv8 Pose Estimation Example")
     parser.add_argument("--config", type=str, default=None,
@@ -147,11 +152,10 @@ def main():
         else:
             # 输入图像：命令行优先，否则用 yaml 中的 test_image
             if args.image:
-                image_path = args.image
+                image_path = resolve_path(args.image, project_root)
             else:
                 image_path = config.get("test_image", "test_data/images/person.jpg")
-                if not Path(image_path).is_absolute():
-                    image_path = project_root / image_path
+                image_path = resolve_path(image_path, project_root)
 
             # Load image
             print(f"加载图像: {image_path}")

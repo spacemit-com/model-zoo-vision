@@ -27,6 +27,11 @@ from common.python.drawing import draw_detections
 from common import load_labels
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="YOLOv8 Detection Example")
     parser.add_argument("--config", type=str, default=None,
@@ -88,8 +93,7 @@ def main():
                 # Load labels (路径相对 model_zoo/cv)
                 label_file_path = config.get('label_file_path')
                 if label_file_path:
-                    if not Path(label_file_path).is_absolute():
-                        label_file_path = project_root / label_file_path
+                    label_file_path = resolve_path(label_file_path, project_root)
                     try:
                         labels = load_labels(str(label_file_path))
                         print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")
@@ -101,10 +105,7 @@ def main():
                 if not args.image:
                     test_image = config.get('test_image')
                     if test_image:
-                        if not Path(test_image).is_absolute():
-                            image_path = project_root / test_image
-                        else:
-                            image_path = test_image
+                        image_path = resolve_path(test_image, project_root)
                         print(f"从 yaml 配置读取测试图像: {image_path}")
 
         # Handle camera or image input
@@ -164,7 +165,7 @@ def main():
         else:
             # Determine input image
             if args.image:
-                image_path = args.image
+                image_path = resolve_path(args.image, project_root)
             elif image_path is None:
                 raise ValueError("No test image specified in config and --image not provided")
 

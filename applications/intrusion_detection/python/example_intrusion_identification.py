@@ -267,9 +267,7 @@ def _load_labels_from_config(config: Optional[dict], base_dir: Path) -> Optional
     if not config or "label_file_path" not in config:
         return None
     raw_label_path = config["label_file_path"]
-    label_path = Path(raw_label_path)
-    if not label_path.is_absolute():
-        label_path = (base_dir / raw_label_path).resolve()
+    label_path = _resolve_path(str(raw_label_path), extra_bases=[base_dir])
     if not label_path.exists():
         print(f"警告: 标签文件不存在: {label_path}")
         return None
@@ -315,8 +313,7 @@ def main():
     if not tracker_config_path:
         print("✗ tracker_config_path 未设置，请在 intrusion_detection.yaml 中指定")
         return
-    if not Path(tracker_config_path).is_absolute():
-        tracker_config_path = str((project_root / tracker_config_path).resolve())
+    tracker_config_path = str(_resolve_path(tracker_config_path, extra_bases=[project_root]))
     tracker_config_dir_abs = Path(tracker_config_path).parent
     tracker_model_name = Path(tracker_config_path).stem
     if not tracker_config_dir_abs.is_dir():
@@ -330,10 +327,7 @@ def main():
     if args.video is None and not args.use_camera:
         test_video_path = app_config.get("test_video")
         if test_video_path:
-            if not Path(test_video_path).is_absolute():
-                args.video = str((project_root / test_video_path).resolve())
-            else:
-                args.video = test_video_path
+            args.video = str(_resolve_path(str(test_video_path), extra_bases=[project_root]))
             print(f"从配置读取视频路径: {args.video}")
         else:
             print("错误: 未提供 --video 或 --use-camera，且应用配置中无 test_video")
@@ -347,8 +341,7 @@ def main():
     override_params: Dict = {}
     tracker_path_src = args.model_path or app_config.get("tracker_model_path", "")
     if tracker_path_src:
-        p = Path(tracker_path_src).expanduser()
-        override_params["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        override_params["model_path"] = str(_resolve_path(str(tracker_path_src), extra_bases=[project_root]))
     if args.conf_threshold is not None:
         override_params["conf_threshold"] = args.conf_threshold
     if args.iou_threshold is not None:

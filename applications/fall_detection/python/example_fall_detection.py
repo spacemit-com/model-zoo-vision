@@ -223,6 +223,12 @@ def _load_app_config(config_path: Path) -> dict:
         cfg = yaml.safe_load(f)
     return cfg or {}
 
+
+def _resolve_path(path_str: str, project_root: Path) -> Path:
+    p = Path(path_str).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def main():
     """Main function."""
     args = parse_args()
@@ -254,8 +260,7 @@ def main():
     if args.video is None and not args.use_camera:
         test_video_path = app_config.get("test_video")
         if test_video_path:
-            p = Path(str(test_video_path))
-            args.video = str(p if p.is_absolute() else (project_root / p).resolve())
+            args.video = str(_resolve_path(str(test_video_path), project_root))
             print(f"从配置读取视频路径: {args.video}")
         else:
             print("错误: 未提供 --video 或 --use-camera，且应用配置中无 test_video")
@@ -275,8 +280,7 @@ def main():
     if not pose_config_path:
         print("✗ pose_config_path 未设置，请在 fall_detection.yaml 中指定")
         return
-    if not Path(pose_config_path).is_absolute():
-        pose_config_path = str((project_root / pose_config_path).resolve())
+    pose_config_path = str(_resolve_path(pose_config_path, project_root))
     print(f"姿态模型: {pose_config_path}")
     if args.use_camera:
         print(f"使用摄像头: {args.camera_id}")
@@ -296,8 +300,7 @@ def main():
     override_params = {}
     pose_path_src = args.pose_model if args.pose_model else app_config.get("pose_model_path", "")
     if pose_path_src:
-        p = Path(pose_path_src).expanduser()
-        override_params["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        override_params["model_path"] = str(_resolve_path(pose_path_src, project_root))
     if args.conf_threshold is not None:
         override_params['conf_threshold'] = args.conf_threshold
     if args.iou_threshold is not None:
@@ -328,11 +331,9 @@ def main():
     stgcn_override = {}
     raw_stgcn = app_config.get("stgcn_model_path", "")
     if raw_stgcn:
-        p = Path(raw_stgcn).expanduser()
-        stgcn_override["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        stgcn_override["model_path"] = str(_resolve_path(raw_stgcn, project_root))
     if args.stgcn_model:
-        p = Path(args.stgcn_model).expanduser()
-        stgcn_override["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        stgcn_override["model_path"] = str(_resolve_path(args.stgcn_model, project_root))
     try:
         action_model = create_model(
             model_name=stgcn_model_name,

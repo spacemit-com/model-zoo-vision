@@ -4,7 +4,7 @@
 
 import numpy as np
 import scipy
-import lap
+from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import cdist
 
 from cython_bbox import bbox_overlaps as bbox_ious
@@ -42,15 +42,25 @@ def _indices_to_matches(cost_matrix, indices, thresh):
 def linear_assignment(cost_matrix, thresh):
     if cost_matrix.size == 0:
         return np.empty((0, 2), dtype=int), tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
-    matches, unmatched_a, unmatched_b = [], [], []
-    cost, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=thresh)
-    for ix, mx in enumerate(x):
-        if mx >= 0:
-            matches.append([ix, mx])
-    unmatched_a = np.where(x < 0)[0]
-    unmatched_b = np.where(y < 0)[0]
-    matches = np.asarray(matches)
-    return matches, unmatched_a, unmatched_b
+    # Prefer LAPJV when available; fallback to SciPy Hungarian.
+    try:
+        import lap
+        matches, unmatched_a, unmatched_b = [], [], []
+        _, x, y = lap.lapjv(cost_matrix, extend_cost=True, cost_limit=thresh)
+        for ix, mx in enumerate(x):
+            if mx >= 0:
+                matches.append([ix, mx])
+        unmatched_a = np.where(x < 0)[0]
+        unmatched_b = np.where(y < 0)[0]
+        matches = np.asarray(matches)
+        return matches, unmatched_a, unmatched_b
+    except ImportError:
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        valid = cost_matrix[row_ind, col_ind] <= thresh
+        matches = np.stack([row_ind[valid], col_ind[valid]], axis=1) if np.any(valid) else np.empty((0, 2), dtype=int)
+        unmatched_a = np.setdiff1d(np.arange(cost_matrix.shape[0]), matches[:, 0] if matches.size else np.array([], dtype=int))
+        unmatched_b = np.setdiff1d(np.arange(cost_matrix.shape[1]), matches[:, 1] if matches.size else np.array([], dtype=int))
+        return matches, unmatched_a, unmatched_b
 
 
 def ious(atlbrs, btlbrs):

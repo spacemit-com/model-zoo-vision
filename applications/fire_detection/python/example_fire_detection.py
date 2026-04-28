@@ -110,6 +110,11 @@ def _load_app_config(config_path: Path) -> dict:
     return cfg or {}
 
 
+def _resolve_path(path_str: str, project_root: Path) -> Path:
+    p = Path(path_str).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def main():
     args = parse_args()
     project_root = Path(__file__).resolve().parents[3]
@@ -128,8 +133,7 @@ def main():
     if not detector_config_path:
         print("✗ detector_config_path 未设置，请在 fire_detection.yaml 中指定")
         return 1
-    if not Path(detector_config_path).is_absolute():
-        detector_config_path = str((project_root / detector_config_path).resolve())
+    detector_config_path = str(_resolve_path(detector_config_path, project_root))
     detector_config_dir_abs = Path(detector_config_path).parent
     detector_model_name = Path(detector_config_path).stem
     if not detector_config_dir_abs.is_dir():
@@ -140,8 +144,7 @@ def main():
     override_params = {}
     model_path_src = args.model_path if args.model_path else detector_model_path
     if model_path_src:
-        p = Path(model_path_src).expanduser()
-        override_params["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        override_params["model_path"] = str(_resolve_path(model_path_src, project_root))
     if args.conf_threshold is not None:
         override_params["conf_threshold"] = args.conf_threshold
     if args.iou_threshold is not None:
@@ -153,9 +156,7 @@ def main():
     label_path = app_config.get("label_file_path")
     labels = None
     if label_path:
-        lp = Path(label_path)
-        if not lp.is_absolute():
-            lp = (project_root / label_path).resolve()
+        lp = _resolve_path(label_path, project_root)
         if lp.exists():
             try:
                 labels = load_labels(str(lp))
@@ -169,16 +170,10 @@ def main():
         test_image = app_config.get("test_image")
         test_video = app_config.get("test_video")
         if test_image:
-            args.image = str(
-                (project_root / test_image).resolve()
-                if not Path(test_image).is_absolute() else test_image
-            )
+            args.image = str(_resolve_path(test_image, project_root))
             use_image = True
         elif test_video:
-            args.video = str(
-                (project_root / test_video).resolve()
-                if not Path(test_video).is_absolute() else test_video
-            )
+            args.video = str(_resolve_path(test_video, project_root))
 
     if use_image:
         if not Path(args.image).exists():
@@ -217,7 +212,7 @@ def main():
 
     # 视频或摄像头
     if args.video and not Path(args.video).exists():
-        args.video = str((project_root / args.video).resolve()) if not Path(args.video).is_absolute() else args.video
+        args.video = str(_resolve_path(args.video, project_root))
     if args.video and not Path(args.video).exists():
         print(f"错误: 视频不存在: {args.video}")
         return 1

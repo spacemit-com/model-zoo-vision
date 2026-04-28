@@ -20,6 +20,11 @@ sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
 from core.python.vision_model_factory import ModelFactory
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="PP-LiteSeg Semantic Segmentation Example")
     parser.add_argument(
@@ -73,14 +78,12 @@ def main():
                 config = yaml.safe_load(f) or {}
 
         if args.image:
-            image_path = Path(args.image).expanduser()
+            image_path = resolve_path(args.image, project_root)
         else:
             image_path = config.get("test_image", "")
             if not image_path:
                 raise ValueError("No --image provided and test_image missing in config")
-            image_path = Path(image_path).expanduser()
-            if not image_path.is_absolute():
-                image_path = (project_root / image_path).resolve()
+            image_path = resolve_path(image_path, project_root)
 
         print(f"加载图像: {image_path}")
         image = cv2.imread(str(image_path))

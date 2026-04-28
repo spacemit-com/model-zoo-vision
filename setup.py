@@ -19,7 +19,11 @@ install_requires = [
     "spacemit-ort",
     "Pillow>=10.0.0",
     "scipy>=1.11.0",
-   "pydantic>=2.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "filterpy>=1.4.5",
+    "lap>=0.5.12",
+    "cython-bbox>=0.1.5",
 ]
 
 setup(

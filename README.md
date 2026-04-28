@@ -24,8 +24,7 @@
 ```bash
 # 系统依赖示例（Linux）
 sudo apt-get update
-sudo apt-get install -y python3-spacemit-ort opencv-spacemit
-sudo apt-get install  libeigen3-dev
+sudo apt-get install -y python3-spacemit-ort opencv-spacemit libeigen3-dev spacemit-onnxruntime libyaml-cpp-dev
 
 ```
 

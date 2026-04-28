@@ -23,6 +23,11 @@ from core.python.vision_model_factory import ModelFactory
 from common.python.drawing import draw_detections
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="YOLOv5-Face 人脸检测示例（仅检测）")
     parser.add_argument("--config", type=str, default=None,
@@ -118,17 +123,14 @@ def main():
 
         # 图像文件
         if args.image:
-            image_path = Path(args.image)
+            image_path = resolve_path(args.image, project_root)
         else:
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = yaml.safe_load(f) or {}
             image_path = config.get("test_image", "~/.cache/assets/image/006_test.jpg")
-            if not Path(image_path).is_absolute():
-                image_path = project_root / image_path
-
-        image_path = Path(image_path)
+            image_path = resolve_path(image_path, project_root)
         if not image_path.exists():
             print(f"错误: 图像不存在 {image_path}")
             return 1

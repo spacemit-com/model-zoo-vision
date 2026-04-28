@@ -24,6 +24,11 @@ from core.python.vision_model_factory import ModelFactory
 from common import load_labels
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Emotion Recognition Example")
     parser.add_argument(
@@ -82,8 +87,7 @@ def main():
 
         # Determine image path
         image_path = args.image or config.get("test_image", "~/.cache/assets/image/003_face0.png")
-        if not Path(image_path).is_absolute():
-            image_path = project_root / image_path
+        image_path = resolve_path(image_path, project_root)
 
         print(f"加载图像: {image_path}")
         image = cv2.imread(str(image_path))
@@ -96,8 +100,7 @@ def main():
         labels = None
         label_file_path = config.get("label_file_path")
         if label_file_path:
-            if not Path(label_file_path).is_absolute():
-                label_file_path = project_root / label_file_path
+            label_file_path = resolve_path(label_file_path, project_root)
             try:
                 labels = load_labels(str(label_file_path))
                 print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")

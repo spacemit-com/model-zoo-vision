@@ -45,6 +45,11 @@ def _load_app_config(config_path: Path) -> dict:
     return cfg or {}
 
 
+def _resolve_path(path_str: str, project_root: Path) -> Path:
+    p = Path(path_str).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -128,10 +133,7 @@ def main():
     if args.image is None:
         test_image_path = app_config.get("test_image")
         if test_image_path:
-            if not Path(test_image_path).is_absolute():
-                args.image = str((project_root / test_image_path).resolve())
-            else:
-                args.image = test_image_path
+            args.image = str(_resolve_path(str(test_image_path), project_root))
             print(f"从配置读取图片路径: {args.image}")
         else:
             print("错误: 未提供 --image，且应用配置中无 test_image")
@@ -155,10 +157,8 @@ def main():
     if not face_detector_config_path:
         print("✗ face_detector_config_path 未设置，请在 emotion_detection.yaml 中指定")
         return
-    if not Path(emotion_config_path).is_absolute():
-        emotion_config_path = str((project_root / emotion_config_path).resolve())
-    if not Path(face_detector_config_path).is_absolute():
-        face_detector_config_path = str((project_root / face_detector_config_path).resolve())
+    emotion_config_path = str(_resolve_path(emotion_config_path, project_root))
+    face_detector_config_path = str(_resolve_path(face_detector_config_path, project_root))
     emotion_config_dir_abs = Path(emotion_config_path).parent
     face_detector_config_dir_abs = Path(face_detector_config_path).parent
     emotion_model_name = Path(emotion_config_path).stem
@@ -179,8 +179,7 @@ def main():
     face_override_params = {}
     face_path_src = args.face_model_path or app_config.get("face_detector_path", "")
     if face_path_src:
-        p = Path(face_path_src).expanduser()
-        face_override_params["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        face_override_params["model_path"] = str(_resolve_path(face_path_src, project_root))
     if args.conf_threshold is not None:
         face_override_params["conf_thres"] = args.conf_threshold
     if args.iou_threshold is not None:
@@ -209,8 +208,7 @@ def main():
     emotion_override_params = {}
     emotion_path_src = args.emotion_model_path or app_config.get("emotion_model_path", "")
     if emotion_path_src:
-        p = Path(emotion_path_src).expanduser()
-        emotion_override_params["emotion_model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
+        emotion_override_params["emotion_model_path"] = str(_resolve_path(emotion_path_src, project_root))
     if args.num_threads is not None:
         emotion_override_params["num_threads"] = args.num_threads
     if not emotion_config_dir_abs.is_dir():

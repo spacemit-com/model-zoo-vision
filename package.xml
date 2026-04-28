@@ -7,6 +7,8 @@
   <system_depend>libyaml-cpp-dev</system_depend>
   <system_depend>python3-spacemit-ort</system_depend>
   <system_depend>libeigen3-dev</system_depend>
+  <system_depend>spacemit-onnxruntime</system_depend>
+
 
   <export>
     <build_type>cmake</build_type>

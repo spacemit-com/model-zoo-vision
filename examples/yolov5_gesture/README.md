@@ -10,7 +10,7 @@
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
 
-**数据（测试图片）**：默认测试图 `test_image` 指向 `~/.cache/assets/image/006_test.jpg`。若尚未下载资源，请在 **cv 组件根目录** 执行：
+**数据（测试图片）**：默认测试图 `test_image` 指向 `~/.cache/assets/image/012_gesture.jpg`。若尚未下载资源，请在 **cv 组件根目录** 执行：
 
 ```bash
 bash scripts/download_assets.sh
@@ -25,7 +25,7 @@ bash scripts/download_assets.sh
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov5/yolov5_gesture.q.onnx` |
-| `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
+| `test_image` | 默认测试图片路径 | `~/.cache/assets/image/012_gesture.jpg` |
 | `label_file_path` | 手势类别标签文件 | `assets/labels/gesture.txt` |
 | `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
 | `default_params.conf_threshold` | 置信度阈值 | `0.8` |

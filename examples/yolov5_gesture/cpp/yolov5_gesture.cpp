@@ -161,6 +161,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        image_path = vision_common::resolve_path_for_resource(image_path);
         std::cout << "Loading image: " << image_path << std::endl;
         cv::Mat img = cv::imread(image_path);
         if (img.empty()) {
@@ -202,18 +203,6 @@ int main(int argc, char* argv[]) {
         } else {
             std::cout << "No gesture detected." << std::endl;
             cv::imwrite(output_path, img);
-        }
-
-        try {
-            cv::Mat result_image = cv::imread(output_path);
-            if (!result_image.empty()) {
-                cv::imshow("YOLOv5 Gesture Detection", result_image);
-                std::cout << "Press any key to close window..." << std::endl;
-                cv::waitKey(0);
-                cv::destroyAllWindows();
-            }
-        } catch (...) {
-            std::cout << "Cannot display image (headless environment)" << std::endl;
         }
     }
 

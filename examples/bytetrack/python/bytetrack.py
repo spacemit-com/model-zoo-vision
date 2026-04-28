@@ -23,6 +23,11 @@ from core.python.vision_model_factory import ModelFactory
 from common import load_labels
 
 
+def resolve_path(path_value, project_root):
+    p = Path(path_value).expanduser()
+    return p if p.is_absolute() else (project_root / p).resolve()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ByteTrack Tracker Example")
     parser.add_argument("--config", type=str, default=None,
@@ -92,8 +97,7 @@ def main():
                 # Load labels (路径相对 model_zoo/cv)
                 label_file_path = config.get('label_file_path')
                 if label_file_path:
-                    if not Path(label_file_path).is_absolute():
-                        label_file_path = project_root / label_file_path
+                    label_file_path = resolve_path(label_file_path, project_root)
                     try:
                         labels = load_labels(str(label_file_path))
                         print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")
@@ -105,10 +109,7 @@ def main():
                 if not args.video:
                     test_video = config.get('test_video')
                     if test_video:
-                        if not Path(test_video).is_absolute():
-                            video_path = project_root / test_video
-                        else:
-                            video_path = test_video
+                        video_path = resolve_path(test_video, project_root)
                         print(f"从 yaml 配置读取视频路径: {video_path}")
 
         # Determine input source
@@ -116,7 +117,7 @@ def main():
             video_path = args.camera_id
             print(f"使用摄像头 {args.camera_id}...")
         elif args.video:
-            video_path = args.video
+            video_path = resolve_path(args.video, project_root)
         elif video_path is None:
             raise ValueError("No test video specified in config, --video not provided, and --use-camera not set")
 

@@ -163,12 +163,21 @@ std::vector<vision_common::Result> YOLOv8PoseDetector::postprocess(
             float half_width = output_data[2 * anchors + j] / 2;
             float half_height = output_data[3 * anchors + j] / 2;
             float x1 = (output_data[j] - half_width - dw) / ratio;
-            x1 = std::max(0.0f, x1);
             float y1 = (output_data[anchors + j] - half_height - dh) / ratio;
-            y1 = std::max(0.0f, y1);
             float x2 = (output_data[j] + half_width - dw) / ratio;
-            x2 = std::max(0.0f, x2);
             float y2 = (output_data[anchors + j] + half_height - dh) / ratio;
+
+            // Filter invalid boxes: must have positive area and reasonable size
+            float box_w = x2 - x1;
+            float box_h = y2 - y1;
+            if (box_w < 10.0f || box_h < 10.0f) {
+                continue;
+            }
+
+            // Clamp to image bounds
+            x1 = std::max(0.0f, x1);
+            y1 = std::max(0.0f, y1);
+            x2 = std::max(0.0f, x2);
             y2 = std::max(0.0f, y2);
 
             vision_common::Result det;
@@ -179,14 +188,23 @@ std::vector<vision_common::Result> YOLOv8PoseDetector::postprocess(
             det.score = output_data[4 * anchors + j];
             det.label = 0;  // Person class for pose detection
 
-            // Decode keypoints directly — no need to store raw data separately
+            // Decode keypoints and count visible ones
             det.keypoints.reserve(17);
+            int visible_count = 0;
             for (int k = 0; k < 17; ++k) {
                 vision_common::KeyPoint kp;
                 kp.x = (output_data[(5 + k * 3) * anchors + j] - dw) / ratio;
                 kp.y = (output_data[(5 + k * 3 + 1) * anchors + j] - dh) / ratio;
                 kp.visibility = output_data[(5 + k * 3 + 2) * anchors + j];
                 det.keypoints.push_back(kp);
+                if (kp.visibility > point_confidence_threshold_) {
+                    visible_count++;
+                }
+            }
+
+            // Filter detections with too few visible keypoints (likely false positives)
+            if (visible_count < 3) {
+                continue;
             }
 
             objects.push_back(std::move(det));
@@ -228,6 +246,23 @@ std::vector<vision_common::Result> YOLOv8PoseDetector::nms(const std::vector<vis
     final_dets.reserve(keep_indices.size());
     for (int idx : keep_indices) {
         final_dets.push_back(dets[idx]);
+    }
+
+    std::cout << "[YOLOv8Pose][NMS] before=" << dets.size()
+        << ", kept=" << final_dets.size()
+        << ", iou_threshold=" << iou_threshold_ << std::endl;
+    for (size_t i = 0; i < final_dets.size(); ++i) {
+        const auto& det = final_dets[i];
+        std::cout << "  [det " << i
+            << "] label=" << det.label
+            << ", score=" << det.score
+            << ", box=[" << det.x1 << "," << det.y1 << "," << det.x2 << "," << det.y2 << "]"
+            << ", keypoints=" << det.keypoints.size();
+        if (!det.keypoints.empty()) {
+            const auto& kp0 = det.keypoints[0];
+            std::cout << ", kp0=(" << kp0.x << "," << kp0.y << ",v=" << kp0.visibility << ")";
+        }
+        std::cout << std::endl;
     }
 
     return final_dets;

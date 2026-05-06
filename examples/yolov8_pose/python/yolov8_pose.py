@@ -154,7 +154,7 @@ def main():
             if args.image:
                 image_path = resolve_path(args.image, project_root)
             else:
-                image_path = config.get("test_image", "test_data/images/person.jpg")
+                image_path = config.get("test_image", "~/.cache/assets/image/013_pose.jpg")
                 image_path = resolve_path(image_path, project_root)
 
             # Load image

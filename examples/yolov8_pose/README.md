@@ -10,13 +10,13 @@
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
 
-**数据（测试图片）**：默认测试图 `test_image` 指向 `~/.cache/assets/image/006_test.jpg`。若尚未下载资源，请在 **cv 组件根目录** 执行：
+**数据（测试图片）**：默认测试图 `test_image` 指向 `~/.cache/assets/image/013_pose.jpg`。若尚未下载资源，请在 **cv 组件根目录** 执行：
 
 ```bash
 bash scripts/download_assets.sh
 ```
 
-脚本会将 `image/`、`video/` 等资源下载到 `~/.cache/assets/`，之后即可直接运行示例。
+脚本会将 `image/`、`video/` 等资源下载到 `~/.cache/assets/`（并对默认测试图 `013_pose.jpg` 做了单独拉取）；在本示例下执行 `scripts/download_models.sh` 时也会尝试下载该测试图。之后即可直接运行示例。
 
 ## 2. 配置文件说明（config/yolov8_pose.yaml）
 
@@ -25,7 +25,7 @@ bash scripts/download_assets.sh
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8_pose/yolov8n-pose.q.onnx` |
-| `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
+| `test_image` | 默认测试图片路径 | `~/.cache/assets/image/013_pose.jpg` |
 | `label_file_path` | 类别标签文件（如 COCO） | `assets/labels/coco.txt` |
 | `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |

@@ -58,8 +58,10 @@ def linear_assignment(cost_matrix, thresh):
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
         valid = cost_matrix[row_ind, col_ind] <= thresh
         matches = np.stack([row_ind[valid], col_ind[valid]], axis=1) if np.any(valid) else np.empty((0, 2), dtype=int)
-        unmatched_a = np.setdiff1d(np.arange(cost_matrix.shape[0]), matches[:, 0] if matches.size else np.array([], dtype=int))
-        unmatched_b = np.setdiff1d(np.arange(cost_matrix.shape[1]), matches[:, 1] if matches.size else np.array([], dtype=int))
+        matched_a = matches[:, 0] if matches.size else np.array([], dtype=int)
+        matched_b = matches[:, 1] if matches.size else np.array([], dtype=int)
+        unmatched_a = np.setdiff1d(np.arange(cost_matrix.shape[0]), matched_a)
+        unmatched_b = np.setdiff1d(np.arange(cost_matrix.shape[1]), matched_b)
         return matches, unmatched_a, unmatched_b
 
 

@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import spacemit_ort  # noqa: F401 - register SpaceMITExecutionProvider
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Dict, Any
 from pathlib import Path
 
 from core import BaseModel

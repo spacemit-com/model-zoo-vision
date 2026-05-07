@@ -83,7 +83,7 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
         CV_32F);
 }
 
-std::vector<vision_common::Result> YOLOv5GestureDetector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5GestureDetector::detect(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -100,7 +100,7 @@ std::vector<vision_common::Result> YOLOv5GestureDetector::detect(const cv::Mat& 
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -116,7 +116,7 @@ std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilitie
         vision_core::ModelCapability::kDraw};
 }
 
-std::vector<vision_common::Result> YOLOv5GestureDetector::postprocess(
+vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     std::vector<Ort::Value>& outputs,
     const cv::Size& orig_size) {
 
@@ -166,7 +166,7 @@ std::vector<vision_common::Result> YOLOv5GestureDetector::postprocess(
 
     const float* data = out0.GetTensorMutableData<float>();
 
-    std::vector<vision_common::Result> candidates;
+    vision_common::DetectionResultList candidates;
     candidates.reserve(static_cast<size_t>(num_boxes));
 
     // Iterate proposals
@@ -213,11 +213,8 @@ std::vector<vision_common::Result> YOLOv5GestureDetector::postprocess(
             continue;
         }
 
-        vision_common::Result r;
-        r.x1 = x1;
-        r.y1 = y1;
-        r.x2 = x2;
-        r.y2 = y2;
+        vision_common::DetectionResult r;
+        r.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
         r.score = best_conf;
         r.label = best_cls;
         candidates.push_back(r);
@@ -233,12 +230,13 @@ std::vector<vision_common::Result> YOLOv5GestureDetector::postprocess(
     boxes.reserve(candidates.size());
     scores.reserve(candidates.size());
     for (const auto& cand : candidates) {
-        boxes.emplace_back(cand.x1, cand.y1, cand.x2 - cand.x1, cand.y2 - cand.y1);
+        boxes.emplace_back(cand.bbox.x1, cand.bbox.y1,
+            cand.bbox.x2 - cand.bbox.x1, cand.bbox.y2 - cand.bbox.y1);
         scores.push_back(cand.score);
     }
     std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
 
-    std::vector<vision_common::Result> results;
+    vision_common::DetectionResultList results;
     results.reserve(keep_indices.size());
     for (int idx : keep_indices) {
         results.push_back(candidates[idx]);
@@ -247,12 +245,12 @@ std::vector<vision_common::Result> YOLOv5GestureDetector::postprocess(
     // Scale back to original image size (letterbox-aware)
     const cv::Size input_shape(inputWidth, inputHeight);
     for (auto& r : results) {
-        float coords[4] = {r.x1, r.y1, r.x2, r.y2};
+        float coords[4] = {r.bbox.x1, r.bbox.y1, r.bbox.x2, r.bbox.y2};
         vision_common::scale_coords(input_shape, coords, orig_size);
-        r.x1 = coords[0];
-        r.y1 = coords[1];
-        r.x2 = coords[2];
-        r.y2 = coords[3];
+        r.bbox.x1 = coords[0];
+        r.bbox.y1 = coords[1];
+        r.bbox.x2 = coords[2];
+        r.bbox.y2 = coords[3];
     }
 
     return results;

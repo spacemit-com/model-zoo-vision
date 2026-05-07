@@ -15,6 +15,10 @@
 
 #include "spacemit_ort_env.h"
 
+#ifdef DEBUG
+#include <thread>
+#endif
+
 namespace vision_core {
 
 struct RuntimeProfile {
@@ -34,27 +38,81 @@ enum class ModelCapability {
     kTrackUpdate
 };
 
+/**
+ * @brief Base class for all vision models
+ *
+ * @thread_safety IMPORTANT: This class is NOT thread-safe.
+ *
+ * Thread Safety Rules:
+ * 1. load_model(), warmup(), release() must be called from a single thread
+ * 2. Inference methods (detect, classify, etc.) CANNOT be called concurrently
+ *    on the same instance from multiple threads
+ * 3. ONNX Runtime Session::Run() is NOT thread-safe
+ *
+ * Correct Multi-threading Usage:
+ * - Option 1: Create separate model instances for each thread (RECOMMENDED)
+ * - Option 2: Use a thread pool with one model instance per worker thread
+ * - Option 3: Protect with mutex (NOT recommended, serializes inference)
+ *
+ * See docs/THREAD_SAFETY.md for detailed examples.
+ */
 class BaseModel {
 public:
     explicit BaseModel(const std::string& model_path, bool lazy_load = false);
     virtual ~BaseModel();
 
+    /**
+     * @brief Load model from disk
+     * @thread_safety NOT thread-safe. Must be called before any inference.
+     */
     virtual void load_model() = 0;
 
+    /**
+     * @brief Warm up the model with dummy input
+     * @thread_safety NOT thread-safe. Call after load_model(), before inference.
+     */
     virtual void warmup();
 
+    /**
+     * @brief Release model resources
+     * @thread_safety NOT thread-safe. Do not call while inference is running.
+     */
     virtual void release();
 
+    /**
+     * @brief Get model capabilities
+     * @thread_safety Thread-safe (read-only after construction)
+     */
     virtual std::vector<ModelCapability> get_capabilities() const;
 
+    /**
+     * @brief Check if model supports a capability
+     * @thread_safety Thread-safe (read-only after construction)
+     */
     bool supports_capability(ModelCapability capability) const;
 
+    /**
+     * @brief Get input shape
+     * @thread_safety Thread-safe after load_model() completes
+     */
     virtual std::vector<int64_t> get_input_shape() const;
 
+    /**
+     * @brief Get model information
+     * @thread_safety Thread-safe (read-only)
+     */
     virtual std::string get_model_info() const;
 
+    /**
+     * @brief Get runtime profiling data
+     * @thread_safety NOT thread-safe. Only call from the same thread that ran inference.
+     */
     RuntimeProfile get_runtime_profile() const;
 
+    /**
+     * @brief Reset runtime profiling data
+     * @thread_safety NOT thread-safe.
+     */
     void reset_runtime_profile();
 
 protected:
@@ -76,6 +134,10 @@ protected:
 
     void init_session(int num_threads = 4, const std::string& provider = "SpaceMITExecutionProvider");
 
+    /**
+     * @brief Run ONNX Runtime inference
+     * @thread_safety NOT thread-safe. ONNX Runtime Session::Run() is not thread-safe.
+     */
     std::vector<Ort::Value> run_session(const cv::Mat& input_blob);
 
     Ort::MemoryInfo memory_info_{nullptr};
@@ -87,6 +149,19 @@ protected:
     void set_runtime_detect_ms(double ms);
     void set_runtime_track_ms(double ms);
     void set_runtime_total_ms(double ms);
+
+#ifdef DEBUG
+    /**
+     * @brief Check thread safety in debug mode
+     * @note Only active in DEBUG builds. Zero overhead in release builds.
+     */
+    void check_thread_safety(const char* method_name) const;
+
+private:
+    mutable std::thread::id owner_thread_;
+#else
+    void check_thread_safety(const char* method_name) const {}
+#endif
 };
 
 }  // namespace vision_core

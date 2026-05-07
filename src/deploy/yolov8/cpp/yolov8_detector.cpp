@@ -96,7 +96,7 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
 
 
 
-std::vector<vision_common::Result> YOLOv8Detector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv8Detector::detect(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -113,7 +113,7 @@ std::vector<vision_common::Result> YOLOv8Detector::detect(const cv::Mat& image) 
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -134,7 +134,7 @@ void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
                                 const float* scores, const float* score_sum,
                                 const std::vector<int64_t>& dims,
                                 int tensor_width, int tensor_height,
-                                std::vector<vision_common::Result>& objects) {
+                                vision_common::DetectionResultList& objects) {
     int grid_w = static_cast<int>(dims[2]);
     int grid_h = static_cast<int>(dims[3]);
     int anchors_per_branch = grid_w * grid_h;
@@ -169,24 +169,23 @@ void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
             // Use common dfl_decode function
             auto [x1, y1, x2, y2] = vision_common::dfl_decode(boxes, anchor_idx,
                 anchors_per_branch, grid_h, scale_w, scale_h, scale2orign, pad_w, pad_h);
-            vision_common::Result result;
-            result.x1 = x1;
-            result.y1 = y1;
-            result.x2 = x2;
-            result.y2 = y2;
+
+            // Create strongly-typed DetectionResult
+            vision_common::DetectionResult result;
+            result.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
             result.label = classId;
             result.score = max_score;
-            result.keypoints.clear();  // Empty for detection
+
             objects.push_back(result);
         }
     }
 }
 
-std::vector<vision_common::Result> YOLOv8Detector::postprocess(
+vision_common::DetectionResultList YOLOv8Detector::postprocess(
     std::vector<Ort::Value>& outputs,
     const cv::Size& orig_size) {
 
-    std::vector<vision_common::Result> objects;
+    vision_common::DetectionResultList objects;
 
     // Process each output branch (3 branches with 3 outputs each: boxes, scores, score_sum)
     size_t output_num = outputs.size();

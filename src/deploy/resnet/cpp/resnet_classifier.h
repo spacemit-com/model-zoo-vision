@@ -45,7 +45,7 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    std::vector<vision_common::Result> classify(const cv::Mat& image) override;
+    vision_common::ClassificationResultList classify(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -53,7 +53,7 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    std::vector<vision_common::Result> postprocess(std::vector<Ort::Value>& outputs);
+    vision_common::ClassificationResultList postprocess(std::vector<Ort::Value>& outputs);
 
 private:
     int num_threads_;

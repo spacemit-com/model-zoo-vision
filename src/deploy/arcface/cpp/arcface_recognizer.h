@@ -50,9 +50,9 @@ public:
     /**
      * @brief Run inference and return face embedding
      * @param image Input face image in BGR format
-     * @return Normalized face embedding vector (128 dimensions)
+     * @return Face embedding result with normalized vector (128 dimensions)
      */
-    std::vector<float> infer_embedding(const cv::Mat& image);
+    vision_common::EmbeddingResult infer_embedding(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 

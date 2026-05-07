@@ -94,6 +94,10 @@ BaseModel::BaseModel(const std::string& model_path, bool lazy_load)
     : model_path_(model_path), model_loaded_(false), lazy_load_(lazy_load) {
     env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "VisionModel");
 
+#ifdef DEBUG
+    owner_thread_ = std::thread::id{};  // 初始化为空，第一次调用时设置
+#endif
+
     if (!lazy_load) {
         (void)0;  // Subclass may load in constructor
     }
@@ -234,6 +238,7 @@ void BaseModel::init_session(int num_threads, const std::string& provider) {
 }
 
 std::vector<Ort::Value> BaseModel::run_session(const cv::Mat& input_blob) {
+    check_thread_safety("run_session");
     ensure_model_loaded();
 
     if (input_blob.empty()) {
@@ -266,5 +271,40 @@ std::vector<Ort::Value> BaseModel::run_session(const cv::Mat& input_blob) {
 
     return outputs;
 }
+
+#ifdef DEBUG
+void BaseModel::check_thread_safety(const char* method_name) const {
+    std::thread::id current_thread = std::this_thread::get_id();
+
+    if (owner_thread_ == std::thread::id{}) {
+        // 第一次调用，记录线程 ID
+        owner_thread_ = current_thread;
+    } else if (owner_thread_ != current_thread) {
+        // 检测到线程安全违规
+        std::ostringstream oss;
+        oss << "\n"
+            << "========================================\n"
+            << "THREAD SAFETY VIOLATION DETECTED!\n"
+            << "========================================\n"
+            << "Method: BaseModel::" << method_name << "()\n"
+            << "Expected thread: " << owner_thread_ << "\n"
+            << "Actual thread:   " << current_thread << "\n"
+            << "\n"
+            << "This model instance is being accessed from multiple threads.\n"
+            << "ONNX Runtime Session::Run() is NOT thread-safe.\n"
+            << "\n"
+            << "Solutions:\n"
+            << "1. Create separate model instances for each thread (RECOMMENDED)\n"
+            << "2. Use a thread pool with one model per worker\n"
+            << "3. Protect with mutex (NOT recommended)\n"
+            << "\n"
+            << "See docs/THREAD_SAFETY.md for examples.\n"
+            << "========================================\n";
+
+        std::cerr << oss.str() << std::endl;
+        throw std::runtime_error("Thread safety violation in " + std::string(method_name));
+    }
+}
+#endif
 
 }  // namespace vision_core

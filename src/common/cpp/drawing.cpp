@@ -13,16 +13,16 @@ namespace vision_common {
 
 void draw_detections(
     cv::Mat& image,
-    const std::vector<vision_common::Result>& detections,
+    const std::vector<vision_common::DetectionResult>& detections,
     const std::vector<std::string>& labels,
     const cv::Scalar& box_color,
     int line_thickness) {
     if (detections.empty()) return;
     for (const auto& det : detections) {
-        int ix1 = static_cast<int>(det.x1);
-        int iy1 = static_cast<int>(det.y1);
-        int ix2 = static_cast<int>(det.x2);
-        int iy2 = static_cast<int>(det.y2);
+        int ix1 = static_cast<int>(det.bbox.x1);
+        int iy1 = static_cast<int>(det.bbox.y1);
+        int ix2 = static_cast<int>(det.bbox.x2);
+        int iy2 = static_cast<int>(det.bbox.y2);
 
         // Draw bounding box
         cv::rectangle(image, cv::Point(ix1, iy1), cv::Point(ix2, iy2), box_color, line_thickness);
@@ -35,9 +35,6 @@ void draw_detections(
             } else {
                 labelText = "Class " + std::to_string(det.label) + ": " + std::to_string(det.score).substr(0, 4);
             }
-            if (det.track_id >= 0) {
-                labelText += " ID:" + std::to_string(det.track_id);
-            }
 
             cv::putText(image, labelText, cv::Point(ix1, iy1 - 10),
                         cv::FONT_HERSHEY_SIMPLEX, 0.9, box_color, line_thickness);
@@ -47,7 +44,7 @@ void draw_detections(
 
 void draw_keypoints(
     cv::Mat& image,
-    const std::vector<vision_common::Result>& results,
+    const std::vector<vision_common::PoseResult>& results,
     float point_confidence_threshold,
     const cv::Scalar& box_color,
     const cv::Scalar& kp_color,
@@ -67,10 +64,10 @@ void draw_keypoints(
     };
 
     for (const auto& result : results) {
-        int x1 = static_cast<int>(result.x1);
-        int y1 = static_cast<int>(result.y1);
-        int x2 = static_cast<int>(result.x2);
-        int y2 = static_cast<int>(result.y2);
+        int x1 = static_cast<int>(result.bbox.x1);
+        int y1 = static_cast<int>(result.bbox.y1);
+        int x2 = static_cast<int>(result.bbox.x2);
+        int y2 = static_cast<int>(result.bbox.y2);
 
         // Draw bounding box
         cv::rectangle(image, cv::Point(x1, y1), cv::Point(x2, y2), box_color, line_thickness);
@@ -121,7 +118,7 @@ void draw_keypoints(
 
 void draw_segmentation(
     cv::Mat& image,
-    const std::vector<vision_common::Result>& results,
+    const std::vector<vision_common::SegmentationResult>& results,
     const std::vector<std::string>& labels,
     float alpha,
     const cv::Scalar& box_color,
@@ -196,14 +193,14 @@ void draw_segmentation(
     for (size_t i = 0; i < results.size(); ++i) {
         const auto& result = results[i];
         // Negative bbox (e.g. x1 < 0) skips box/label overlay for mask-only semantic layers.
-        if (result.x1 < 0.0f) {
+        if (result.bbox.x1 < 0.0f) {
             continue;
         }
 
-        int x1 = static_cast<int>(result.x1);
-        int y1 = static_cast<int>(result.y1);
-        int x2 = static_cast<int>(result.x2);
-        int y2 = static_cast<int>(result.y2);
+        int x1 = static_cast<int>(result.bbox.x1);
+        int y1 = static_cast<int>(result.bbox.y1);
+        int x2 = static_cast<int>(result.bbox.x2);
+        int y2 = static_cast<int>(result.bbox.y2);
 
         cv::rectangle(image, cv::Point(x1, y1), cv::Point(x2, y2), box_color, line_thickness);
 
@@ -213,9 +210,6 @@ void draw_segmentation(
                 labelText = labels[result.label] + ": " + std::to_string(result.score).substr(0, 4);
             } else {
                 labelText = "Class " + std::to_string(result.label) + ": " + std::to_string(result.score).substr(0, 4);
-            }
-            if (result.track_id >= 0) {
-                labelText += " ID:" + std::to_string(result.track_id);
             }
             int label_y = std::max(2, y1 - 10);
             cv::putText(image, labelText, cv::Point(x1, label_y),
@@ -241,7 +235,7 @@ cv::Scalar get_track_color(int track_id) {
 
 void draw_tracking_results(
     cv::Mat& image,
-    const std::vector<Result>& results,
+    const std::vector<TrackingResult>& results,
     const std::vector<std::string>& labels,
     int line_thickness) {
     if (results.empty()) return;
@@ -251,8 +245,8 @@ void draw_tracking_results(
 
         // Draw bounding box
         cv::rectangle(image,
-                        cv::Point(static_cast<int>(result.x1), static_cast<int>(result.y1)),
-                        cv::Point(static_cast<int>(result.x2), static_cast<int>(result.y2)),
+                        cv::Point(static_cast<int>(result.bbox.x1), static_cast<int>(result.bbox.y1)),
+                        cv::Point(static_cast<int>(result.bbox.x2), static_cast<int>(result.bbox.y2)),
                         color, line_thickness);
 
         // Prepare label text: class ID score (one line)
@@ -267,17 +261,61 @@ void draw_tracking_results(
         // Draw label background (clamp to image to avoid negative coordinates)
         int baseline = 0;
         cv::Size text_size = cv::getTextSize(label_text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
-        int label_y_top = std::max(0, static_cast<int>(result.y1) - text_size.height - 5);
-        int label_y_bottom = static_cast<int>(result.y1);
+        int label_y_top = std::max(0, static_cast<int>(result.bbox.y1) - text_size.height - 5);
+        int label_y_bottom = static_cast<int>(result.bbox.y1);
         cv::rectangle(image,
-                        cv::Point(static_cast<int>(result.x1), label_y_top),
-                        cv::Point(static_cast<int>(result.x1) + text_size.width, label_y_bottom),
+                        cv::Point(static_cast<int>(result.bbox.x1), label_y_top),
+                        cv::Point(static_cast<int>(result.bbox.x1) + text_size.width, label_y_bottom),
                         color, -1);
 
         // Draw label text
         cv::putText(image, label_text,
-                        cv::Point(static_cast<int>(result.x1), std::max(2, static_cast<int>(result.y1) - 5)),
+                        cv::Point(static_cast<int>(result.bbox.x1), std::max(2, static_cast<int>(result.bbox.y1) - 5)),
                         cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+    }
+}
+
+// Generic draw function that handles ModelResult variant
+void draw_results(
+    cv::Mat& image,
+    const std::vector<ModelResult>& results,
+    const std::vector<std::string>& labels,
+    int line_thickness) {
+    if (results.empty()) return;
+
+    // Separate results by type
+    std::vector<DetectionResult> detections;
+    std::vector<PoseResult> poses;
+    std::vector<SegmentationResult> segmentations;
+    std::vector<TrackingResult> trackings;
+
+    for (const auto& result : results) {
+        std::visit([&](const auto& r) {
+            using T = std::decay_t<decltype(r)>;
+            if constexpr (std::is_same_v<T, DetectionResult>) {
+                detections.push_back(r);
+            } else if constexpr (std::is_same_v<T, PoseResult>) {
+                poses.push_back(r);
+            } else if constexpr (std::is_same_v<T, SegmentationResult>) {
+                segmentations.push_back(r);
+            } else if constexpr (std::is_same_v<T, TrackingResult>) {
+                trackings.push_back(r);
+            }
+        }, result);
+    }
+
+    // Draw each type with appropriate function
+    if (!detections.empty()) {
+        draw_detections(image, detections, labels, cv::Scalar(0, 255, 0), line_thickness);
+    }
+    if (!poses.empty()) {
+        draw_keypoints(image, poses, 0.2f, cv::Scalar(0, 255, 0), cv::Scalar(255, 0, 0), line_thickness, 5);
+    }
+    if (!segmentations.empty()) {
+        draw_segmentation(image, segmentations, labels, 0.5f, cv::Scalar(0, 255, 0), line_thickness);
+    }
+    if (!trackings.empty()) {
+        draw_tracking_results(image, trackings, labels, line_thickness);
     }
 }
 

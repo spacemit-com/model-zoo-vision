@@ -251,8 +251,8 @@ cv::Mat PPLiteSeg::postprocess_to_label_map(std::vector<Ort::Value>& outputs,
     return pred_origin;
 }
 
-std::vector<vision_common::Result> PPLiteSeg::split_semantic_masks(const cv::Mat& label_u8) {
-    std::vector<vision_common::Result> out;
+vision_common::SegmentationResultList PPLiteSeg::split_semantic_masks(const cv::Mat& label_u8) {
+    vision_common::SegmentationResultList out;
     if (label_u8.empty() || label_u8.type() != CV_8U) {
         return out;
     }
@@ -266,8 +266,8 @@ std::vector<vision_common::Result> PPLiteSeg::split_semantic_masks(const cv::Mat
         cv::Mat m255;
         bin.convertTo(m255, CV_8U, 255.0);
 
-        vision_common::Result r;
-        r.x1 = r.y1 = r.x2 = r.y2 = -1.0f;
+        vision_common::SegmentationResult r;
+        r.bbox = vision_common::BoundingBox{0, 0, static_cast<float>(bin.cols), static_cast<float>(bin.rows)};
         r.label = cid;
         r.score = 1.0f;
         r.mask = std::make_shared<cv::Mat>(m255);
@@ -276,7 +276,7 @@ std::vector<vision_common::Result> PPLiteSeg::split_semantic_masks(const cv::Mat
     return out;
 }
 
-std::vector<vision_common::Result> PPLiteSeg::segment(const cv::Mat& image) {
+vision_common::SegmentationResultList PPLiteSeg::segment(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -298,7 +298,7 @@ std::vector<vision_common::Result> PPLiteSeg::segment(const cv::Mat& image) {
 
     const auto t_post0 = std::chrono::steady_clock::now();
     cv::Mat label_map = postprocess_to_label_map(outputs, origin_h, origin_w, valid_h, valid_w);
-    std::vector<vision_common::Result> results = split_semantic_masks(label_map);
+    vision_common::SegmentationResultList results = split_semantic_masks(label_map);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 

@@ -41,7 +41,7 @@ public:
 
     void load_model() override;
     cv::Mat preprocess(const cv::Mat& image);
-    std::vector<vision_common::Result> detect(const cv::Mat& image) override;
+    vision_common::DetectionResultList detect(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -49,7 +49,7 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    std::vector<vision_common::Result> postprocess(std::vector<Ort::Value>& outputs,
+    vision_common::DetectionResultList postprocess(std::vector<Ort::Value>& outputs,
                                                     const cv::Size& orig_size);
 
 private:

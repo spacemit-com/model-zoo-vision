@@ -40,7 +40,7 @@
 #include <yaml-cpp/yaml.h>  // NOLINT(build/include_order)
 
 using vision_common::KeyPoint;
-using vision_common::Result;
+using vision_common::PoseResult;
 using vision_common::draw_keypoints;
 
 namespace {
@@ -151,7 +151,7 @@ cv::Point2f avg_if_valid(const cv::Point2f& a, const cv::Point2f& b) {
     return nan_pt();
 }
 
-bool detect_fall(const std::vector<KeyPoint>& keypoints, const Result& r, float kp_threshold, FallInfo& info_out) {
+bool detect_fall(const std::vector<KeyPoint>& keypoints, const PoseResult& r, float kp_threshold, FallInfo& info_out) {
     if (keypoints.size() < 17) return false;
 
     // COCO indices
@@ -175,8 +175,8 @@ bool detect_fall(const std::vector<KeyPoint>& keypoints, const Result& r, float 
     cv::Point2f hip_center = avg_if_valid(kp[LEFT_HIP], kp[RIGHT_HIP]);
     cv::Point2f ankle_center = avg_if_valid(kp[LEFT_ANKLE], kp[RIGHT_ANKLE]);
 
-    float bbox_width = r.x2 - r.x1;
-    float bbox_height = r.y2 - r.y1;
+    float bbox_width = r.bbox.x2 - r.bbox.x1;
+    float bbox_height = r.bbox.y2 - r.bbox.y1;
     float aspect_ratio = (bbox_height > 0.0f) ? (bbox_width / bbox_height) : 0.0f;
 
     bool vertical_check = false;
@@ -226,20 +226,20 @@ bool detect_fall(const std::vector<KeyPoint>& keypoints, const Result& r, float 
     return is_fall;
 }
 
-void draw_one_pose_with_action(cv::Mat& image, const Result& r, float kp_threshold,
+void draw_one_pose_with_action(cv::Mat& image, const PoseResult& r, float kp_threshold,
                                 const StgcnResult& stgcn_result) {
     bool is_fall = stgcn_result.is_fall;
     cv::Scalar box_color = is_fall ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0);
     cv::Scalar kp_color = is_fall ? cv::Scalar(0, 0, 255) : cv::Scalar(255, 0, 0);
 
-    std::vector<Result> one{r};
+    std::vector<PoseResult> one{r};
     draw_keypoints(image, one, kp_threshold, box_color, kp_color, 2, 4);
 
     std::string status = stgcn_result.action_name.empty() ? "—" : stgcn_result.action_name;
-    int x1 = static_cast<int>(r.x1);
-    int y1 = static_cast<int>(r.y1);
-    int x2 = static_cast<int>(r.x2);
-    int y2 = static_cast<int>(r.y2);
+    int x1 = static_cast<int>(r.bbox.x1);
+    int y1 = static_cast<int>(r.bbox.y1);
+    int x2 = static_cast<int>(r.bbox.x2);
+    int y2 = static_cast<int>(r.bbox.y2);
 
     int baseline = 0;
     cv::Size ts = cv::getTextSize(status, cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, &baseline);
@@ -570,9 +570,10 @@ int main(int argc, char** argv) {
                 }
             }
 
-            Result best;
-            best.x1 = cr.x1; best.y1 = cr.y1; best.x2 = cr.x2; best.y2 = cr.y2;
-            best.score = cr.score; best.label = cr.label; best.track_id = cr.track_id;
+            PoseResult best;
+            best.bbox = vision_common::BoundingBox{cr.x1, cr.y1, cr.x2, cr.y2};
+            best.score = cr.score;
+            best.label = cr.label;
             if (!kpts.empty()) {
                 best.keypoints.resize(kpts.size());
                 for (size_t i = 0; i < kpts.size(); ++i) {

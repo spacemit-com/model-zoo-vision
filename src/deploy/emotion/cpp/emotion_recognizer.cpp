@@ -72,7 +72,7 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
                                     false, false, CV_32F);
 }
 
-std::vector<vision_common::Result> EmotionRecognizer::classify(const cv::Mat& image) {
+vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -91,7 +91,7 @@ std::vector<vision_common::Result> EmotionRecognizer::classify(const cv::Mat& im
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs);
+    vision_common::ClassificationResultList results = postprocess(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -105,7 +105,7 @@ std::vector<vision_core::ModelCapability> EmotionRecognizer::get_capabilities() 
     return {vision_core::ModelCapability::kImageInput};
 }
 
-std::vector<vision_common::Result> EmotionRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
+vision_common::ClassificationResultList EmotionRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
     // Check if outputs is valid
     if (outputs.empty()) {
         throw std::runtime_error("Postprocess: outputs is empty");
@@ -153,17 +153,13 @@ std::vector<vision_common::Result> EmotionRecognizer::postprocess(std::vector<Or
     int emotion_class = static_cast<int>(max_it - class_scores.begin());
     float emotion_score = *max_it;
 
-    // Create Result object
-    vision_common::Result result;
-    result.x1 = 0.0f;
-    result.y1 = 0.0f;
-    result.x2 = 0.0f;
-    result.y2 = 0.0f;
+    // Create ClassificationResult object
+    vision_common::ClassificationResult result;
     result.score = emotion_score;
     result.label = emotion_class;
     result.class_scores = class_scores;
 
-    return std::vector<vision_common::Result>{result};
+    return vision_common::ClassificationResultList{result};
 }
 
 // Self-registration (runs at program startup)

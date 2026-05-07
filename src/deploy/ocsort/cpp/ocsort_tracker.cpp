@@ -107,14 +107,14 @@ cv::Mat OCSortTracker::preprocess(const cv::Mat& image) {
     return detector_->preprocess(image);
 }
 
-std::vector<vision_common::Result> OCSortTracker::track(const cv::Mat& image) {
+vision_common::TrackingResultList OCSortTracker::track(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Run detection
     const auto t_det0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> detections = detector_->detect(image);
+    vision_common::DetectionResultList detections = detector_->detect(image);
     const auto t_det1 = std::chrono::steady_clock::now();
     set_runtime_detect_ms(std::chrono::duration<double, std::milli>(t_det1 - t_det0).count());
 
@@ -125,8 +125,8 @@ std::vector<vision_common::Result> OCSortTracker::track(const cv::Mat& image) {
     // Update tracker
     std::vector<Eigen::RowVectorXf> tracks = tracker_->update(dets);
 
-    // Convert back to Result format with track_id and preserve label information
-    std::vector<vision_common::Result> results = convert_tracks_to_results(tracks, detections);
+    // Convert back to TrackingResult format with track_id and preserve label information
+    vision_common::TrackingResultList results = convert_tracks_to_results(tracks, detections);
     const auto t_track1 = std::chrono::steady_clock::now();
     set_runtime_track_ms(std::chrono::duration<double, std::milli>(t_track1 - t_track0).count());
 
@@ -144,7 +144,7 @@ std::vector<vision_core::ModelCapability> OCSortTracker::get_capabilities() cons
 }
 
 Eigen::MatrixXf OCSortTracker::convert_results_to_dets(
-    const std::vector<vision_common::Result>& results) {
+    const vision_common::DetectionResultList& results) {
     if (results.empty()) {
         return Eigen::MatrixXf(0, 6);
     }
@@ -153,10 +153,10 @@ Eigen::MatrixXf OCSortTracker::convert_results_to_dets(
     Eigen::MatrixXf dets(results.size(), 6);
 
     for (size_t i = 0; i < results.size(); ++i) {
-        dets(i, 0) = results[i].x1;
-        dets(i, 1) = results[i].y1;
-        dets(i, 2) = results[i].x2;
-        dets(i, 3) = results[i].y2;
+        dets(i, 0) = results[i].bbox.x1;
+        dets(i, 1) = results[i].bbox.y1;
+        dets(i, 2) = results[i].bbox.x2;
+        dets(i, 3) = results[i].bbox.y2;
         dets(i, 4) = results[i].score;
         dets(i, 5) = static_cast<float>(results[i].label);
     }
@@ -188,37 +188,37 @@ float OCSortTracker::calculate_iou(float x1_1, float y1_1, float x2_1, float y2_
     return inter_area / union_area;
 }
 
-std::vector<vision_common::Result> OCSortTracker::convert_tracks_to_results(
+vision_common::TrackingResultList OCSortTracker::convert_tracks_to_results(
     const std::vector<Eigen::RowVectorXf>& tracks,
-    const std::vector<vision_common::Result>& detections) {
+    const vision_common::DetectionResultList& detections) {
 
-    std::vector<vision_common::Result> results;
+    vision_common::TrackingResultList results;
     results.reserve(tracks.size());
 
     for (const auto& track : tracks) {
-        vision_common::Result result;
+        vision_common::TrackingResult result;
 
         // OC-SORT output format: [x1, y1, x2, y2, track_id, ...]
         // Note: The exact format depends on OC-SORT implementation
         if (track.size() >= 5) {
-            result.x1 = track(0);
-            result.y1 = track(1);
-            result.x2 = track(2);
-            result.y2 = track(3);
+            result.bbox = vision_common::BoundingBox{
+                static_cast<float>(track(0)),
+                static_cast<float>(track(1)),
+                static_cast<float>(track(2)),
+                static_cast<float>(track(3))
+            };
             result.track_id = static_cast<int>(track(4));
 
             // Default score (OC-SORT may not preserve score)
             result.score = 1.0f;
+            result.state = vision_common::TrackingResult::State::Confirmed;
 
             // Match with detections to find label using IoU
             float max_iou = 0.0f;
             int best_match_idx = -1;
 
             for (size_t i = 0; i < detections.size(); ++i) {
-                float iou = calculate_iou(
-                    result.x1, result.y1, result.x2, result.y2,
-                    detections[i].x1, detections[i].y1, detections[i].x2,
-                    detections[i].y2);
+                float iou = result.bbox.iou(detections[i].bbox);
                 if (iou > max_iou && iou > 0.5f) {
                     max_iou = iou;
                     best_match_idx = static_cast<int>(i);

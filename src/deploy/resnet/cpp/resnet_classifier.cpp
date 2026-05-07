@@ -78,7 +78,7 @@ cv::Mat ResNetClassifier::preprocess(const cv::Mat& image) {
     return blob;
 }
 
-std::vector<vision_common::Result> ResNetClassifier::classify(const cv::Mat& image) {
+vision_common::ClassificationResultList ResNetClassifier::classify(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -97,7 +97,7 @@ std::vector<vision_common::Result> ResNetClassifier::classify(const cv::Mat& ima
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs);
+    vision_common::ClassificationResultList results = postprocess(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -111,7 +111,7 @@ std::vector<vision_core::ModelCapability> ResNetClassifier::get_capabilities() c
     return {vision_core::ModelCapability::kImageInput};
 }
 
-std::vector<vision_common::Result> ResNetClassifier::postprocess(std::vector<Ort::Value>& outputs) {
+vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vector<Ort::Value>& outputs) {
     // Extract logits from outputs
     const float* output_data = outputs[0].GetTensorMutableData<float>();
     auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
@@ -141,17 +141,13 @@ std::vector<vision_common::Result> ResNetClassifier::postprocess(std::vector<Ort
     int top_class = std::max_element(class_scores.begin(), class_scores.end()) - class_scores.begin();
     float top_score = class_scores[top_class];
 
-    // Create Result object
-    vision_common::Result result;
-    result.x1 = 0.0f;
-    result.y1 = 0.0f;
-    result.x2 = 0.0f;
-    result.y2 = 0.0f;
+    // Create ClassificationResult object
+    vision_common::ClassificationResult result;
     result.score = top_score;
     result.label = top_class;
     result.class_scores = class_scores;
 
-    return std::vector<vision_common::Result>{result};
+    return vision_common::ClassificationResultList{result};
 }
 
 // Self-registration (runs at program startup)

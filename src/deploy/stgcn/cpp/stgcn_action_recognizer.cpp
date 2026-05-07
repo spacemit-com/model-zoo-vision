@@ -68,7 +68,7 @@ std::string StgcnActionRecognizer::get_class_name(int pred_class) const {
     return std::to_string(pred_class);
 }
 
-std::vector<float> StgcnActionRecognizer::predict(const std::vector<float>& pts,
+vision_common::ActionResult StgcnActionRecognizer::predict(const std::vector<float>& pts,
                                                 int image_width,
                                                 int image_height) {
     if (pts.size() < static_cast<size_t>(kSequenceLength * kNumKeypoints * 3)) {
@@ -77,7 +77,7 @@ std::vector<float> StgcnActionRecognizer::predict(const std::vector<float>& pts,
     return predict(pts.data(), image_width, image_height);
 }
 
-std::vector<float> StgcnActionRecognizer::predict(const float* pts,
+vision_common::ActionResult StgcnActionRecognizer::predict(const float* pts,
                                                 int image_width,
                                                 int image_height) {
     ensure_model_loaded();
@@ -184,12 +184,21 @@ std::vector<float> StgcnActionRecognizer::predict(const float* pts,
     const auto t_total1 = std::chrono::steady_clock::now();
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t_total1 - t_total0).count());
 
-    return scores;
+    // Create ActionResult
+    vision_common::ActionResult result;
+    result.class_scores = scores;
+
+    // Find the action with highest score
+    auto max_it = std::max_element(scores.begin(), scores.end());
+    result.label = static_cast<int>(max_it - scores.begin());
+    result.score = *max_it;
+
+    return result;
 }
 
-std::vector<float> StgcnActionRecognizer::infer_sequence(const float* pts,
-                                                        int image_width,
-                                                        int image_height) {
+vision_common::ActionResult StgcnActionRecognizer::infer_sequence(const float* pts,
+    int image_width,
+    int image_height) {
     return predict(pts, image_width, image_height);
 }
 

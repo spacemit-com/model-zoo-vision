@@ -31,7 +31,7 @@
 struct VisionService::Impl {
     std::unique_ptr<vision_core::BaseModel> model;
     std::string config_path;
-    std::vector<vision_common::Result> last_raw_results;
+    std::vector<vision_common::ModelResult> last_raw_results;
     std::vector<std::string> labels;
     std::string default_image_path;
     std::string last_config_path_value;
@@ -169,30 +169,85 @@ std::vector<std::string> loadLabelsForConfig(const YAML::Node& config, const std
     }
 }
 
-void ConvertResults(const std::vector<vision_common::Result>& raw_results,
+void ConvertResults(const std::vector<vision_common::ModelResult>& raw_results,
                     std::vector<VisionServiceResult>* out_results) {
     out_results->clear();
     out_results->reserve(raw_results.size());
-    for (const auto& src : raw_results) {
+
+    for (const auto& result : raw_results) {
         VisionServiceResult dst{};
-        dst.x1 = src.x1;
-        dst.y1 = src.y1;
-        dst.x2 = src.x2;
-        dst.y2 = src.y2;
-        dst.score = src.score;
-        dst.label = src.label;
-        dst.track_id = src.track_id;
-        if (!src.keypoints.empty()) {
-            dst.keypoints.resize(src.keypoints.size());
-            for (size_t i = 0; i < src.keypoints.size(); ++i) {
-                dst.keypoints[i].x = src.keypoints[i].x;
-                dst.keypoints[i].y = src.keypoints[i].y;
-                dst.keypoints[i].visibility = src.keypoints[i].visibility;
+
+        // Use visitor pattern to convert each variant type
+        std::visit([&dst](const auto& r) {
+            using T = std::decay_t<decltype(r)>;
+
+            if constexpr (std::is_same_v<T, vision_common::DetectionResult>) {
+                dst.x1 = r.bbox.x1;
+                dst.y1 = r.bbox.y1;
+                dst.x2 = r.bbox.x2;
+                dst.y2 = r.bbox.y2;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = -1;
+            } else if constexpr (std::is_same_v<T, vision_common::PoseResult>) {
+                dst.x1 = r.bbox.x1;
+                dst.y1 = r.bbox.y1;
+                dst.x2 = r.bbox.x2;
+                dst.y2 = r.bbox.y2;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = -1;
+
+                // Convert keypoints
+                dst.keypoints.reserve(r.keypoints.size());
+                for (const auto& kp : r.keypoints) {
+                    VisionServiceKeypoint vsk;
+                    vsk.x = kp.x;
+                    vsk.y = kp.y;
+                    vsk.visibility = kp.visibility;
+                    dst.keypoints.push_back(vsk);
+                }
+            } else if constexpr (std::is_same_v<T, vision_common::SegmentationResult>) {
+                dst.x1 = r.bbox.x1;
+                dst.y1 = r.bbox.y1;
+                dst.x2 = r.bbox.x2;
+                dst.y2 = r.bbox.y2;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = -1;
+
+                // Copy mask (shared_ptr -> Mat, one copy)
+                if (r.mask != nullptr && !r.mask->empty()) {
+                    dst.mask = *r.mask;  // Direct copy, no extra clone
+                }
+            } else if constexpr (std::is_same_v<T, vision_common::ClassificationResult>) {
+                dst.x1 = dst.y1 = dst.x2 = dst.y2 = 0.0f;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = -1;
+            } else if constexpr (std::is_same_v<T, vision_common::TrackingResult>) {
+                dst.x1 = r.bbox.x1;
+                dst.y1 = r.bbox.y1;
+                dst.x2 = r.bbox.x2;
+                dst.y2 = r.bbox.y2;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = r.track_id;
+            } else if constexpr (std::is_same_v<T, vision_common::EmbeddingResult>) {
+                // Embedding: no bbox, only score
+                dst.x1 = dst.y1 = dst.x2 = dst.y2 = 0.0f;
+                dst.score = r.score;
+                dst.label = -1;
+                dst.track_id = -1;
+            } else if constexpr (std::is_same_v<T, vision_common::ActionResult>) {
+                // Action: no bbox, only label and score
+                dst.x1 = dst.y1 = dst.x2 = dst.y2 = 0.0f;
+                dst.score = r.score;
+                dst.label = r.label;
+                dst.track_id = -1;
             }
-        }
-        if (src.mask != nullptr && !src.mask->empty()) {
-            dst.mask = src.mask->clone();
-        }
+        }, result);
+
         out_results->push_back(std::move(dst));
     }
 }
@@ -283,12 +338,20 @@ VisionServiceStatus VisionService::InferImage(const std::string& image_path,
     if (out_results == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_results must not be null");
     }
+    out_results->clear();
+
     if (image_path.empty()) {
+        if (impl_ != nullptr) {
+            impl_->last_raw_results.clear();
+        }
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "image_path must not be empty");
     }
 
     cv::Mat image = cv::imread(image_path);
     if (image.empty()) {
+        if (impl_ != nullptr) {
+            impl_->last_raw_results.clear();
+        }
         return SetError(VISION_SERVICE_IO_FAILED, std::string("Failed to read image: ") + image_path);
     }
 
@@ -303,17 +366,22 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
     out_results->clear();
 
     if (impl_ == nullptr || impl_->model == nullptr) {
+        if (impl_ != nullptr) {
+            impl_->last_raw_results.clear();  // Clear on error (only if impl_ exists)
+        }
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "service/model must not be null");
     }
     if (image.empty()) {
+        impl_->last_raw_results.clear();  // Clear on error
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "image must not be empty");
     }
     if (image.channels() != 3) {
+        impl_->last_raw_results.clear();  // Clear on error
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "image must be 3-channel BGR");
     }
 
     try {
-        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        const bool timing_enabled = impl_->timing_options.enabled;
         std::chrono::steady_clock::time_point t0;
         if (timing_enabled) {
             ResetImageTiming(&impl_->last_timing);
@@ -324,23 +392,50 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
         if (is_tracking) {
             auto* tracking_model = dynamic_cast<vision_core::ITrackingModel*>(model);
             if (tracking_model != nullptr) {
-                impl_->last_raw_results = tracking_model->track(image);
+                auto results = tracking_model->track(image);
+                impl_->last_raw_results.clear();
+                impl_->last_raw_results.reserve(results.size());
+                for (auto& r : results) {
+                    impl_->last_raw_results.push_back(std::move(r));
+                }
             } else {
+                impl_->last_raw_results.clear();  // Clear on error
                 return SetError(VISION_SERVICE_INFER_FAILED, "Model advertises tracking but ITrackingModel is missing");
             }
         } else if (auto* pose_model = dynamic_cast<vision_core::IPoseModel*>(model);
                     pose_model != nullptr) {
-            impl_->last_raw_results = pose_model->estimate_pose(image);
+            auto results = pose_model->estimate_pose(image);
+            impl_->last_raw_results.clear();
+            impl_->last_raw_results.reserve(results.size());
+            for (auto& r : results) {
+                impl_->last_raw_results.push_back(std::move(r));
+            }
         } else if (auto* seg_model = dynamic_cast<vision_core::ISegmentationModel*>(model);
                     seg_model != nullptr) {
-            impl_->last_raw_results = seg_model->segment(image);
+            auto results = seg_model->segment(image);
+            impl_->last_raw_results.clear();
+            impl_->last_raw_results.reserve(results.size());
+            for (auto& r : results) {
+                impl_->last_raw_results.push_back(std::move(r));
+            }
         } else if (auto* det_model = dynamic_cast<vision_core::IDetectionModel*>(model);
                     det_model != nullptr) {
-            impl_->last_raw_results = det_model->detect(image);
+            auto results = det_model->detect(image);
+            impl_->last_raw_results.clear();
+            impl_->last_raw_results.reserve(results.size());
+            for (auto& r : results) {
+                impl_->last_raw_results.push_back(std::move(r));
+            }
         } else if (auto* cls_model = dynamic_cast<vision_core::IClassificationModel*>(model);
                     cls_model != nullptr) {
-            impl_->last_raw_results = cls_model->classify(image);
+            auto results = cls_model->classify(image);
+            impl_->last_raw_results.clear();
+            impl_->last_raw_results.reserve(results.size());
+            for (auto& r : results) {
+                impl_->last_raw_results.push_back(std::move(r));
+            }
         } else {
+            impl_->last_raw_results.clear();  // Clear on error
             return SetError(VISION_SERVICE_INFER_FAILED, "Model does not provide a supported image task interface");
         }
 
@@ -354,8 +449,12 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             if (is_tracking) {
                 int tracked_count = 0;
                 for (const auto& r : impl_->last_raw_results) {
-                    if (r.track_id >= 0) {
-                        ++tracked_count;
+                    // Check if it's a TrackingResult with valid track_id
+                    if (std::holds_alternative<vision_common::TrackingResult>(r)) {
+                        const auto& tr = std::get<vision_common::TrackingResult>(r);
+                        if (tr.track_id >= 0) {
+                            ++tracked_count;
+                        }
                     }
                 }
                 ++impl_->timed_tracking_frame_count;
@@ -382,8 +481,10 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
         last_error_.clear();
         return VISION_SERVICE_OK;
     } catch (const std::exception& e) {
+        impl_->last_raw_results.clear();  // Clear on exception
         return SetError(VISION_SERVICE_INFER_FAILED, e.what());
     } catch (...) {
+        impl_->last_raw_results.clear();  // Clear on exception
         return SetError(VISION_SERVICE_INFER_FAILED, "Unknown error during inference");
     }
 }
@@ -417,7 +518,7 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "image must be 3-channel BGR");
     }
     try {
-        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        const bool timing_enabled = impl_->timing_options.enabled;
         std::chrono::steady_clock::time_point t0;
         if (timing_enabled) {
             ResetAllTiming(&impl_->last_timing);
@@ -431,7 +532,8 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
         if (embedding_model == nullptr) {
             return SetError(VISION_SERVICE_INFER_FAILED, "Model advertises embedding but IEmbeddingModel is missing");
         }
-        *out_embedding = embedding_model->infer_embedding(image);
+        vision_common::EmbeddingResult result = embedding_model->infer_embedding(image);
+        *out_embedding = std::move(result.embedding);
         if (out_embedding->empty()) {
             return SetError(VISION_SERVICE_INFER_FAILED, "Embedding output is empty");
         }
@@ -472,7 +574,7 @@ VisionServiceStatus VisionService::InferSequence(const float* pts, int image_wid
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "pts must not be null");
     }
     try {
-        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        const bool timing_enabled = impl_->timing_options.enabled;
         std::chrono::steady_clock::time_point t0;
         if (timing_enabled) {
             ResetAllTiming(&impl_->last_timing);
@@ -487,7 +589,8 @@ VisionServiceStatus VisionService::InferSequence(const float* pts, int image_wid
             return SetError(VISION_SERVICE_INFER_FAILED,
                 "Model advertises sequence but ISequenceActionModel is missing");
         }
-        *out_scores = seq_model->infer_sequence(pts, image_width, image_height);
+        vision_common::ActionResult result = seq_model->infer_sequence(pts, image_width, image_height);
+        *out_scores = std::move(result.class_scores);
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
@@ -542,36 +645,21 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image, cv::Mat* out_image
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "current model does not support draw");
     }
 
-    const std::vector<vision_common::Result>& results = impl_->last_raw_results;
+    const std::vector<vision_common::ModelResult>& results = impl_->last_raw_results;
     if (results.empty()) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "No results to draw; run inference first");
     }
 
     try {
-        const bool timing_enabled = (impl_ != nullptr) && impl_->timing_options.enabled;
+        const bool timing_enabled = impl_->timing_options.enabled;
         if (timing_enabled) {
             ResetDrawTiming(&impl_->last_timing);
         }
         const auto t0 = timing_enabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         *out_image = image.clone();
-        bool has_keypoints = false;
-        bool has_mask = false;
-        bool has_track_id = false;
-        for (const auto& r : results) {
-            if (!r.keypoints.empty()) has_keypoints = true;
-            if (r.mask != nullptr && !r.mask->empty()) has_mask = true;
-            if (r.track_id >= 0) has_track_id = true;
-        }
 
-        if (has_keypoints) {
-            vision_common::draw_keypoints(*out_image, results);
-        } else if (has_mask) {
-            vision_common::draw_segmentation(*out_image, results, impl_->labels);
-        } else if (has_track_id) {
-            vision_common::draw_tracking_results(*out_image, results, impl_->labels);
-        } else {
-            vision_common::draw_detections(*out_image, results, impl_->labels);
-        }
+        // Use the generic draw_results function that handles ModelResult variants
+        vision_common::draw_results(*out_image, results, impl_->labels);
 
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();

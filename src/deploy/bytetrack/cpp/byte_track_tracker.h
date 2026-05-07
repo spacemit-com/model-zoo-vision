@@ -65,7 +65,7 @@ public:
      * @param image Input image
      * @return Vector of tracking results with track_id
      */
-    std::vector<vision_common::Result> track(const cv::Mat& image);
+    vision_common::TrackingResultList track(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -84,16 +84,16 @@ private:
     std::unique_ptr<BYTETracker> tracker_;
 
     /**
-     * @brief Convert Result to Object format for tracker
+     * @brief Convert DetectionResult to Object format for tracker
      */
-    std::vector<Object> convert_results_to_objects(const std::vector<vision_common::Result>& results);
+    std::vector<Object> convert_results_to_objects(const vision_common::DetectionResultList& results);
 
     /**
-     * @brief Convert STrack to Result format, preserving label from detections
+     * @brief Convert STrack to TrackingResult format, preserving label from detections
      */
-    std::vector<vision_common::Result> convert_stracks_to_results(
+    vision_common::TrackingResultList convert_stracks_to_results(
         const std::vector<STrack>& stracks,
-        const std::vector<vision_common::Result>& detections);
+        const vision_common::DetectionResultList& detections);
 };
 
 }  // namespace vision_deploy

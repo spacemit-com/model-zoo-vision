@@ -14,10 +14,9 @@ function(add_model_example example_name deploy_dir)
         link_vision_with_registration(${example_name})
         target_link_libraries(${example_name} PRIVATE ${LIBS})
         
-        # Include directories: public API; src for common/cpp (e.g. image_processing) when needed
+        # Examples must only depend on the public API headers under include/.
         target_include_directories(${example_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/include
-            ${CMAKE_SOURCE_DIR}/src
         )
         
         # Add to install list

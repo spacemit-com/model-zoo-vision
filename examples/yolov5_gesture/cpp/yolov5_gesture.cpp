@@ -16,9 +16,35 @@
 #include <yaml-cpp/yaml.h>     // NOLINT(build/include_order)
 
 #include "vision_service.h"  // NOLINT(build/include_order)
-#include "common/cpp/datatype.h"  // NOLINT(build/include_order)
-#include "common/cpp/drawing.h"  // NOLINT(build/include_order)
-#include "common/cpp/image_processing.h"  // NOLINT(build/include_order)
+
+namespace {
+
+// Resolve a resource path: absolute paths pass through; relative paths are tried
+// as-is, then under "../" (handles running examples from build/ subdir).
+std::string ResolveResourcePath(const std::string& path) {
+    if (path.empty() || path[0] == '/' || (path.size() >= 2 && path[1] == ':')) {
+        return path;
+    }
+    if (std::filesystem::exists(path)) return path;
+    const std::string with_parent = "../" + path;
+    if (std::filesystem::exists(with_parent)) return with_parent;
+    return path;
+}
+
+// Load labels: one entry per non-empty line.
+std::vector<std::string> LoadLabels(const std::string& label_file) {
+    std::vector<std::string> labels;
+    std::ifstream file(label_file);
+    if (!file.is_open()) return labels;
+    std::string line;
+    while (std::getline(file, line)) {
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (!line.empty()) labels.push_back(line);
+    }
+    return labels;
+}
+
+}  // namespace
 
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " <config_yaml> [options]\n"
@@ -81,8 +107,8 @@ int main(int argc, char* argv[]) {
         try {
             YAML::Node config = YAML::LoadFile(config_path);
             if (config["label_file_path"]) {
-                std::string lp = vision_common::resolve_path_for_resource(config["label_file_path"].as<std::string>());
-                labels = vision_common::load_labels(lp);
+                std::string lp = ResolveResourcePath(config["label_file_path"].as<std::string>());
+                labels = LoadLabels(lp);
                 if (labels.empty()) {
                     std::cerr << "Warning: failed to load labels from: " << lp << std::endl;
                 }
@@ -112,24 +138,17 @@ int main(int argc, char* argv[]) {
                 cv::destroyAllWindows();
                 return 1;
             }
-            cv::Mat vis = frame.clone();
+            cv::Mat vis;
             if (!results.empty()) {
                 if (frame_count <= 5 || frame_count % 30 == 0)
                     std::cout << "Frame " << frame_count << ": " << results.size() << " gesture(s)" << std::endl;
-                std::vector<vision_common::Result> draw_results;
-                draw_results.reserve(results.size());
-                for (const auto& result : results) {
-                    vision_common::Result r;
-                    r.x1 = result.x1;
-                    r.y1 = result.y1;
-                    r.x2 = result.x2;
-                    r.y2 = result.y2;
-                    r.score = result.score;
-                    r.label = result.label;
-                    r.track_id = result.track_id;
-                    draw_results.push_back(r);
+                auto draw_status = service->Draw(frame, &vis);
+                if (draw_status != VISION_SERVICE_OK) {
+                    std::cerr << "Draw error: " << service->LastError() << std::endl;
+                    vis = frame.clone();
                 }
-                vision_common::draw_detections(vis, draw_results, labels);
+            } else {
+                vis = frame.clone();
             }
             char fps_buf[32];
             std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", fps);
@@ -161,7 +180,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        image_path = vision_common::resolve_path_for_resource(image_path);
+        image_path = ResolveResourcePath(image_path);
         std::cout << "Loading image: " << image_path << std::endl;
         cv::Mat img = cv::imread(image_path);
         if (img.empty()) {
@@ -184,21 +203,13 @@ int main(int argc, char* argv[]) {
                             << std::fixed << std::setprecision(3) << r.score
                             << " box=[" << r.x1 << "," << r.y1 << "," << r.x2 << "," << r.y2 << "]" << std::endl;
             }
-            std::vector<vision_common::Result> draw_results;
-            draw_results.reserve(results.size());
-            for (const auto& result : results) {
-                vision_common::Result r;
-                r.x1 = result.x1;
-                r.y1 = result.y1;
-                r.x2 = result.x2;
-                r.y2 = result.y2;
-                r.score = result.score;
-                r.label = result.label;
-                r.track_id = result.track_id;
-                draw_results.push_back(r);
+            cv::Mat vis;
+            auto draw_status = service->Draw(img, &vis);
+            if (draw_status == VISION_SERVICE_OK) {
+                cv::imwrite(output_path, vis);
+            } else {
+                cv::imwrite(output_path, img);
             }
-            vision_common::draw_detections(img, draw_results, labels);
-            cv::imwrite(output_path, img);
             std::cout << "Result saved to: " << output_path << std::endl;
         } else {
             std::cout << "No gesture detected." << std::endl;

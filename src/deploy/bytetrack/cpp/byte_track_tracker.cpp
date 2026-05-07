@@ -90,14 +90,14 @@ cv::Mat ByteTrackTracker::preprocess(const cv::Mat& image) {
     return detector_->preprocess(image);
 }
 
-std::vector<vision_common::Result> ByteTrackTracker::track(const cv::Mat& image) {
+vision_common::TrackingResultList ByteTrackTracker::track(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Run detection
     const auto t_det0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> detections = detector_->detect(image);
+    vision_common::DetectionResultList detections = detector_->detect(image);
     const auto t_det1 = std::chrono::steady_clock::now();
     set_runtime_detect_ms(std::chrono::duration<double, std::milli>(t_det1 - t_det0).count());
 
@@ -108,8 +108,8 @@ std::vector<vision_common::Result> ByteTrackTracker::track(const cv::Mat& image)
     // Update tracker
     std::vector<STrack> stracks = tracker_->update(objects);
 
-    // Convert back to Result format with track_id and preserve label information
-    std::vector<vision_common::Result> results = convert_stracks_to_results(stracks, detections);
+    // Convert back to TrackingResult format with track_id and preserve label information
+    vision_common::TrackingResultList results = convert_stracks_to_results(stracks, detections);
     const auto t_track1 = std::chrono::steady_clock::now();
     set_runtime_track_ms(std::chrono::duration<double, std::milli>(t_track1 - t_track0).count());
 
@@ -127,16 +127,16 @@ std::vector<vision_core::ModelCapability> ByteTrackTracker::get_capabilities() c
 }
 
 std::vector<Object> ByteTrackTracker::convert_results_to_objects(
-    const std::vector<vision_common::Result>& results) {
+    const vision_common::DetectionResultList& results) {
     std::vector<Object> objects;
     objects.reserve(results.size());
 
     for (const auto& result : results) {
         Object obj;
-        obj.rect.x = result.x1;
-        obj.rect.y = result.y1;
-        obj.rect.width = result.x2 - result.x1;
-        obj.rect.height = result.y2 - result.y1;
+        obj.rect.x = result.bbox.x1;
+        obj.rect.y = result.bbox.y1;
+        obj.rect.width = result.bbox.width();
+        obj.rect.height = result.bbox.height();
         obj.label = result.label;
         obj.prob = result.score;
         objects.push_back(obj);
@@ -145,38 +145,14 @@ std::vector<Object> ByteTrackTracker::convert_results_to_objects(
     return objects;
 }
 
-std::vector<vision_common::Result> ByteTrackTracker::convert_stracks_to_results(
+vision_common::TrackingResultList ByteTrackTracker::convert_stracks_to_results(
     const std::vector<STrack>& stracks,
-    const std::vector<vision_common::Result>& detections) {
-    std::vector<vision_common::Result> results;
+    const vision_common::DetectionResultList& detections) {
+    vision_common::TrackingResultList results;
     results.reserve(stracks.size());
 
-    // Helper function to calculate IoU
-    auto calculate_iou = [](float x1_1, float y1_1, float x2_1, float y2_1,
-                            float x1_2, float y1_2, float x2_2, float y2_2) -> float {
-        float inter_x1 = std::max(x1_1, x1_2);
-        float inter_y1 = std::max(y1_1, y1_2);
-        float inter_x2 = std::min(x2_1, x2_2);
-        float inter_y2 = std::min(y2_1, y2_2);
-
-        if (inter_x2 <= inter_x1 || inter_y2 <= inter_y1) {
-            return 0.0f;
-        }
-
-        float inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1);
-        float area1 = (x2_1 - x1_1) * (y2_1 - y1_1);
-        float area2 = (x2_2 - x1_2) * (y2_2 - y1_2);
-        float union_area = area1 + area2 - inter_area;
-
-        if (union_area <= 0.0f) {
-            return 0.0f;
-        }
-
-        return inter_area / union_area;
-    };
-
     for (const auto& strack : stracks) {
-        vision_common::Result result;
+        vision_common::TrackingResult result;
 
         // Convert tlwh to xyxy
         float track_x1 = strack.tlwh[0];
@@ -184,13 +160,10 @@ std::vector<vision_common::Result> ByteTrackTracker::convert_stracks_to_results(
         float track_x2 = strack.tlwh[0] + strack.tlwh[2];
         float track_y2 = strack.tlwh[1] + strack.tlwh[3];
 
-        result.x1 = track_x1;
-        result.y1 = track_y1;
-        result.x2 = track_x2;
-        result.y2 = track_y2;
-
+        result.bbox = vision_common::BoundingBox{track_x1, track_y1, track_x2, track_y2};
         result.score = strack.score;
         result.track_id = strack.track_id;
+        result.state = vision_common::TrackingResult::State::Confirmed;
 
         // Match with detections to find label
         // Find the detection with highest IoU
@@ -198,14 +171,11 @@ std::vector<vision_common::Result> ByteTrackTracker::convert_stracks_to_results(
         int best_match_idx = -1;
 
         for (size_t i = 0; i < detections.size(); i++) {
-            float iou = calculate_iou(
-                track_x1, track_y1, track_x2, track_y2,
-                detections[i].x1, detections[i].y1, detections[i].x2,
-                detections[i].y2);
+            float iou = result.bbox.iou(detections[i].bbox);
 
             if (iou > max_iou && iou > 0.5f) {  // Threshold to ensure good match
                 max_iou = iou;
-                best_match_idx = i;
+                best_match_idx = static_cast<int>(i);
             }
         }
 

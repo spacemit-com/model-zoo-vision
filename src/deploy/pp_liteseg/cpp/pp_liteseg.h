@@ -36,7 +36,7 @@ public:
 
     void load_model() override;
 
-    std::vector<vision_common::Result> segment(const cv::Mat& image) override;
+    vision_common::SegmentationResultList segment(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -51,7 +51,7 @@ private:
                                         int valid_h,
                                         int valid_w);
 
-    std::vector<vision_common::Result> split_semantic_masks(const cv::Mat& label_u8);
+    vision_common::SegmentationResultList split_semantic_masks(const cv::Mat& label_u8);
 
     int num_threads_;
     int num_classes_;

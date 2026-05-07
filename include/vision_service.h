@@ -65,43 +65,142 @@ enum VisionServiceStatus {
     VISION_SERVICE_IO_FAILED = 4
 };
 
+/**
+ * @brief Vision inference service
+ *
+ * @thread_safety IMPORTANT: VisionService instances are NOT thread-safe.
+ *
+ * Thread Safety Rules:
+ * - Create() is thread-safe (can be called from multiple threads)
+ * - All other methods are NOT thread-safe for the same instance
+ * - Do NOT call InferImage/InferEmbedding/Draw concurrently on the same instance
+ *
+ * Correct Multi-threading Usage:
+ * - Option 1: Create separate VisionService instances for each thread (RECOMMENDED)
+ * - Option 2: Use a thread pool with one VisionService per worker thread
+ * - Option 3: Protect with mutex (NOT recommended, serializes inference)
+ *
+ * See docs/THREAD_SAFETY.md for detailed examples and code samples.
+ */
 class VisionService {
 public:
+    /**
+     * @brief Create a VisionService instance
+     * @thread_safety Thread-safe. Can be called from multiple threads.
+     */
     static std::unique_ptr<VisionService> Create(const std::string& config_path,
                                                 const std::string& model_path_override = "",
                                                 bool lazy_load = false);
+
+    /**
+     * @brief Get last creation error
+     * @thread_safety Thread-safe (uses thread_local storage)
+     */
     static const std::string& LastCreateError();
 
+    /**
+     * @brief Run inference on image file
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     */
     VisionServiceStatus InferImage(const std::string& image_path,
                                     std::vector<VisionServiceResult>* out_results);
+
+    /**
+     * @brief Run inference on cv::Mat image
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     */
     VisionServiceStatus InferImage(const cv::Mat& image,
                                     std::vector<VisionServiceResult>* out_results);
+
+    /**
+     * @brief Extract embedding from image file
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     */
     VisionServiceStatus InferEmbedding(const std::string& image_path,
                                         std::vector<float>* out_embedding);
+
+    /**
+     * @brief Extract embedding from cv::Mat image
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     */
     VisionServiceStatus InferEmbedding(const cv::Mat& image,
                                         std::vector<float>* out_embedding);
+
+    /**
+     * @brief Compute cosine similarity between two embeddings
+     * @thread_safety Thread-safe (pure function)
+     */
     static float EmbeddingSimilarity(const std::vector<float>& embedding_a,
                                     const std::vector<float>& embedding_b);
 
-    /** Sequence action (e.g. STGCN): 30-frame skeleton -> class probabilities. */
+    /**
+     * @brief Sequence action recognition (e.g. STGCN): 30-frame skeleton -> class probabilities
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     */
     VisionServiceStatus InferSequence(const float* pts, int image_width, int image_height,
                                         std::vector<float>* out_scores);
-    /** Class names for sequence model (e.g. STGCN). Empty if not a sequence model. */
+
+    /**
+     * @brief Get class names for sequence model
+     * @thread_safety Thread-safe after model is loaded
+     */
     std::vector<std::string> GetSequenceClassNames();
-    /** Fall-down class index for STGCN (typically 6). -1 if N/A. */
+
+    /**
+     * @brief Get fall-down class index for STGCN (typically 6)
+     * @thread_safety Thread-safe after model is loaded
+     */
     int GetFallDownClassIndex();
 
+    /**
+     * @brief Draw inference results on image
+     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     * @note Must call InferImage() first to have results to draw.
+     */
     VisionServiceStatus Draw(const cv::Mat& image, cv::Mat* out_image);
 
+    /**
+     * @brief Check if current model supports drawing
+     * @thread_safety Thread-safe after model is loaded
+     */
     bool SupportsDraw() const;
+
+    /**
+     * @brief Release model resources
+     * @thread_safety NOT thread-safe. Do not call while inference is running.
+     */
     void Release();
+
+    /**
+     * @brief Set timing options
+     * @thread_safety NOT thread-safe.
+     */
     void SetTimingOptions(const VisionServiceTimingOptions& options);
+
+    /**
+     * @brief Get timing data from last inference
+     * @thread_safety NOT thread-safe. Only call from the same thread that ran inference.
+     */
     VisionServiceTiming GetLastTiming() const;
 
+    /**
+     * @brief Get default image path from config
+     * @thread_safety Thread-safe after construction
+     */
     std::string GetDefaultImage();
+
+    /**
+     * @brief Get config value by key
+     * @thread_safety Thread-safe after construction
+     */
     std::string GetConfigPathValue(const std::string& config_key);
 
+    /**
+     * @brief Get last error message
+     * @thread_safety Thread-safe (uses instance-local storage)
+     */
     const std::string& LastError() const;
+
     ~VisionService();
 
 private:

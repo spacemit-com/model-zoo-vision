@@ -32,25 +32,8 @@ float calculate_iou(const cv::Rect2f& box1, const cv::Rect2f& box2) {
     return area_inter / area_union;
 }
 
-float calculate_iou_detection(float x1_1, float y1_1, float x2_1, float y2_1,
-                            float x1_2, float y1_2, float x2_2, float y2_2) {
-    float x1_inter = std::max(x1_1, x1_2);
-    float y1_inter = std::max(y1_1, y1_2);
-    float x2_inter = std::min(x2_1, x2_2);
-    float y2_inter = std::min(y2_1, y2_2);
-
-    float width_inter = std::max(0.0f, x2_inter - x1_inter + 1.0f);
-    float height_inter = std::max(0.0f, y2_inter - y1_inter + 1.0f);
-    float area_inter = width_inter * height_inter;
-
-    float area1 = (x2_1 - x1_1 + 1.0f) * (y2_1 - y1_1 + 1.0f);
-    float area2 = (x2_2 - x1_2 + 1.0f) * (y2_2 - y1_2 + 1.0f);
-    float area_union = area1 + area2 - area_inter;
-
-    if (area_union == 0) {
-        return 0.0f;
-    }
-    return area_inter / area_union;
+float calculate_iou(const BoundingBox& bbox1, const BoundingBox& bbox2) {
+    return bbox1.iou(bbox2);
 }
 
 std::vector<int> nms(
@@ -65,7 +48,7 @@ std::vector<int> nms(
     std::vector<int> indices(boxes.size());
     std::iota(indices.begin(), indices.end(), 0);
     std::sort(indices.begin(), indices.end(),
-                [&scores](int i, int j) { return scores[i] > scores[j]; });
+        [&scores](int i, int j) { return scores[i] > scores[j]; });
 
     std::vector<int> keep;
     while (!indices.empty()) {
@@ -89,11 +72,13 @@ std::vector<int> nms(
     return keep;
 }
 
-std::vector<Result> multi_class_nms(
-    const std::vector<Result>& objects,
+// Template helper for multi-class NMS
+template<typename T>
+std::vector<T> multi_class_nms_impl(
+    const std::vector<T>& objects,
     float iou_threshold) {
     if (objects.empty()) {
-        return std::vector<Result>();
+        return std::vector<T>();
     }
 
     // Group by class - find unique labels
@@ -104,34 +89,58 @@ std::vector<Result> multi_class_nms(
         }
     }
 
-    std::vector<Result> final_results;
+    std::vector<T> final_results;
     for (int label : unique_labels) {
         // Collect results for this class
-        std::vector<Result> results_class;
+        std::vector<T> results_class;
         for (const auto& result : objects) {
             if (result.label == label) {
                 results_class.push_back(result);
             }
         }
 
-        // Convert to cv::Rect2f and scores for common nms function
-        std::vector<cv::Rect2f> boxes;
-        std::vector<float> scores;
-        for (const auto& result : results_class) {
-            boxes.emplace_back(result.x1, result.y1, result.x2 - result.x1, result.y2 - result.y1);
-            scores.push_back(result.score);
-        }
+        // Sort by score descending
+        std::sort(results_class.begin(), results_class.end(),
+                 [](const T& a, const T& b) { return a.score > b.score; });
 
-        // Use common nms function
-        std::vector<int> keep_indices = nms(boxes, scores, iou_threshold);
+        // Apply NMS
+        std::vector<bool> suppressed(results_class.size(), false);
+        for (size_t i = 0; i < results_class.size(); ++i) {
+            if (suppressed[i]) continue;
 
-        // Build final results from kept indices
-        for (int idx : keep_indices) {
-            final_results.push_back(results_class[idx]);
+            final_results.push_back(results_class[i]);
+
+            // Suppress overlapping boxes
+            for (size_t j = i + 1; j < results_class.size(); ++j) {
+                if (suppressed[j]) continue;
+
+                float iou = calculate_iou(results_class[i].bbox, results_class[j].bbox);
+                if (iou >= iou_threshold) {
+                    suppressed[j] = true;
+                }
+            }
         }
     }
 
     return final_results;
+}
+
+std::vector<DetectionResult> multi_class_nms(
+    const std::vector<DetectionResult>& objects,
+    float iou_threshold) {
+    return multi_class_nms_impl(objects, iou_threshold);
+}
+
+std::vector<PoseResult> multi_class_nms(
+    const std::vector<PoseResult>& objects,
+    float iou_threshold) {
+    return multi_class_nms_impl(objects, iou_threshold);
+}
+
+std::vector<SegmentationResult> multi_class_nms(
+    const std::vector<SegmentationResult>& objects,
+    float iou_threshold) {
+    return multi_class_nms_impl(objects, iou_threshold);
 }
 
 }  // namespace vision_common

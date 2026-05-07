@@ -80,7 +80,7 @@ cv::Mat YOLOv5FaceDetector::preprocess(const cv::Mat& image) {
         cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
-std::vector<vision_common::Result> YOLOv5FaceDetector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5FaceDetector::detect(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -101,7 +101,7 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::detect(const cv::Mat& ima
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -117,7 +117,7 @@ std::vector<vision_core::ModelCapability> YOLOv5FaceDetector::get_capabilities()
         vision_core::ModelCapability::kDraw};
 }
 
-std::vector<vision_common::Result> YOLOv5FaceDetector::postprocess(
+vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
     std::vector<Ort::Value>& outputs,
     const cv::Size& orig_size) {
 
@@ -216,7 +216,7 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::postprocess(
     }
 
     // Apply NMS
-    std::vector<vision_common::Result> results = non_max_suppression_face(pred_list);
+    vision_common::DetectionResultList results = non_max_suppression_face(pred_list);
 
     // Scale coordinates back to original image size
     // Python: scale_coords(self.input_shape, pred[0][i][:4], img_src.shape)
@@ -229,23 +229,23 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::postprocess(
     int inputWidth = static_cast<int>(input_shape_[3]);   // width (index 3)
     cv::Size input_shape(inputWidth, inputHeight);  // cv::Size is (width, height)
 
-        for (auto& result : results) {
-        float coords[4] = {result.x1, result.y1, result.x2, result.y2};
+    for (auto& result : results) {
+        float coords[4] = {result.bbox.x1, result.bbox.y1, result.bbox.x2, result.bbox.y2};
         vision_common::scale_coords(input_shape, coords, orig_size);
-        result.x1 = coords[0];
-        result.y1 = coords[1];
-        result.x2 = coords[2];
-        result.y2 = coords[3];
+        result.bbox.x1 = coords[0];
+        result.bbox.y1 = coords[1];
+        result.bbox.x2 = coords[2];
+        result.bbox.y2 = coords[3];
     }
 
     return results;
 }
 
-std::vector<vision_common::Result> YOLOv5FaceDetector::non_max_suppression_face(
+vision_common::DetectionResultList YOLOv5FaceDetector::non_max_suppression_face(
     const std::vector<Prediction>& predictions) {
 
     if (predictions.empty()) {
-        return std::vector<vision_common::Result>();
+        return vision_common::DetectionResultList();
     }
 
     // First filter: obj_conf > conf_threshold (same as Python: xc = prediction[..., 4] > conf_thres)
@@ -259,13 +259,13 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::non_max_suppression_face(
     }
 
     if (filtered_preds.empty()) {
-        return std::vector<vision_common::Result>();
+        return vision_common::DetectionResultList();
     }
 
     // Compute final confidence: conf = obj_conf * cls_conf (same as Python: x[:, 5:] *= x[:, 4:5])
     // Convert xywh to xyxy (same as Python: box = xywh2xyxy(x[:, :4]))
     // Optimized: Pre-allocate candidates to avoid reallocations
-    std::vector<vision_common::Result> candidates;
+    vision_common::DetectionResultList candidates;
     candidates.reserve(filtered_preds.size());
     for (const auto& pred : filtered_preds) {
         float final_conf = pred.obj_conf * pred.cls_conf;  // Final confidence
@@ -277,20 +277,17 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::non_max_suppression_face(
             float xyxy[4];
             vision_common::xywh2xyxy(xywh, xyxy);
 
-            vision_common::Result result;
-            result.x1 = xyxy[0];
-            result.y1 = xyxy[1];
-            result.x2 = xyxy[2];
-            result.y2 = xyxy[3];
+            vision_common::DetectionResult result;
+            result.bbox = vision_common::BoundingBox{xyxy[0], xyxy[1], xyxy[2], xyxy[3]};
             result.score = final_conf;  // Use final confidence
-            result.label = -1;  // Face class (no label display)
+            result.label = 0;  // Face class
             candidates.push_back(result);
         }
     }
 
     // Apply NMS using common function
     if (candidates.empty()) {
-        return std::vector<vision_common::Result>();
+        return vision_common::DetectionResultList();
     }
 
     std::vector<cv::Rect2f> boxes;
@@ -299,13 +296,14 @@ std::vector<vision_common::Result> YOLOv5FaceDetector::non_max_suppression_face(
     scores.reserve(candidates.size());
 
     for (const auto& cand : candidates) {
-        boxes.push_back(cv::Rect2f(cand.x1, cand.y1, cand.x2 - cand.x1, cand.y2 - cand.y1));
+        boxes.push_back(cv::Rect2f(cand.bbox.x1, cand.bbox.y1,
+                                   cand.bbox.x2 - cand.bbox.x1, cand.bbox.y2 - cand.bbox.y1));
         scores.push_back(cand.score);
     }
 
     std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
 
-    std::vector<vision_common::Result> final_results;
+    vision_common::DetectionResultList final_results;
     final_results.reserve(keep_indices.size());
     for (int idx : keep_indices) {
         final_results.push_back(candidates[idx]);

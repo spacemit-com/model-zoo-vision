@@ -67,7 +67,7 @@ public:
      * @param image Input image
      * @return Vector of tracking results with track_id
      */
-    std::vector<vision_common::Result> track(const cv::Mat& image);
+    vision_common::TrackingResultList track(const cv::Mat& image);
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -93,16 +93,16 @@ private:
      * @brief Convert Result to Eigen matrix format for OC-SORT tracker
      * Each row: [x1, y1, x2, y2, score, label]
      */
-    Eigen::MatrixXf convert_results_to_dets(const std::vector<vision_common::Result>& results);
+    Eigen::MatrixXf convert_results_to_dets(const vision_common::DetectionResultList& results);
 
     /**
-     * @brief Convert OC-SORT output to Result format
+     * @brief Convert OC-SORT output to TrackingResult format
      * @param tracks OC-SORT output, each row: [x1, y1, x2, y2, track_id, ...]
      * @param detections Original detections for label matching
      */
-    std::vector<vision_common::Result> convert_tracks_to_results(
+    vision_common::TrackingResultList convert_tracks_to_results(
         const std::vector<Eigen::RowVectorXf>& tracks,
-        const std::vector<vision_common::Result>& detections);
+        const vision_common::DetectionResultList& detections);
 
     /**
      * @brief Calculate IoU between two bounding boxes

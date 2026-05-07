@@ -9,63 +9,162 @@
 #include <string>
 #include <vector>
 
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
 #include "common/cpp/datatype.h"
 
 namespace vision_core {
 
-using DetectionResultList = std::vector<vision_common::Result>;
-using ClassificationResultList = std::vector<vision_common::Result>;
-using SegmentationResultList = std::vector<vision_common::Result>;
-using PoseResultList = std::vector<vision_common::Result>;
-using TrackingResultList = std::vector<vision_common::Result>;
-using EmbeddingVector = std::vector<float>;
-using ActionScores = std::vector<float>;
-
+/**
+ * @brief Detection model interface
+ *
+ * Models that detect objects in images (bounding boxes + classes).
+ * Examples: YOLOv5, YOLOv8, YOLOv11, YOLOv5-face, YOLOv5-gesture
+ */
 class IDetectionModel {
 public:
     virtual ~IDetectionModel() = default;
-    virtual DetectionResultList detect(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Detect objects in an image
+     * @param image Input image in BGR format
+     * @return List of detection results
+     */
+    virtual vision_common::DetectionResultList detect(const cv::Mat& image) = 0;
 };
 
+/**
+ * @brief Classification model interface
+ *
+ * Models that classify entire images into categories.
+ * Examples: ResNet, Emotion recognition
+ */
 class IClassificationModel {
 public:
     virtual ~IClassificationModel() = default;
-    virtual ClassificationResultList classify(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Classify an image
+     * @param image Input image in BGR format
+     * @return Classification result (single result, but returned as list for consistency)
+     */
+    virtual vision_common::ClassificationResultList classify(const cv::Mat& image) = 0;
 };
 
+/**
+ * @brief Segmentation model interface
+ *
+ * Models that perform instance or semantic segmentation.
+ * Examples: YOLOv8-seg, PP-LiteSeg
+ */
 class ISegmentationModel {
 public:
     virtual ~ISegmentationModel() = default;
-    virtual SegmentationResultList segment(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Segment objects in an image
+     * @param image Input image in BGR format
+     * @return List of segmentation results (bbox + mask)
+     */
+    virtual vision_common::SegmentationResultList segment(const cv::Mat& image) = 0;
 };
 
+/**
+ * @brief Pose estimation model interface
+ *
+ * Models that detect human poses (keypoints).
+ * Examples: YOLOv8-pose
+ */
 class IPoseModel {
 public:
     virtual ~IPoseModel() = default;
-    virtual PoseResultList estimate_pose(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Estimate poses in an image
+     * @param image Input image in BGR format
+     * @return List of pose results (bbox + keypoints)
+     */
+    virtual vision_common::PoseResultList estimate_pose(const cv::Mat& image) = 0;
 };
 
+/**
+ * @brief Tracking model interface
+ *
+ * Models that track objects across video frames.
+ * Examples: ByteTrack, OC-SORT
+ */
 class ITrackingModel {
 public:
     virtual ~ITrackingModel() = default;
-    virtual TrackingResultList track(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Update tracker with new frame
+     * @param image Input image in BGR format
+     * @return List of tracking results (bbox + track_id)
+     */
+    virtual vision_common::TrackingResultList track(const cv::Mat& image) = 0;
 };
 
+/**
+ * @brief Embedding model interface
+ *
+ * Models that extract feature embeddings from images.
+ * Examples: ArcFace (face recognition)
+ */
 class IEmbeddingModel {
 public:
     virtual ~IEmbeddingModel() = default;
-    virtual EmbeddingVector infer_embedding(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Extract embedding from an image
+     * @param image Input image in BGR format (usually a cropped face/object)
+     * @return Embedding result with feature vector
+     */
+    virtual vision_common::EmbeddingResult infer_embedding(const cv::Mat& image) = 0;
+
+    /**
+     * @brief Calculate similarity between two embeddings
+     * @param embedding_a First embedding
+     * @param embedding_b Second embedding
+     * @return Similarity score (cosine similarity, 0-1)
+     */
+    static float calculate_similarity(const vision_common::EmbeddingResult& embedding_a,
+        const vision_common::EmbeddingResult& embedding_b) {
+        return embedding_a.similarity(embedding_b);
+    }
 };
 
+/**
+ * @brief Sequence action recognition model interface
+ *
+ * Models that recognize actions from temporal sequences (e.g., skeleton sequences).
+ * Examples: STGCN (fall detection)
+ */
 class ISequenceActionModel {
 public:
     virtual ~ISequenceActionModel() = default;
-    virtual ActionScores infer_sequence(const float* pts, int image_width, int image_height) = 0;
-    /** Optional: class names (e.g. STGCN 7 classes). Default empty. */
+
+    /**
+     * @brief Recognize action from skeleton sequence
+     * @param pts Pointer to skeleton data (30 frames × 17 keypoints × 2 coords)
+     * @param image_width Original image width (for normalization)
+     * @param image_height Original image height (for normalization)
+     * @return Action recognition result with class probabilities
+     */
+    virtual vision_common::ActionResult infer_sequence(const float* pts,
+        int image_width,
+        int image_height) = 0;
+
+    /**
+     * @brief Get action class names
+     * @return List of action class names (e.g., ["standing", "walking", "falling"])
+     */
     virtual std::vector<std::string> get_class_names() const { return {}; }
-    /** Optional: fall-down class index (e.g. STGCN = 6). -1 if N/A. */
+
+    /**
+     * @brief Get fall-down class index (for STGCN)
+     * @return Class index for fall-down action, or -1 if not applicable
+     */
     virtual int get_fall_down_class_index() const { return -1; }
 };
 

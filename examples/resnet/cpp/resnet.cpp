@@ -4,6 +4,7 @@
  */
 
 #include <algorithm>   // NOLINT(build/include_order)
+#include <fstream>     // NOLINT(build/include_order)
 #include <iostream>    // NOLINT(build/include_order)
 #include <memory>      // NOLINT(build/include_order)
 #include <string>      // NOLINT(build/include_order)
@@ -15,7 +16,42 @@
 #include <yaml-cpp/yaml.h>     // NOLINT(build/include_order)
 
 #include "vision_service.h"  // NOLINT(build/include_order)
-#include "common/cpp/image_processing.h"  // NOLINT(build/include_order)
+
+namespace {
+
+// Resolve a resource path: absolute paths pass through; relative paths are tried
+// as-is, then under "../" (handles running examples from build/ subdir).
+std::string ResolveResourcePath(const std::string& path) {
+    if (path.empty() || path[0] == '/' || (path.size() >= 2 && path[1] == ':')) {
+        return path;
+    }
+    if (std::filesystem::exists(path)) return path;
+    const std::string with_parent = "../" + path;
+    if (std::filesystem::exists(with_parent)) return with_parent;
+    return path;
+}
+
+// Load ImageNet-format labels: one entry per line, optionally prefixed by a
+// WordNet ID (e.g. "n01440764 tench, Tinca tinca" -> "tench, Tinca tinca").
+std::vector<std::string> LoadImagenetLabels(const std::string& label_file) {
+    std::vector<std::string> labels;
+    std::ifstream file(label_file);
+    if (!file.is_open()) return labels;
+    std::string line;
+    while (std::getline(file, line)) {
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (line.empty()) continue;
+        const size_t pos = line.find(' ');
+        if (pos != std::string::npos && pos + 1 < line.size()) {
+            labels.push_back(line.substr(pos + 1));
+        } else {
+            labels.push_back(line);
+        }
+    }
+    return labels;
+}
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -42,11 +78,11 @@ int main(int argc, char* argv[]) {
         try {
             YAML::Node config = YAML::LoadFile(config_path);
             if (config["label_file_path"]) {
-                label_file_path = vision_common::resolve_path_for_resource(config["label_file_path"].as<std::string>());
+                label_file_path = ResolveResourcePath(config["label_file_path"].as<std::string>());
             }
         } catch (...) {}
     }
-    std::vector<std::string> labels = vision_common::load_labels_imagenet(label_file_path);
+    std::vector<std::string> labels = LoadImagenetLabels(label_file_path);
 
     std::unique_ptr<VisionService> service = VisionService::Create(
         config_path,
@@ -63,8 +99,7 @@ int main(int argc, char* argv[]) {
             image_path = default_image;
         }
     }
-    if (image_path.empty()) image_path = vision_common::resolve_path_for_resource("test_data/images/cat.jpg");
-    if (image_path.empty()) image_path = "../test_data/images/cat.jpg";
+    if (image_path.empty()) image_path = ResolveResourcePath("test_data/images/cat.jpg");
 
     std::cout << "Loading image: " << image_path << std::endl;
     cv::Mat img = cv::imread(image_path);

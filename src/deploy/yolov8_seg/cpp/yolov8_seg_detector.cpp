@@ -116,7 +116,7 @@ cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image) {
         cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
-std::vector<vision_common::Result> YOLOv8SegDetector::segment(const cv::Mat& image) {
+vision_common::SegmentationResultList YOLOv8SegDetector::segment(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -137,7 +137,7 @@ std::vector<vision_common::Result> YOLOv8SegDetector::segment(const cv::Mat& ima
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<vision_common::Result> results = postprocess(outputs, orig_size);
+    vision_common::SegmentationResultList results = postprocess(outputs, orig_size);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -153,9 +153,15 @@ std::vector<vision_core::ModelCapability> YOLOv8SegDetector::get_capabilities() 
         vision_core::ModelCapability::kDraw};
 }
 
-std::vector<vision_common::Result> YOLOv8SegDetector::postprocess(std::vector<Ort::Value>& outputs,
+vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector<Ort::Value>& outputs,
                                                                 const cv::Size& orig_size) {
-    std::vector<vision_common::Result> objects;
+    // Temporary structure to hold results with mask coefficients before NMS
+    struct TempSegResult {
+        vision_common::SegmentationResult result;
+        std::vector<float> mask_coeffs;
+    };
+
+    std::vector<TempSegResult> temp_objects;
 
     int inputWidth = static_cast<int>(input_shape_[3]);
     int inputHeight = static_cast<int>(input_shape_[2]);
@@ -167,104 +173,109 @@ std::vector<vision_common::Result> YOLOv8SegDetector::postprocess(std::vector<Or
         const float* score_sum = outputs[i * 3 + 2].GetTensorMutableData<float>();
         const float* seg_part = outputs[9 + i].GetTensorMutableData<float>();
         std::vector<int64_t> dims = outputs[i * 3].GetTensorTypeAndShapeInfo().GetShape();
-        Get_Dets(orig_size, boxes, scores, score_sum, seg_part, dims, inputHeight, inputWidth,
-                num_classes_, objects);
+
+        // Collect detections with mask coefficients
+        int grid_w = static_cast<int>(dims[2]);
+        int grid_h = static_cast<int>(dims[3]);
+        int anchors_per_branch = grid_w * grid_h;
+        float scale_w = static_cast<float>(inputWidth) / static_cast<float>(grid_w);
+        float scale_h = static_cast<float>(inputHeight) / static_cast<float>(grid_h);
+
+        int orig_height = orig_size.height;
+        int orig_width = orig_size.width;
+        float scale2orign = std::min(
+            static_cast<float>(inputHeight) / static_cast<float>(orig_width),
+            static_cast<float>(inputWidth) / static_cast<float>(orig_height));
+        int pad_h = static_cast<int>((inputWidth - orig_height * scale2orign) / 2);
+        int pad_w = static_cast<int>((inputHeight - orig_width * scale2orign) / 2);
+
+        for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
+            if (score_sum[anchor_idx] < conf_threshold_) {
+                continue;
+            }
+
+            float max_score = -1.0f;
+            int classId = -1;
+            for (int class_idx = 0; class_idx < num_classes_; class_idx++) {
+                size_t score_offset = class_idx * anchors_per_branch + anchor_idx;
+                if (scores[score_offset] > conf_threshold_ && scores[score_offset] > max_score) {
+                    max_score = scores[score_offset];
+                    classId = class_idx;
+                }
+            }
+
+            if (classId >= 0) {
+                auto [x1, y1, x2, y2] = vision_common::dfl_decode(boxes, anchor_idx, anchors_per_branch,
+                    grid_w, scale_w, scale_h, scale2orign, pad_w, pad_h);
+
+                TempSegResult temp;
+                temp.result.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
+                temp.result.label = classId;
+                temp.result.score = max_score;
+                temp.result.mask = nullptr;
+
+                // Store mask coefficients
+                temp.mask_coeffs.reserve(proto_channels_);
+                for (int k = 0; k < proto_channels_; k++) {
+                    temp.mask_coeffs.push_back(seg_part[k * anchors_per_branch + anchor_idx]);
+                }
+
+                temp_objects.push_back(temp);
+            }
+        }
+    }
+
+    // Extract just the results for NMS
+    vision_common::SegmentationResultList objects;
+    objects.reserve(temp_objects.size());
+    for (const auto& temp : temp_objects) {
+        objects.push_back(temp.result);
     }
 
     // Apply multi-class NMS
-    std::vector<vision_common::Result> results = vision_common::multi_class_nms(objects, iou_threshold_);
+    vision_common::SegmentationResultList results = vision_common::multi_class_nms(objects, iou_threshold_);
 
     // Process masks if we have results and proto output
     if (!results.empty() && outputs.size() >= 13) {
         const float* output_proto = outputs[12].GetTensorMutableData<float>();
         std::vector<int64_t> proto_dims = outputs[12].GetTensorTypeAndShapeInfo().GetShape();
 
-        // Extract mask coefficients directly from results (preserved through NMS via embedding field)
+        // Match NMS results back to temp_objects to get mask coefficients
         std::vector<std::vector<float>> mask_coeffs_list;
         mask_coeffs_list.reserve(results.size());
+
         for (const auto& res : results) {
-            mask_coeffs_list.push_back(res.embedding);
+            // Find matching temp object by bbox and score
+            for (const auto& temp : temp_objects) {
+                if (std::abs(temp.result.bbox.x1 - res.bbox.x1) < 0.01f &&
+                    std::abs(temp.result.bbox.y1 - res.bbox.y1) < 0.01f &&
+                    std::abs(temp.result.score - res.score) < 0.001f &&
+                    temp.result.label == res.label) {
+                    mask_coeffs_list.push_back(temp.mask_coeffs);
+                    break;
+                }
+            }
         }
 
         // Process masks
         std::vector<std::shared_ptr<cv::Mat>> masks = _process_masks(
             output_proto, proto_dims, mask_coeffs_list, results, orig_size);
 
-        // Assign masks and clear temporary embedding field
-        for (size_t i = 0; i < results.size(); i++) {
-            if (i < masks.size()) {
-                results[i].mask = masks[i];
-            }
-            results[i].embedding.clear();
+        // Assign masks
+        for (size_t i = 0; i < results.size() && i < masks.size(); i++) {
+            results[i].mask = masks[i];
         }
     }
 
     return results;
 }
 
-void YOLOv8SegDetector::Get_Dets(const cv::Size& orig_size, const float* boxes,
-                                    const float* scores, const float* score_sum,
-                                    const float* seg_part, std::vector<int64_t> dims,
-                                    int tensor_width, int tensor_height, int num_classes,
-                                    std::vector<vision_common::Result>& objects) {
-    int grid_w = static_cast<int>(dims[2]);
-    int grid_h = static_cast<int>(dims[3]);
-    int anchors_per_branch = grid_w * grid_h;
-    float scale_w = static_cast<float>(tensor_width) / static_cast<float>(grid_w);
-    float scale_h = static_cast<float>(tensor_height) / static_cast<float>(grid_h);
-
-    int orig_height = orig_size.height;
-    int orig_width = orig_size.width;
-    float scale2orign = std::min(
-        static_cast<float>(tensor_height) / static_cast<float>(orig_width),
-        static_cast<float>(tensor_width) / static_cast<float>(orig_height));
-    int pad_h = static_cast<int>((tensor_width - orig_height * scale2orign) / 2);
-    int pad_w = static_cast<int>((tensor_height - orig_width * scale2orign) / 2);
-
-    for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
-        if (score_sum[anchor_idx] < conf_threshold_) {
-            continue;
-        }
-
-        // Get max score and class
-        float max_score = -1.0f;
-        int classId = -1;
-        for (int class_idx = 0; class_idx < num_classes; class_idx++) {
-            size_t score_offset = class_idx * anchors_per_branch + anchor_idx;
-            if (scores[score_offset] > conf_threshold_ && scores[score_offset] > max_score) {
-                max_score = scores[score_offset];
-                classId = class_idx;
-            }
-        }
-
-        if (classId >= 0) {  // detect object
-            auto [x1, y1, x2, y2] = vision_common::dfl_decode(boxes, anchor_idx, anchors_per_branch,
-                grid_w, scale_w, scale_h, scale2orign, pad_w, pad_h);
-            vision_common::Result result;
-
-            // Store seg_part coefficients in embedding field temporarily (32 coefficients)
-            result.embedding.clear();
-            result.embedding.reserve(proto_channels_);
-            for (int i = 0; i < proto_channels_; i++) {
-                result.embedding.push_back(seg_part[i * anchors_per_branch + anchor_idx]);
-            }
-
-            result.x1 = x1;
-            result.y1 = y1;
-            result.x2 = x2;
-            result.y2 = y2;
-            result.label = classId;
-            result.score = max_score;
-            objects.push_back(result);
-        }
-    }
-}
 
 std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
     const float* protos,
     const std::vector<int64_t>& proto_dims,
     const std::vector<std::vector<float>>& mask_coeffs,
-    const std::vector<vision_common::Result>& results,
+    const vision_common::SegmentationResultList& results,
     const cv::Size& orig_shape) {
     if (results.empty() || mask_coeffs.empty()) {
         return std::vector<std::shared_ptr<cv::Mat>>();
@@ -326,10 +337,10 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
 
         // Map bbox from original image coords to small-mask coords
         const auto& result = results[i];
-        int bx1 = std::max(0, static_cast<int>(std::floor(result.x1 * scale_x)));
-        int by1 = std::max(0, static_cast<int>(std::floor(result.y1 * scale_y)));
-        int bx2 = std::min(crop_w, static_cast<int>(std::ceil(result.x2 * scale_x)));
-        int by2 = std::min(crop_h, static_cast<int>(std::ceil(result.y2 * scale_y)));
+        int bx1 = std::max(0, static_cast<int>(std::floor(result.bbox.x1 * scale_x)));
+        int by1 = std::max(0, static_cast<int>(std::floor(result.bbox.y1 * scale_y)));
+        int bx2 = std::min(crop_w, static_cast<int>(std::ceil(result.bbox.x2 * scale_x)));
+        int by2 = std::min(crop_h, static_cast<int>(std::ceil(result.bbox.y2 * scale_y)));
 
         if (bx2 <= bx1 || by2 <= by1) {
             masks_scaled.push_back(std::make_shared<cv::Mat>(
@@ -340,10 +351,10 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
         // Crop bbox region from small mask, resize only that region
         cv::Mat small_roi = mask_cropped(cv::Range(by1, by2), cv::Range(bx1, bx2));
 
-        int ox1 = std::max(0, std::min(static_cast<int>(result.x1), orig_w - 1));
-        int oy1 = std::max(0, std::min(static_cast<int>(result.y1), orig_h - 1));
-        int ox2 = std::max(ox1 + 1, std::min(static_cast<int>(result.x2), orig_w));
-        int oy2 = std::max(oy1 + 1, std::min(static_cast<int>(result.y2), orig_h));
+        int ox1 = std::max(0, std::min(static_cast<int>(result.bbox.x1), orig_w - 1));
+        int oy1 = std::max(0, std::min(static_cast<int>(result.bbox.y1), orig_h - 1));
+        int ox2 = std::max(ox1 + 1, std::min(static_cast<int>(result.bbox.x2), orig_w));
+        int oy2 = std::max(oy1 + 1, std::min(static_cast<int>(result.bbox.y2), orig_h));
 
         cv::Mat roi_resized;
         cv::resize(small_roi, roi_resized,

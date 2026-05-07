@@ -47,22 +47,22 @@ public:
      * @param pts Flat array of size kSequenceLength * kNumKeypoints * 3, layout [t][v][c] (x, y, score) in pixel coords
      * @param image_width  Image width for normalizing coordinates
      * @param image_height Image height for normalizing coordinates
-     * @return Vector of 7 class probabilities (index 6 = Fall Down)
+     * @return ActionResult with class probabilities (index 6 = Fall Down)
      */
-    std::vector<float> predict(const float* pts,
-                                int image_width,
-                                int image_height);
-
-    std::vector<float> infer_sequence(const float* pts,
+    vision_common::ActionResult predict(const float* pts,
                                         int image_width,
-                                        int image_height) override;
+                                        int image_height);
+
+    vision_common::ActionResult infer_sequence(const float* pts,
+                                               int image_width,
+                                               int image_height) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     /** Overload: pts as vector. */
-    std::vector<float> predict(const std::vector<float>& pts,
-                                int image_width,
-                                int image_height);
+    vision_common::ActionResult predict(const std::vector<float>& pts,
+                                        int image_width,
+                                        int image_height);
 
     std::vector<std::string> get_class_names() const override { return class_names_; }
     int get_fall_down_class_index() const override { return kFallDownClassIndex; }
@@ -77,9 +77,9 @@ private:
 
     /** Run ONNX with two inputs (pts_tensor, mot). */
     std::vector<Ort::Value> run_session_two_inputs(const float* pts_tensor_data,
-                                                    const std::vector<int64_t>& pts_shape,
-                                                    const float* mot_data,
-                                                    const std::vector<int64_t>& mot_shape);
+        const std::vector<int64_t>& pts_shape,
+        const float* mot_data,
+        const std::vector<int64_t>& mot_shape);
 };
 
 }  // namespace vision_deploy

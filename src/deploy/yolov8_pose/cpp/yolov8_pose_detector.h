@@ -48,7 +48,7 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    std::vector<vision_common::Result> estimate_pose(const cv::Mat& image) override;
+    vision_common::PoseResultList estimate_pose(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -56,8 +56,8 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    std::vector<vision_common::Result> postprocess(std::vector<Ort::Value>& outputs,
-                                                    const cv::Size& orig_size);
+    vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs,
+        const cv::Size& orig_size);
 
 private:
     float conf_threshold_;
@@ -66,8 +66,8 @@ private:
     int num_threads_;
     std::string provider_;
 
-    float calculate_iou(const vision_common::Result& det1, const vision_common::Result& det2);
-    std::vector<vision_common::Result> nms(const std::vector<vision_common::Result>& dets);
+    float calculate_iou(const vision_common::PoseResult& det1, const vision_common::PoseResult& det2);
+    vision_common::PoseResultList nms(const vision_common::PoseResultList& dets);
 };
 
 }  // namespace vision_deploy

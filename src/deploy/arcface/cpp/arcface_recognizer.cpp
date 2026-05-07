@@ -12,6 +12,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -92,7 +93,7 @@ cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
                                     true, false, CV_32F);
 }
 
-std::vector<float> ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {
+vision_common::EmbeddingResult ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -118,7 +119,12 @@ std::vector<float> ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {
     const auto t1 = std::chrono::steady_clock::now();
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
 
-    return embedding;
+    // Create EmbeddingResult
+    vision_common::EmbeddingResult result;
+    result.embedding = std::move(embedding);
+    result.score = 1.0f;  // Quality score (can be computed if needed)
+
+    return result;
 }
 
 std::vector<vision_core::ModelCapability> ArcFaceRecognizer::get_capabilities() const {

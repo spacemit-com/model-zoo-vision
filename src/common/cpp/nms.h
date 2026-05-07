@@ -23,13 +23,12 @@ namespace vision_common {
 float calculate_iou(const cv::Rect2f& box1, const cv::Rect2f& box2);
 
 /**
- * @brief Calculate IoU between two detection boxes
- * @param x1_1, y1_1, x2_1, y2_1 Coordinates of first box
- * @param x1_2, y1_2, x2_2, y2_2 Coordinates of second box
+ * @brief Calculate IoU between two bounding boxes
+ * @param bbox1 First bounding box
+ * @param bbox2 Second bounding box
  * @return IoU value
  */
-float calculate_iou_detection(float x1_1, float y1_1, float x2_1, float y2_1,
-                            float x1_2, float y1_2, float x2_2, float y2_2);
+float calculate_iou(const BoundingBox& bbox1, const BoundingBox& bbox2);
 
 /**
  * @brief Non-maximum suppression
@@ -45,13 +44,35 @@ std::vector<int> nms(
 );
 
 /**
- * @brief Multi-class non-maximum suppression
- * @param objects Vector of Result objects with different classes
+ * @brief Multi-class non-maximum suppression for DetectionResult
+ * @param objects Vector of DetectionResult objects with different classes
  * @param iou_threshold IoU threshold for NMS
  * @return Filtered results after per-class NMS
  */
-std::vector<Result> multi_class_nms(
-    const std::vector<Result>& objects,
+std::vector<DetectionResult> multi_class_nms(
+    const std::vector<DetectionResult>& objects,
+    float iou_threshold
+);
+
+/**
+ * @brief Multi-class non-maximum suppression for PoseResult
+ * @param objects Vector of PoseResult objects with different classes
+ * @param iou_threshold IoU threshold for NMS
+ * @return Filtered results after per-class NMS
+ */
+std::vector<PoseResult> multi_class_nms(
+    const std::vector<PoseResult>& objects,
+    float iou_threshold
+);
+
+/**
+ * @brief Multi-class non-maximum suppression for SegmentationResult
+ * @param objects Vector of SegmentationResult objects with different classes
+ * @param iou_threshold IoU threshold for NMS
+ * @return Filtered results after per-class NMS
+ */
+std::vector<SegmentationResult> multi_class_nms(
+    const std::vector<SegmentationResult>& objects,
     float iou_threshold
 );
 

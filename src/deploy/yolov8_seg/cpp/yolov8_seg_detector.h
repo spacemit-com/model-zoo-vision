@@ -47,7 +47,7 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    std::vector<vision_common::Result> segment(const cv::Mat& image) override;
+    vision_common::SegmentationResultList segment(const cv::Mat& image) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -55,7 +55,7 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    std::vector<vision_common::Result> postprocess(std::vector<Ort::Value>& outputs, const cv::Size& orig_size);
+    vision_common::SegmentationResultList postprocess(std::vector<Ort::Value>& outputs, const cv::Size& orig_size);
 
 private:
     float conf_threshold_;
@@ -65,15 +65,11 @@ private:
     int proto_channels_;
     std::string provider_;
 
-    void Get_Dets(const cv::Size& orig_size, const float* boxes, const float* scores,
-                    const float* score_sum, const float* seg_part, std::vector<int64_t> dims,
-                    int tensor_width, int tensor_height, int num_classes,
-                    std::vector<vision_common::Result>& objects);
     std::vector<std::shared_ptr<cv::Mat>> _process_masks(
         const float* protos,
         const std::vector<int64_t>& proto_dims,
         const std::vector<std::vector<float>>& mask_coeffs,
-        const std::vector<vision_common::Result>& results,
+        const vision_common::SegmentationResultList& results,
         const cv::Size& orig_shape);
 };
 

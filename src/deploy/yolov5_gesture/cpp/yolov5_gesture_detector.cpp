@@ -83,10 +83,36 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
         CV_32F);
 }
 
-vision_common::DetectionResultList YOLOv5GestureDetector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5GestureDetector::detect(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
+
+    static int dbg_call = 0;
+    ++dbg_call;
+    std::cerr << "[dbg gesture #" << dbg_call << "] image=" << image.cols << "x" << image.rows
+        << " channels=" << image.channels()
+        << " use_conf=" << use_conf << " use_iou=" << use_iou
+        << " mem_conf_=" << conf_threshold_ << " mem_iou_=" << iou_threshold_
+        << std::endl;
+    {
+        // Hash a few pixels of the input to confirm caller passed the same image
+        const uint8_t* pa = image.ptr<uint8_t>(0);
+        const uint8_t* pb = image.ptr<uint8_t>(image.rows / 2);
+        std::cerr << "[dbg gesture #" << dbg_call << "] img bytes [0..5]="
+            << static_cast<int>(pa[0]) << "," << static_cast<int>(pa[1])
+            << "," << static_cast<int>(pa[2]) << "," << static_cast<int>(pa[3])
+            << "," << static_cast<int>(pa[4])
+            << " mid[0..2]=" << static_cast<int>(pb[0]) << "," << static_cast<int>(pb[1])
+            << "," << static_cast<int>(pb[2])
+            << std::endl;
+    }
 
     const cv::Size orig_size = image.size();
     const auto t_pre0 = std::chrono::steady_clock::now();
@@ -94,15 +120,50 @@ vision_common::DetectionResultList YOLOv5GestureDetector::detect(const cv::Mat& 
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
+    {
+        std::cerr << "[dbg gesture #" << dbg_call << "] inputTensor dims=";
+        for (int i = 0; i < inputTensor.dims; ++i) {
+            std::cerr << inputTensor.size[i] << (i + 1 < inputTensor.dims ? "x" : "");
+        }
+        const float* tp = inputTensor.ptr<float>();
+        std::cerr << " total=" << inputTensor.total()
+            << " head[0..4]=" << tp[0] << "," << tp[1] << "," << tp[2] << "," << tp[3]
+            << "," << tp[4]
+            << " input_shape_=";
+        for (size_t i = 0; i < input_shape_.size(); ++i) {
+            std::cerr << input_shape_[i] << (i + 1 < input_shape_.size() ? "x" : "");
+        }
+        std::cerr << std::endl;
+    }
+
     const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = run_session(inputTensor);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
+    if (!outputs.empty()) {
+        auto info = outputs[0].GetTensorTypeAndShapeInfo();
+        auto shape = info.GetShape();
+        const float* op = outputs[0].GetTensorMutableData<float>();
+        size_t total = 1;
+        std::cerr << "[dbg gesture #" << dbg_call << "] out0 shape=";
+        for (size_t i = 0; i < shape.size(); ++i) {
+            std::cerr << shape[i] << (i + 1 < shape.size() ? "x" : "");
+            total *= static_cast<size_t>(shape[i]);
+        }
+        std::cerr << " head[0..7]=";
+        for (int i = 0; i < 8 && static_cast<size_t>(i) < total; ++i) {
+            std::cerr << op[i] << (i < 7 ? "," : "");
+        }
+        std::cerr << std::endl;
+    }
+
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
+
+    std::cerr << "[dbg gesture #" << dbg_call << "] post results=" << results.size() << std::endl;
 
     const auto t1 = std::chrono::steady_clock::now();
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
@@ -118,7 +179,9 @@ std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilitie
 
 vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
 
     if (outputs.empty()) {
         return {};
@@ -174,7 +237,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
         const float* p = data + i * features;
 
         const float obj = p[4];
-        if (obj <= conf_threshold_) {
+        if (obj <= conf_threshold) {
             continue;
         }
 
@@ -189,7 +252,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
             }
         }
 
-        if (best_cls < 0 || best_conf <= conf_threshold_) {
+        if (best_cls < 0 || best_conf <= conf_threshold) {
             continue;
         }
 
@@ -234,7 +297,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
             cand.bbox.x2 - cand.bbox.x1, cand.bbox.y2 - cand.bbox.y1);
         scores.push_back(cand.score);
     }
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
+    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
 
     vision_common::DetectionResultList results;
     results.reserve(keep_indices.size());

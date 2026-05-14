@@ -64,10 +64,14 @@ public:
 
     /**
      * @brief Update tracker with new detections
-     * @param image Input image
+     * @param image          Input image
+     * @param conf_threshold Detector confidence override; <= 0 keeps config default
+     * @param iou_threshold  Detector NMS IoU override; <= 0 keeps config default
      * @return Vector of tracking results with track_id
      */
-    vision_common::TrackingResultList track(const cv::Mat& image);
+    vision_common::TrackingResultList track(const cv::Mat& image,
+                                            float conf_threshold = -1.0f,
+                                            float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 

@@ -6,6 +6,7 @@
 #include <iostream>    // NOLINT(build/include_order)
 #include <memory>      // NOLINT(build/include_order)
 #include <string>      // NOLINT(build/include_order)
+#include <utility>     // NOLINT(build/include_order)
 #include <vector>      // NOLINT(build/include_order)
 #include <fstream>     // NOLINT(build/include_order)
 #include <iomanip>     // NOLINT(build/include_order)
@@ -187,22 +188,35 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Could not load image: " << image_path << std::endl;
             return 1;
         }
-        std::vector<VisionServiceResult> results;
-        VisionServiceStatus ret = service->InferImage(img, &results);
-        if (ret != VISION_SERVICE_OK) {
-            std::cerr << "Error: " << service->LastError() << std::endl;
-            return 1;
+
+        std::vector<VisionServiceResult> last_results;
+        for (int run = 1; run <= 2; ++run) {
+            std::cout << "\n=== Inference run " << run << " / 2 ===" << std::endl;
+            std::vector<VisionServiceResult> results;
+            VisionServiceStatus ret = service->InferImage(img, &results);
+            if (ret != VISION_SERVICE_OK) {
+                std::cerr << "Error: " << service->LastError() << std::endl;
+                return 1;
+            }
+            last_results = std::move(results);
+
+            if (!last_results.empty()) {
+                std::cout << "Detected " << last_results.size() << " gesture(s):" << std::endl;
+                for (const auto& r : last_results) {
+                    std::string class_name = (labels.size() > static_cast<size_t>(r.label) && r.label >= 0)
+                                            ? labels[static_cast<size_t>(r.label)]
+                                            : "Class " + std::to_string(r.label);
+                    std::cout << "  " << class_name << " (class " << r.label << ") score="
+                                << std::fixed << std::setprecision(3) << r.score
+                                << " box=[" << r.x1 << "," << r.y1 << "," << r.x2 << "," << r.y2 << "]"
+                                << std::endl;
+                }
+            } else {
+                std::cout << "No gesture detected." << std::endl;
+            }
         }
 
-        if (!results.empty()) {
-            std::cout << "Detected " << results.size() << " gesture(s):" << std::endl;
-            for (const auto& r : results) {
-                std::string class_name = (labels.size() > static_cast<size_t>(r.label) && r.label >= 0)
-                                        ? labels[static_cast<size_t>(r.label)] : "Class " + std::to_string(r.label);
-                std::cout << "  " << class_name << " (class " << r.label << ") score="
-                            << std::fixed << std::setprecision(3) << r.score
-                            << " box=[" << r.x1 << "," << r.y1 << "," << r.x2 << "," << r.y2 << "]" << std::endl;
-            }
+        if (!last_results.empty()) {
             cv::Mat vis;
             auto draw_status = service->Draw(img, &vis);
             if (draw_status == VISION_SERVICE_OK) {
@@ -210,10 +224,10 @@ int main(int argc, char* argv[]) {
             } else {
                 cv::imwrite(output_path, img);
             }
-            std::cout << "Result saved to: " << output_path << std::endl;
+            std::cout << "\nResult saved to: " << output_path << std::endl;
         } else {
-            std::cout << "No gesture detected." << std::endl;
             cv::imwrite(output_path, img);
+            std::cout << "\nResult saved to: " << output_path << std::endl;
         }
     }
 

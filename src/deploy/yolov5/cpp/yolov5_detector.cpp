@@ -82,10 +82,16 @@ cv::Mat YOLOv5Detector::preprocess(const cv::Mat& image) {
         padded, 1.0f / 255.0f, cv::Size(input_width, input_height), cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
-vision_common::DetectionResultList YOLOv5Detector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5Detector::detect(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     const cv::Size orig_size = image.size();
 
@@ -100,7 +106,7 @@ vision_common::DetectionResultList YOLOv5Detector::detect(const cv::Mat& image) 
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -118,7 +124,9 @@ std::vector<vision_core::ModelCapability> YOLOv5Detector::get_capabilities() con
 
 vision_common::DetectionResultList YOLOv5Detector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
     if (outputs.empty()) {
         return {};
     }
@@ -217,7 +225,7 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
             if (need_sigmoid) {
                 obj = sigmoid(obj);
             }
-            if (obj <= conf_threshold_) {
+            if (obj <= conf_threshold) {
                 continue;
             }
         }
@@ -236,7 +244,7 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
             }
         }
 
-        if (best_cls < 0 || best_conf <= conf_threshold_) {
+        if (best_cls < 0 || best_conf <= conf_threshold) {
             continue;
         }
 
@@ -272,7 +280,7 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         scores.push_back(cand.score);
     }
 
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
+    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
     vision_common::DetectionResultList results;
     results.reserve(keep_indices.size());
     for (int idx : keep_indices) {

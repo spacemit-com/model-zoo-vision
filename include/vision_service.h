@@ -100,17 +100,25 @@ public:
 
     /**
      * @brief Run inference on image file
+     * @param conf_threshold Detection confidence threshold (<= 0 uses model default from config)
+     * @param iou_threshold  NMS IoU threshold (<= 0 uses model default from config)
      * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
      */
     VisionServiceStatus InferImage(const std::string& image_path,
-                                    std::vector<VisionServiceResult>* out_results);
+                                    std::vector<VisionServiceResult>* out_results,
+                                    float conf_threshold = -1.0f,
+                                    float iou_threshold = -1.0f);
 
     /**
      * @brief Run inference on cv::Mat image
+     * @param conf_threshold Detection confidence threshold (<= 0 uses model default from config)
+     * @param iou_threshold  NMS IoU threshold (<= 0 uses model default from config)
      * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
      */
     VisionServiceStatus InferImage(const cv::Mat& image,
-                                    std::vector<VisionServiceResult>* out_results);
+                                    std::vector<VisionServiceResult>* out_results,
+                                    float conf_threshold = -1.0f,
+                                    float iou_threshold = -1.0f);
 
     /**
      * @brief Extract embedding from image file

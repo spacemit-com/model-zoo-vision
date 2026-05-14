@@ -48,7 +48,9 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::PoseResultList estimate_pose(const cv::Mat& image) override;
+    vision_common::PoseResultList estimate_pose(const cv::Mat& image,
+                                                float conf_threshold = -1.0f,
+                                                float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -57,7 +59,9 @@ public:
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size);
+        const cv::Size& orig_size,
+        float conf_threshold,
+        float iou_threshold);
 
 private:
     float conf_threshold_;
@@ -67,7 +71,7 @@ private:
     std::string provider_;
 
     float calculate_iou(const vision_common::PoseResult& det1, const vision_common::PoseResult& det2);
-    vision_common::PoseResultList nms(const vision_common::PoseResultList& dets);
+    vision_common::PoseResultList nms(const vision_common::PoseResultList& dets, float iou_threshold);
 };
 
 }  // namespace vision_deploy

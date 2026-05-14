@@ -64,7 +64,10 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::DetectionResultList detect(const cv::Mat& image) override;
+    vision_common::DetectionResultList detect(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -72,8 +75,11 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    vision_common::DetectionResultList postprocess(std::vector<Ort::Value>& outputs,
-                                                    const cv::Size& orig_size);
+    vision_common::DetectionResultList postprocess(
+        std::vector<Ort::Value>& outputs,
+        const cv::Size& orig_size,
+        float conf_threshold,
+        float iou_threshold);
 
 private:
     float conf_threshold_;
@@ -82,7 +88,9 @@ private:
     std::string provider_;
 
     vision_common::DetectionResultList non_max_suppression_face(
-        const std::vector<Prediction>& predictions);
+        const std::vector<Prediction>& predictions,
+        float conf_threshold,
+        float iou_threshold);
     std::vector<float> make_grid(int nx, int ny);
 };
 

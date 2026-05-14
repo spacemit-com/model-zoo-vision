@@ -36,7 +36,10 @@ public:
 
     void load_model() override;
 
-    vision_common::SegmentationResultList segment(const cv::Mat& image) override;
+    vision_common::SegmentationResultList segment(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 

@@ -276,7 +276,10 @@ vision_common::SegmentationResultList PPLiteSeg::split_semantic_masks(const cv::
     return out;
 }
 
-vision_common::SegmentationResultList PPLiteSeg::segment(const cv::Mat& image) {
+vision_common::SegmentationResultList PPLiteSeg::segment(
+    const cv::Mat& image,
+    float /*conf_threshold*/,
+    float /*iou_threshold*/) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();

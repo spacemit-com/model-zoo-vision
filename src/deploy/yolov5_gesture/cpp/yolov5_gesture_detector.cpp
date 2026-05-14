@@ -83,10 +83,16 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
         CV_32F);
 }
 
-vision_common::DetectionResultList YOLOv5GestureDetector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5GestureDetector::detect(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     const cv::Size orig_size = image.size();
     const auto t_pre0 = std::chrono::steady_clock::now();
@@ -100,7 +106,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::detect(const cv::Mat& 
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -118,7 +124,9 @@ std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilitie
 
 vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
 
     if (outputs.empty()) {
         return {};
@@ -174,7 +182,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
         const float* p = data + i * features;
 
         const float obj = p[4];
-        if (obj <= conf_threshold_) {
+        if (obj <= conf_threshold) {
             continue;
         }
 
@@ -189,7 +197,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
             }
         }
 
-        if (best_cls < 0 || best_conf <= conf_threshold_) {
+        if (best_cls < 0 || best_conf <= conf_threshold) {
             continue;
         }
 
@@ -234,7 +242,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
             cand.bbox.x2 - cand.bbox.x1, cand.bbox.y2 - cand.bbox.y1);
         scores.push_back(cand.score);
     }
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
+    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
 
     vision_common::DetectionResultList results;
     results.reserve(keep_indices.size());

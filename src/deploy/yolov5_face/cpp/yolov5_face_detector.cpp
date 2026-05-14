@@ -73,17 +73,24 @@ cv::Mat YOLOv5FaceDetector::preprocess(const cv::Mat& image) {
     int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
     // Use common letterbox function (already converts BGR to RGB)
-    cv::Mat padded = vision_common::letterbox(image,
-                                            std::make_pair(inputHeight, inputWidth));
+    cv::Mat padded = vision_common::letterbox(
+        image,
+        std::make_pair(inputHeight, inputWidth));
     return cv::dnn::blobFromImage(padded, 1.0/255.0,
         cv::Size(inputWidth, inputHeight),
         cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
-vision_common::DetectionResultList YOLOv5FaceDetector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv5FaceDetector::detect(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     cv::Size orig_size = image.size();
 
@@ -101,7 +108,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::detect(const cv::Mat& ima
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -119,7 +126,9 @@ std::vector<vision_core::ModelCapability> YOLOv5FaceDetector::get_capabilities()
 
 vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
 
     // Initialize anchors (same as Python code: reshape(3, 1, 3, 1, 1, 2))
     // Reshape to (3, 1, 3, 1, 1, 2) means: 3 scales, each with 3 anchors, each anchor has (w, h)
@@ -135,7 +144,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
     // Optimized: Pre-compute logit threshold to avoid unnecessary sigmoid calculations
     // Reverse sigmoid: raw_conf_threshold = -log(1.0/conf_threshold - 1)
     // If raw value < threshold, sigmoid(raw) < conf_threshold, so we can skip
-    float raw_conf_threshold = -std::log(1.0f / conf_threshold_ - 1.0f);
+    float raw_conf_threshold = -std::log(1.0f / conf_threshold - 1.0f);
 
     // Optimized: Pre-allocate memory and use fixed-size struct instead of vector
     // Estimate total predictions: 3 scales * channels * ny * nx
@@ -216,7 +225,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
     }
 
     // Apply NMS
-    vision_common::DetectionResultList results = non_max_suppression_face(pred_list);
+    vision_common::DetectionResultList results = non_max_suppression_face(pred_list, conf_threshold, iou_threshold);
 
     // Scale coordinates back to original image size
     // Python: scale_coords(self.input_shape, pred[0][i][:4], img_src.shape)
@@ -242,7 +251,9 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
 }
 
 vision_common::DetectionResultList YOLOv5FaceDetector::non_max_suppression_face(
-    const std::vector<Prediction>& predictions) {
+    const std::vector<Prediction>& predictions,
+    float conf_threshold,
+    float iou_threshold) {
 
     if (predictions.empty()) {
         return vision_common::DetectionResultList();
@@ -253,7 +264,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::non_max_suppression_face(
     std::vector<Prediction> filtered_preds;
     filtered_preds.reserve(predictions.size());
     for (const auto& pred : predictions) {
-        if (pred.obj_conf > conf_threshold_) {  // obj_conf
+        if (pred.obj_conf > conf_threshold) {  // obj_conf
             filtered_preds.push_back(pred);
         }
     }
@@ -271,7 +282,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::non_max_suppression_face(
         float final_conf = pred.obj_conf * pred.cls_conf;  // Final confidence
 
         // Second filter: final_conf > conf_threshold (same as Python: [conf.reshape(-1) > conf_thres])
-        if (final_conf > conf_threshold_) {
+        if (final_conf > conf_threshold) {
             // Convert xywh to xyxy (same as Python: box = xywh2xyxy(x[:, :4]))
             float xywh[4] = {pred.x, pred.y, pred.w, pred.h};
             float xyxy[4];
@@ -301,7 +312,7 @@ vision_common::DetectionResultList YOLOv5FaceDetector::non_max_suppression_face(
         scores.push_back(cand.score);
     }
 
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
+    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
 
     vision_common::DetectionResultList final_results;
     final_results.reserve(keep_indices.size());

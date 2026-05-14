@@ -32,14 +32,20 @@ public:
 
     void load_model() override;
     cv::Mat preprocess(const cv::Mat& image);
-    vision_common::DetectionResultList detect(const cv::Mat& image) override;
+    vision_common::DetectionResultList detect(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
-    vision_common::DetectionResultList postprocess(std::vector<Ort::Value>& outputs,
-                                                    const cv::Size& orig_size);
+    vision_common::DetectionResultList postprocess(
+        std::vector<Ort::Value>& outputs,
+        const cv::Size& orig_size,
+        float conf_threshold,
+        float iou_threshold);
 
 private:
     float conf_threshold_;

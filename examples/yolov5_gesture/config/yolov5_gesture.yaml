@@ -9,5 +9,5 @@ default_params:
   iou_threshold: 0.5
   num_threads: 4
   providers:
-    - SpaceMITExecutionProvider
+    - CPUExecutionProvider
 

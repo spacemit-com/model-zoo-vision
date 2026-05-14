@@ -94,10 +94,15 @@ cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image) {
 
 
 
-vision_common::PoseResultList YOLOv8PoseDetector::estimate_pose(const cv::Mat& image) {
+vision_common::PoseResultList YOLOv8PoseDetector::estimate_pose(const cv::Mat& image,
+                                                                float conf_threshold,
+                                                                float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     cv::Size orig_size = image.size();
 
@@ -115,7 +120,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::estimate_pose(const cv::Mat& i
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::PoseResultList results = postprocess(outputs, orig_size);
+    vision_common::PoseResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -133,7 +138,9 @@ std::vector<vision_core::ModelCapability> YOLOv8PoseDetector::get_capabilities()
 
 vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
 
     // Get output data
     const float* output_data = outputs[0].GetTensorMutableData<float>();
@@ -158,7 +165,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     // First pass: extract all detections with confidence > threshold
     vision_common::PoseResultList objects;
     for (int j = 0; j < anchors; ++j) {
-        if (output_data[4 * anchors + j] > conf_threshold_) {
+        if (output_data[4 * anchors + j] > conf_threshold) {
             // Decode box
             float half_width = output_data[2 * anchors + j] / 2;
             float half_height = output_data[3 * anchors + j] / 2;
@@ -209,7 +216,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     }
 
     // NMS preserves keypoints since they're already in the PoseResult objects
-    return nms(objects);
+    return nms(objects, iou_threshold);
 }
 
 float YOLOv8PoseDetector::calculate_iou(const vision_common::PoseResult& det1, const vision_common::PoseResult& det2) {
@@ -217,7 +224,9 @@ float YOLOv8PoseDetector::calculate_iou(const vision_common::PoseResult& det1, c
     return det1.bbox.iou(det2.bbox);
 }
 
-vision_common::PoseResultList YOLOv8PoseDetector::nms(const vision_common::PoseResultList& dets) {
+vision_common::PoseResultList YOLOv8PoseDetector::nms(
+    const vision_common::PoseResultList& dets,
+    float iou_threshold) {
     if (dets.empty()) {
         return vision_common::PoseResultList();
     }
@@ -234,7 +243,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::nms(const vision_common::PoseR
     }
 
     // Use common nms function
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold_);
+    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
 
     // Convert back to Result vector
     vision_common::PoseResultList final_dets;
@@ -245,7 +254,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::nms(const vision_common::PoseR
 
     std::cout << "[YOLOv8Pose][NMS] before=" << dets.size()
         << ", kept=" << final_dets.size()
-        << ", iou_threshold=" << iou_threshold_ << std::endl;
+        << ", iou_threshold=" << iou_threshold << std::endl;
     for (size_t i = 0; i < final_dets.size(); ++i) {
         const auto& det = final_dets[i];
         std::cout << "  [det " << i

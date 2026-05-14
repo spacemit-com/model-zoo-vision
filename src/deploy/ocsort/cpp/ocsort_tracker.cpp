@@ -107,14 +107,17 @@ cv::Mat OCSortTracker::preprocess(const cv::Mat& image) {
     return detector_->preprocess(image);
 }
 
-vision_common::TrackingResultList OCSortTracker::track(const cv::Mat& image) {
+vision_common::TrackingResultList OCSortTracker::track(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Run detection
     const auto t_det0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList detections = detector_->detect(image);
+    vision_common::DetectionResultList detections = detector_->detect(image, conf_threshold, iou_threshold);
     const auto t_det1 = std::chrono::steady_clock::now();
     set_runtime_detect_ms(std::chrono::duration<double, std::milli>(t_det1 - t_det0).count());
 

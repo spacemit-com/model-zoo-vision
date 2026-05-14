@@ -108,18 +108,25 @@ cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image) {
     int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
     // Use letterbox preprocessing (same as Python)
-    cv::Mat padded = vision_common::letterbox(image,
-                                            std::make_pair(inputHeight, inputWidth));
+    cv::Mat padded = vision_common::letterbox(
+        image,
+        std::make_pair(inputHeight, inputWidth));
 
     return cv::dnn::blobFromImage(padded, 1.0/255.0,
         cv::Size(inputWidth, inputHeight),
         cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
-vision_common::SegmentationResultList YOLOv8SegDetector::segment(const cv::Mat& image) {
+vision_common::SegmentationResultList YOLOv8SegDetector::segment(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     cv::Size orig_size = image.size();
 
@@ -137,7 +144,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::segment(const cv::Mat& 
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::SegmentationResultList results = postprocess(outputs, orig_size);
+    vision_common::SegmentationResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -154,7 +161,9 @@ std::vector<vision_core::ModelCapability> YOLOv8SegDetector::get_capabilities() 
 }
 
 vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector<Ort::Value>& outputs,
-                                                                const cv::Size& orig_size) {
+                                                                const cv::Size& orig_size,
+                                                                float conf_threshold,
+                                                                float iou_threshold) {
     // Temporary structure to hold results with mask coefficients before NMS
     struct TempSegResult {
         vision_common::SegmentationResult result;
@@ -190,7 +199,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
         int pad_w = static_cast<int>((inputHeight - orig_width * scale2orign) / 2);
 
         for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
-            if (score_sum[anchor_idx] < conf_threshold_) {
+            if (score_sum[anchor_idx] < conf_threshold) {
                 continue;
             }
 
@@ -198,7 +207,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
             int classId = -1;
             for (int class_idx = 0; class_idx < num_classes_; class_idx++) {
                 size_t score_offset = class_idx * anchors_per_branch + anchor_idx;
-                if (scores[score_offset] > conf_threshold_ && scores[score_offset] > max_score) {
+                if (scores[score_offset] > conf_threshold && scores[score_offset] > max_score) {
                     max_score = scores[score_offset];
                     classId = class_idx;
                 }
@@ -233,7 +242,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
     }
 
     // Apply multi-class NMS
-    vision_common::SegmentationResultList results = vision_common::multi_class_nms(objects, iou_threshold_);
+    vision_common::SegmentationResultList results = vision_common::multi_class_nms(objects, iou_threshold);
 
     // Process masks if we have results and proto output
     if (!results.empty() && outputs.size() >= 13) {

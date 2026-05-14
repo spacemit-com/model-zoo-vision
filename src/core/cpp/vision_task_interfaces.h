@@ -27,10 +27,15 @@ public:
 
     /**
      * @brief Detect objects in an image
-     * @param image Input image in BGR format
+     * @param image          Input image in BGR format
+     * @param conf_threshold Confidence threshold; <= 0 keeps the model's configured default
+     * @param iou_threshold  NMS IoU threshold; <= 0 keeps the model's configured default
      * @return List of detection results
      */
-    virtual vision_common::DetectionResultList detect(const cv::Mat& image) = 0;
+    virtual vision_common::DetectionResultList detect(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) = 0;
 };
 
 /**
@@ -63,10 +68,15 @@ public:
 
     /**
      * @brief Segment objects in an image
-     * @param image Input image in BGR format
+     * @param image          Input image in BGR format
+     * @param conf_threshold Confidence threshold; <= 0 keeps the model's configured default
+     * @param iou_threshold  NMS IoU threshold; <= 0 keeps the model's configured default
      * @return List of segmentation results (bbox + mask)
      */
-    virtual vision_common::SegmentationResultList segment(const cv::Mat& image) = 0;
+    virtual vision_common::SegmentationResultList segment(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) = 0;
 };
 
 /**
@@ -81,10 +91,15 @@ public:
 
     /**
      * @brief Estimate poses in an image
-     * @param image Input image in BGR format
+     * @param image          Input image in BGR format
+     * @param conf_threshold Confidence threshold; <= 0 keeps the model's configured default
+     * @param iou_threshold  NMS IoU threshold; <= 0 keeps the model's configured default
      * @return List of pose results (bbox + keypoints)
      */
-    virtual vision_common::PoseResultList estimate_pose(const cv::Mat& image) = 0;
+    virtual vision_common::PoseResultList estimate_pose(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) = 0;
 };
 
 /**
@@ -99,10 +114,15 @@ public:
 
     /**
      * @brief Update tracker with new frame
-     * @param image Input image in BGR format
+     * @param image          Input image in BGR format
+     * @param conf_threshold Detector confidence override; <= 0 keeps the model's configured default
+     * @param iou_threshold  Detector NMS IoU override; <= 0 keeps the model's configured default
      * @return List of tracking results (bbox + track_id)
      */
-    virtual vision_common::TrackingResultList track(const cv::Mat& image) = 0;
+    virtual vision_common::TrackingResultList track(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) = 0;
 };
 
 /**

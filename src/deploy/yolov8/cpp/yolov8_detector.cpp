@@ -85,8 +85,9 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
 
 
     // Use common letterbox function (similar to Python implementation)
-    cv::Mat padded = vision_common::letterbox(image,
-                                            std::make_pair(inputHeight, inputWidth));
+    cv::Mat padded = vision_common::letterbox(
+        image,
+        std::make_pair(inputHeight, inputWidth));
 
 
     return cv::dnn::blobFromImage(padded, 1.0/255.0,
@@ -96,10 +97,16 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
 
 
 
-vision_common::DetectionResultList YOLOv8Detector::detect(const cv::Mat& image) {
+vision_common::DetectionResultList YOLOv8Detector::detect(
+    const cv::Mat& image,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
+
+    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     cv::Size orig_size = image.size();
     const auto t_pre0 = std::chrono::steady_clock::now();
@@ -113,7 +120,7 @@ vision_common::DetectionResultList YOLOv8Detector::detect(const cv::Mat& image) 
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size);
+    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -130,11 +137,16 @@ std::vector<vision_core::ModelCapability> YOLOv8Detector::get_capabilities() con
 
 // DFL decode now uses common function
 
-void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
-                                const float* scores, const float* score_sum,
-                                const std::vector<int64_t>& dims,
-                                int tensor_width, int tensor_height,
-                                vision_common::DetectionResultList& objects) {
+void YOLOv8Detector::get_dets(
+    const cv::Size& orig_size,
+    const float* boxes,
+    const float* scores,
+    const float* score_sum,
+    const std::vector<int64_t>& dims,
+    int tensor_width,
+    int tensor_height,
+    float conf_threshold,
+    vision_common::DetectionResultList& objects) {
     int grid_w = static_cast<int>(dims[2]);
     int grid_h = static_cast<int>(dims[3]);
     int anchors_per_branch = grid_w * grid_h;
@@ -150,7 +162,7 @@ void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
     int pad_w = static_cast<int>((tensor_height - orig_width * scale2orign) / 2);
 
     for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
-        if (score_sum[anchor_idx] < conf_threshold_) {
+        if (score_sum[anchor_idx] < conf_threshold) {
             continue;
         }
 
@@ -159,7 +171,7 @@ void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
         int classId = -1;
         for (int class_idx = 0; class_idx < num_classes_; class_idx++) {
             size_t score_offset = class_idx * anchors_per_branch + anchor_idx;
-            if ((scores[score_offset] > conf_threshold_) && (scores[score_offset] > max_score)) {
+            if ((scores[score_offset] > conf_threshold) && (scores[score_offset] > max_score)) {
                 max_score = scores[score_offset];
                 classId = class_idx;
             }
@@ -183,7 +195,9 @@ void YOLOv8Detector::get_dets(const cv::Size& orig_size, const float* boxes,
 
 vision_common::DetectionResultList YOLOv8Detector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size) {
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
 
     vision_common::DetectionResultList objects;
 
@@ -202,10 +216,11 @@ vision_common::DetectionResultList YOLOv8Detector::postprocess(
         std::vector<int64_t> dims = outputs[i * default_branch].GetTensorTypeAndShapeInfo().GetShape();
 
         // Note: swap width and height as in original code (inputHeight, inputWidth)
-        get_dets(orig_size, boxes, scores, score_sum, dims, inputHeight, inputWidth, objects);
+        get_dets(orig_size, boxes, scores, score_sum, dims, inputHeight, inputWidth,
+            conf_threshold, objects);
     }
     // Apply multi-class NMS using common function
-    return vision_common::multi_class_nms(objects, iou_threshold_);
+    return vision_common::multi_class_nms(objects, iou_threshold);
 }
 
 // Self-registration (runs at program startup)

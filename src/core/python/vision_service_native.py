@@ -122,13 +122,22 @@ class VisionServiceNative:
     def infer_image(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
+        conf: float = -1.0,
+        iou: float = -1.0,
     ) -> Tuple[object, List]:
+        """Run image inference.
+
+        ``conf`` / ``iou`` <= 0 use each model's configured defaults. Positive
+        values apply only to this call (detection / pose / seg / tracking
+        paths read them per inference without changing stored defaults).
+        Classification and embedding ignore these parameters.
+        """
         if isinstance(image_or_path, str):
-            return self._svc.infer_image(image_path=image_or_path)
+            return self._svc.infer_image(image_path=image_or_path, conf=conf, iou=iou)
         arr = np.ascontiguousarray(image_or_path)
         if arr.dtype != np.uint8:
             raise TypeError("image must be uint8 BGR (HxWx3)")
-        return self._svc.infer_image(image_bgr_uint8=arr)
+        return self._svc.infer_image(image_bgr_uint8=arr, conf=conf, iou=iou)
 
     def infer_embedding(
         self,

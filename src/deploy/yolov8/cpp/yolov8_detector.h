@@ -47,7 +47,10 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::DetectionResultList detect(const cv::Mat& image) override;
+    vision_common::DetectionResultList detect(
+        const cv::Mat& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f) override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
@@ -55,8 +58,11 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
-    vision_common::DetectionResultList postprocess(std::vector<Ort::Value>& outputs,
-                                                    const cv::Size& orig_size);
+    vision_common::DetectionResultList postprocess(
+        std::vector<Ort::Value>& outputs,
+        const cv::Size& orig_size,
+        float conf_threshold,
+        float iou_threshold);
 
 private:
     float conf_threshold_;
@@ -65,11 +71,16 @@ private:
     int num_classes_;
     std::string provider_;
 
-    void get_dets(const cv::Size& orig_size, const float* boxes,
-                    const float* scores, const float* score_sum,
-                    const std::vector<int64_t>& dims,
-                    int tensor_width, int tensor_height,
-                    vision_common::DetectionResultList& objects);
+    void get_dets(
+        const cv::Size& orig_size,
+        const float* boxes,
+        const float* scores,
+        const float* score_sum,
+        const std::vector<int64_t>& dims,
+        int tensor_width,
+        int tensor_height,
+        float conf_threshold,
+        vision_common::DetectionResultList& objects);
 };
 
 }  // namespace vision_deploy

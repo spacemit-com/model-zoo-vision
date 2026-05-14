@@ -6,6 +6,7 @@
 #include <iostream>    // NOLINT(build/include_order)
 #include <memory>      // NOLINT(build/include_order)
 #include <string>      // NOLINT(build/include_order)
+#include <utility>     // NOLINT(build/include_order)
 #include <vector>      // NOLINT(build/include_order)
 #include <fstream>     // NOLINT(build/include_order)
 #include <iomanip>     // NOLINT(build/include_order)
@@ -187,6 +188,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Could not load image: " << image_path << std::endl;
             return 1;
         }
+
         std::vector<VisionServiceResult> results;
         VisionServiceStatus ret = service->InferImage(img, &results);
         if (ret != VISION_SERVICE_OK) {

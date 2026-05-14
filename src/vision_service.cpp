@@ -334,7 +334,9 @@ const std::string& VisionService::LastError() const {
 }
 
 VisionServiceStatus VisionService::InferImage(const std::string& image_path,
-                                                std::vector<VisionServiceResult>* out_results) {
+                                                std::vector<VisionServiceResult>* out_results,
+                                                float conf_threshold,
+                                                float iou_threshold) {
     if (out_results == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_results must not be null");
     }
@@ -355,11 +357,13 @@ VisionServiceStatus VisionService::InferImage(const std::string& image_path,
         return SetError(VISION_SERVICE_IO_FAILED, std::string("Failed to read image: ") + image_path);
     }
 
-    return InferImage(image, out_results);
+    return InferImage(image, out_results, conf_threshold, iou_threshold);
 }
 
 VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
-                                                std::vector<VisionServiceResult>* out_results) {
+                                                std::vector<VisionServiceResult>* out_results,
+                                                float conf_threshold,
+                                                float iou_threshold) {
     if (out_results == nullptr) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_results must not be null");
     }
@@ -388,11 +392,12 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             t0 = std::chrono::steady_clock::now();
         }
         vision_core::BaseModel* model = impl_->model.get();
+
         const bool is_tracking = model->supports_capability(vision_core::ModelCapability::kTrackUpdate);
         if (is_tracking) {
             auto* tracking_model = dynamic_cast<vision_core::ITrackingModel*>(model);
             if (tracking_model != nullptr) {
-                auto results = tracking_model->track(image);
+                auto results = tracking_model->track(image, conf_threshold, iou_threshold);
                 impl_->last_raw_results.clear();
                 impl_->last_raw_results.reserve(results.size());
                 for (auto& r : results) {
@@ -404,7 +409,7 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             }
         } else if (auto* pose_model = dynamic_cast<vision_core::IPoseModel*>(model);
                     pose_model != nullptr) {
-            auto results = pose_model->estimate_pose(image);
+            auto results = pose_model->estimate_pose(image, conf_threshold, iou_threshold);
             impl_->last_raw_results.clear();
             impl_->last_raw_results.reserve(results.size());
             for (auto& r : results) {
@@ -412,7 +417,7 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             }
         } else if (auto* seg_model = dynamic_cast<vision_core::ISegmentationModel*>(model);
                     seg_model != nullptr) {
-            auto results = seg_model->segment(image);
+            auto results = seg_model->segment(image, conf_threshold, iou_threshold);
             impl_->last_raw_results.clear();
             impl_->last_raw_results.reserve(results.size());
             for (auto& r : results) {
@@ -420,7 +425,7 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
             }
         } else if (auto* det_model = dynamic_cast<vision_core::IDetectionModel*>(model);
                     det_model != nullptr) {
-            auto results = det_model->detect(image);
+            auto results = det_model->detect(image, conf_threshold, iou_threshold);
             impl_->last_raw_results.clear();
             impl_->last_raw_results.reserve(results.size());
             for (auto& r : results) {

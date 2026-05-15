@@ -18,7 +18,7 @@
 ### 2.1. 安装依赖
 
 - **编译环境**：CMake 3.10+，C++17；Python 3.12+（可选）。
-- **C++ 依赖**：OpenCV 4（core、imgproc、highgui）、spacemit-ort、yaml-cpp。路径可通过 `OpenCV_DIR`、`SPACEMIT_DIR` 等在 CMake 中设置。
+- **C++ 依赖**：OpenCV 4（与本工程 `CMakeLists.txt` 中 `find_package` 一致，含 core、imgproc、imgcodecs、highgui、dnn）、Eigen3、spacemit-ort、yaml-cpp。路径可通过 `OpenCV_DIR`、`SPACEMIT_DIR` 等在 CMake 中设置。
 - **Python 依赖**：NumPy、OpenCV 4.12+、ONNX Runtime、Pillow、scipy、pydantic、spacemit-ort。
 
 ```bash
@@ -29,17 +29,23 @@ sudo apt-get install -y python3-spacemit-ort opencv-spacemit libeigen3-dev space
 ```
 
 **Python 安装（推荐先用于跑通示例）：**
-```bash
-cd components/model_zoo/vision
-pip install -e .
-```
+
+- **本仓库独立克隆**：在仓库根目录（含 `setup.py` 的目录）执行：
+  ```bash
+  pip install -e .
+  ```
+- **SpacemiT SDK 工程内**：若 Vision 组件位于 `components/model_zoo/vision`，则在该目录执行：
+  ```bash
+  cd components/model_zoo/vision
+  pip install -e .
+  ```
 
 ### 2.2. 下载模型
 
 模型统一放在 **`~/.cache/models/vision/<type>/`**（如 `~/.cache/models/vision/yolov8/`）。若运行示例时提示「Model file not found」，请在对应示例目录下执行下载脚本：
 
 ```bash
-# 下载example/yolov8所需要的模型
+# 下载 examples/yolov8 所需要的模型
 bash examples/yolov8/scripts/download_models.sh
 ```
 
@@ -48,6 +54,8 @@ bash examples/yolov8/scripts/download_models.sh
 ```bash
 bash scripts/download_all_models.sh
 ```
+
+该脚本会遍历常见 examples/applications 下的 `download_models.sh`；若某模型（例如 **STGCN**、**PP-LiteSeg**）未包含在脚本列表中，请到对应 `examples/<name>/scripts/` 单独执行下载脚本。
 
 全部下载完成后模型如下：
 
@@ -203,7 +211,7 @@ make -j$(nproc)
 
 | 依赖库 | 说明 |
 |--------|------|
-| OpenCV | `opencv_core`、`opencv_imgproc`、`opencv_highgui`（对应 CMake 中 `find_package(OpenCV COMPONENTS core imgproc highgui)` 与 `${OpenCV_LIBS}`） |
+| OpenCV | 与本工程一致：`opencv_core`、`opencv_imgproc`、`opencv_imgcodecs`、`opencv_highgui`、`opencv_dnn`（CMake 中 `find_package(OpenCV ... COMPONENTS core imgproc imgcodecs highgui dnn)` 与 `${OpenCV_LIBS}`） |
 | ONNX Runtime | `onnxruntime`（Linux 常见文件名：`libonnxruntime.so`） |
 | SpaceMIT EP | `spacemit_ep`（Linux 常见文件名：`libspacemit_ep.so`；使用 SpaceMITExecutionProvider 时必需） |
 | yaml-cpp | `yaml-cpp`（Linux 常见文件名：`libyaml-cpp.so`） |
@@ -229,7 +237,7 @@ target_link_libraries(your_app PRIVATE
 | `OpenCV_DIR` / `OpenCV_INSTALL_DIR` | OpenCV 的 CMake 配置目录或安装根目录 |
 | `SPACEMIT_DIR` | SpaceMIT 运行时/头文件根目录 |
 | `BUILD_EXAMPLES` | 是否构建示例（默认 ON） |
-| `BUILD_TESTS` | 是否构建测试与 benchmark（默认 OFF） |
+| `BUILD_TESTS` | 是否构建测试与 `vision_infer_benchmark`（默认 ON） |
 
 ### 3.2. API 使用与 CMake 集成
 
@@ -282,7 +290,7 @@ else
 
 ## 6. 贡献方式
 
-欢迎提交 Issue 与 Pull Request。开发前请确认编码风格与现有 C++/Python 风格一致，并通过相关测试。贡献者与维护者名单见 **`CONTRIBUTORS.md`**（如有）。
+欢迎提交 Issue 与 Pull Request。开发前请确认编码风格与现有 C++/Python 风格一致，并通过相关测试。若仓库中存在 **`CONTRIBUTORS.md`**，贡献者与维护者名单以该文件为准。
 
 ## 7. License
 
@@ -318,37 +326,41 @@ K3:
 
 |      模型大类       |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :-----------------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
-|       resnet        |       resnet50        | [1,3,224,224] |   int8   |   117.4   |           |
-|       arcface       | arcface_mobilefacenet | [1,3,112,112] |   int8   |   335.1   |           |
-|     yolov5-face     |     yolov5n-face      | [1,3,640,640] |   int8   |   27.4    |           |
-|       yolov8        |        yolov8n        | [1,3,640,640] |   int8   |   35.9    |           |
-|                     |        yolov8s        | [1,3,640,640] |   int8   |   26.2    |           |
-|                     |        yolov8m        | [1,3,640,640] |   int8   |   16.2    |           |
-|     yolov8-pose     |     yolov8n-pose      | [1,3,640,640] |   int8   |   45.2    |           |
-|                     |     yolov8s-pose      | [1,3,640,640] |   int8   |   28.5    |           |
-|                     |     yolov8m-pose      | [1,3,640,640] |   int8   |   17.7    |           |
-|     yolov8-seg      |      yolov8n-seg      | [1,3,640,640] |   int8   |   22.0    |           |
-|                     |      yolov8s-seg      | [1,3,640,640] |   int8   |   16.0    |           |
-|                     |      yolov8m-seg      | [1,3,640,640] |   int8   |   11.0    |           |
-|       yolo11        |        yolo11n        | [1,3,640,640] |   int8   |   30.2    |           |
-|                     |        yolo11s        | [1,3,640,640] |   int8   |   22.9    |           |
-|                     |        yolo11m        | [1,3,640,640] |   int8   |   12.8    |           |
+|       resnet        |       resnet50        | [1,3,224,224] |   int8   |   117.4   |   152.5   |
+|       arcface       | arcface_mobilefacenet | [1,3,112,112] |   int8   |   322.0   |   455.9   |
+|     yolov5-face     |     yolov5n-face      | [1,3,640,640] |   int8   |   28.5    |   35.4    |
+|       yolov8        |        yolov8n        | [1,3,640,640] |   int8   |   44.0    |   60.2    |
+|                     |        yolov8s        | [1,3,640,640] |   int8   |   29.5    |   41.9    |
+|                     |        yolov8m        | [1,3,640,640] |   int8   |   16.6    |   25.7    |
+|     yolov8-pose     |     yolov8n-pose      | [1,3,640,640] |   int8   |   52.4    |   71.9    |
+|                     |     yolov8s-pose      | [1,3,640,640] |   int8   |   32.3    |   46.3    |
+|                     |     yolov8m-pose      | [1,3,640,640] |   int8   |   18.4    |   27.1    |
+|     yolov8-seg      |      yolov8n-seg      | [1,3,640,640] |   int8   |   22.5    |   27.8    |
+|                     |      yolov8s-seg      | [1,3,640,640] |   int8   |   16.4    |   20.5    |
+|                     |      yolov8m-seg      | [1,3,640,640] |   int8   |   11.2    |   14.9    |
+|       yolo11        |        yolo11n        | [1,3,640,640] |   int8   |   38.9    |   55.8    |
+|                     |        yolo11s        | [1,3,640,640] |   int8   |   26.7    |   39.1    |
+|                     |        yolo11m        | [1,3,640,640] |   int8   |   13.7    |   20.9    |
 | bytetrack(10个目标) |        yolov8n        | [1,3,640,640] |   int8   |   31.7    |           |
 |                     |        yolov8s        | [1,3,640,640] |   int8   |   22.9    |           |
 |  ocsort(10个目标)   |        yolov8n        | [1,3,640,640] |   int8   |   21.4    |           |
 |                     |        yolov8s        | [1,3,640,640] |   int8   |   15.7    |           |
-|       yolov5        |        yolov5n        | [1,3,640,640] |   int8   |   25.5    |           |
-|                     |        yolov5s        | [1,3,640,640] |   int8   |   20.8    |           |
+|       yolov5        |        yolov5n        | [1,3,640,640] |   int8   |   27.6    |   32.2    |
+|                     |        yolov5s        | [1,3,640,640] |   int8   |   21.6    |   26.8    |
 
 
 
 **复现方法**：
 
-参照 3.1 节完成 C++ 构建，可执行下面命令测试性能（以 yolov8 为例）：
+参照 [2.4.2](#242-独立构建下验证) 完成 C++ 构建（需开启 `BUILD_TESTS`，默认 ON）。`vision_infer_benchmark` 位于构建目录下的 `tests/benchmarks/`。在**仓库根目录**执行（`--config` 为相对于当前工作目录的路径，与 `infer_benchmark` 内建示例一致）：
 
 ```shell
-vision_infer_benchmark --config components/model_zoo/vision/examples/yolov8/config/yolov8.yaml --image ~/.cache/assets/image/006_test.jpg
+./build/tests/benchmarks/vision_infer_benchmark \
+  --config examples/yolov8/config/yolov8.yaml \
+  --image ~/.cache/assets/image/006_test.jpg
 ```
+
+若 Vision 作为 SDK 子目录且路径仍为 `components/model_zoo/vision/`，可将 `--config` 换为 `components/model_zoo/vision/examples/yolov8/config/yolov8.yaml`。
 
 > 以上命令默认使用 yolov8n 模型；如需指定其他模型，可使用 `--model-path` 参数，例如：`--model-path /path/to/yolov8s.onnx`。
 
@@ -380,23 +392,23 @@ K3:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
-|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   139.5   |           |
-|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   373.7   |           |
-| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   30.9    |           |
-|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   54.6    |           |
-|             |        yolov8s        | [1,3,640,640] |   int8   |   35.0    |           |
-|             |        yolov8m        | [1,3,640,640] |   int8   |   19.1    |           |
-| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   53.1    |           |
-|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   33.4    |           |
-|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   18.6    |           |
-| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   42.4    |           |
-|             |      yolov8s-seg      | [1,3,640,640] |   int8   |   27.3    |           |
-|             |      yolov8m-seg      | [1,3,640,640] |   int8   |   15.4    |           |
-|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   41.4    |           |
-|             |        yolo11s        | [1,3,640,640] |   int8   |   28.3    |           |
-|             |        yolo11m        | [1,3,640,640] |   int8   |   14.4    |           |
-|   yolov5    |        yolov5n        | [1,3,640,640] |   int8   |   56.9    |           |
-|             |        yolov5s        | [1,3,640,640] |   int8   |   37.6    |           |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   139.5   |   197.0   |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   373.7   |   531.7   |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   32.1    |   41.1    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   60.8    |   97.0    |
+|             |        yolov8s        | [1,3,640,640] |   int8   |   36.3    |   57.1    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |   19.5    |   30.6    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   61.1    |   88.9    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   35.4    |   52.9    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   19.3    |   29.3    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   46.7    |   72.5    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |   28.2    |   43.9    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |   15.7    |   24.7    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   45.1    |   70.8    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |   29.4    |   45.3    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |   14.5    |   22.7    |
+|   yolov5    |        yolov5n        | [1,3,640,640] |   int8   |   69.1    |   104.4   |
+|             |        yolov5s        | [1,3,640,640] |   int8   |   41.3    |   62.8    |
 
 **复现方法**：
 

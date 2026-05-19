@@ -19,7 +19,6 @@ import yaml
 sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
 
 from core.python.vision_model_factory import ModelFactory
-from common import load_labels
 
 
 def resolve_path(path_value, project_root):
@@ -27,16 +26,47 @@ def resolve_path(path_value, project_root):
     return p if p.is_absolute() else (project_root / p).resolve()
 
 
+def load_imagenet_labels(label_file: Path) -> list:
+    """ImageNet 标签文件：每行「WordNet_ID 类别名」，只取类别名。"""
+    labels = []
+    with open(label_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            _, _, name = line.partition(" ")
+            labels.append(name if name else line)
+    return labels
+
+
+def find_label_file(path_value: str, project_root: Path, config_dir: Path):
+    p = Path(path_value).expanduser()
+    if p.is_absolute():
+        return p if p.is_file() else None
+    for base in (project_root, config_dir.parent.parent):
+        candidate = (base / p).resolve()
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ResNet Classification Example")
-    parser.add_argument("--config", type=str, default=None,
-                       help="Config yaml path (default: examples/resnet/config/resnet50.yaml)")
-    parser.add_argument("--image", type=str,
-                       help="Input image path (if not provided, uses config default)")
-    parser.add_argument("--top-k", type=int, default=5,
-                       help="Show top-k predictions")
-    parser.add_argument("--model-path", type=str, default=None,
-                       help="Override model_path in yaml")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Config yaml path (default: examples/resnet/config/resnet50.yaml)",
+    )
+    parser.add_argument(
+        "--image",
+        type=str,
+        help="Input image path (if not provided, uses config default)",
+    )
+    parser.add_argument("--top-k", type=int, default=5, help="Show top-k predictions")
+    parser.add_argument(
+        "--model-path", type=str, default=None, help="Override model_path in yaml"
+    )
     return parser.parse_args()
 
 
@@ -88,27 +118,23 @@ def main():
 
         print(f"图像尺寸: {image.shape}")
 
-        # Load labels if available
-        labels = None
-        label_file_path = config.get("label_file_path")
-        if label_file_path:
-            label_file_path = resolve_path(label_file_path, project_root)
-            try:
-                labels = load_labels(str(label_file_path))
-                print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")
-            except Exception as e:
-                print(f"警告: 无法加载标签文件 {label_file_path}: {e}")
-                labels = None
+        labels = []
+        label_rel = config.get("label_file_path")
+        if label_rel:
+            label_file = find_label_file(label_rel, project_root, config_dir)
+            if label_file:
+                labels = load_imagenet_labels(label_file)
+                print(f"加载标签文件: {label_file} ({len(labels)} 个)")
+            else:
+                print(f"警告: 未找到标签文件 {label_rel}")
 
         # Run classification（ResNetClassifier 使用 predict_top_k，返回 [(class_name, score), ...]）
         print("运行图像分类...")
-        predictions = classifier.predict_top_k(
-            image, labels or [], k=args.top_k
-        )
+        predictions = classifier.predict_top_k(image, labels or [], k=args.top_k)
 
         print(f"\nTop-{args.top_k} 预测结果:")
         for i, (class_name, confidence) in enumerate(predictions):
-            print(f"  {i+1}: {class_name} ({confidence:.4f})")
+            print(f"  {i + 1}: {class_name} ({confidence:.4f})")
 
     except Exception as e:
         print(f"错误: {e}")

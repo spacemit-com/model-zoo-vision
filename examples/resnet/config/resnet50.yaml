@@ -5,6 +5,6 @@ label_file_path: assets/labels/imagenet.txt
 image_size: [224, 224]
 class: deploy.resnet.ResNetClassifier
 default_params:
-  num_threads: 4
+  num_threads: 8
   providers:
     - SpaceMITExecutionProvider

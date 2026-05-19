@@ -19,8 +19,6 @@
 
 namespace {
 
-// Resolve a resource path: absolute paths pass through; relative paths are tried
-// as-is, then under "../" (handles running examples from build/ subdir).
 std::string ResolveResourcePath(const std::string& path) {
     if (path.empty() || path[0] == '/' || (path.size() >= 2 && path[1] == ':')) {
         return path;
@@ -29,6 +27,21 @@ std::string ResolveResourcePath(const std::string& path) {
     const std::string with_parent = "../" + path;
     if (std::filesystem::exists(with_parent)) return with_parent;
     return path;
+}
+
+std::string ResolveLabelFile(const std::string& path, const std::string& config_path) {
+    if (path.empty()) return path;
+    namespace fs = std::filesystem;
+    const auto exists = [](const fs::path& p) { return !p.empty() && fs::exists(p); };
+    fs::path rel(path);
+    if (rel.is_absolute() && exists(rel)) return rel.string();
+    if (exists(rel)) return rel.string();
+    if (exists(fs::path("..") / rel)) return (fs::path("..") / rel).string();
+    const fs::path config_dir = fs::path(config_path).parent_path();
+    const fs::path repo_root = config_dir.parent_path().parent_path().parent_path();
+    const fs::path from_repo = repo_root / rel;
+    if (exists(from_repo)) return from_repo.string();
+    return ResolveResourcePath(path);
 }
 
 // Load ImageNet-format labels: one entry per line, optionally prefixed by a
@@ -78,7 +91,8 @@ int main(int argc, char* argv[]) {
         try {
             YAML::Node config = YAML::LoadFile(config_path);
             if (config["label_file_path"]) {
-                label_file_path = ResolveResourcePath(config["label_file_path"].as<std::string>());
+                label_file_path = ResolveLabelFile(
+                    config["label_file_path"].as<std::string>(), config_path);
             }
         } catch (...) {}
     }

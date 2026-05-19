@@ -9,7 +9,7 @@ default_params:
   iou_threshold: 0.45
   track_buffer: 30
   frame_rate: 30
-  num_threads: 4
+  num_threads: 8
   providers:
     - SpaceMITExecutionProvider
 

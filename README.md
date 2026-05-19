@@ -55,7 +55,7 @@ bash examples/yolov8/scripts/download_models.sh
 bash scripts/download_all_models.sh
 ```
 
-该脚本会遍历常见 examples/applications 下的 `download_models.sh`；若某模型（例如 **STGCN**、**PP-LiteSeg**）未包含在脚本列表中，请到对应 `examples/<name>/scripts/` 单独执行下载脚本。
+该脚本会遍历常见 examples/applications 下的 `download_models.sh`；若某模型（例如 **STGCN**）未包含在脚本列表中，请到对应 `examples/<name>/scripts/` 单独执行下载脚本。
 
 全部下载完成后模型如下：
 

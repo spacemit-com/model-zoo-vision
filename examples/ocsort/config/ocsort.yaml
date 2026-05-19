@@ -7,7 +7,7 @@ default_params:
   # detector params (YOLOv8)
   conf_threshold: 0.25
   iou_threshold: 0.45
-  num_threads: 4
+  num_threads: 8
   providers:
     - SpaceMITExecutionProvider
   # tracker params

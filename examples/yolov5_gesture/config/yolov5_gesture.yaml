@@ -7,7 +7,7 @@ class: deploy.yolov5_gesture.YOLOv5_GestureDetector
 default_params:
   conf_threshold: 0.8
   iou_threshold: 0.5
-  num_threads: 4
+  num_threads: 8
   providers:
     - SpaceMITExecutionProvider
 

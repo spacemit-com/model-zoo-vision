@@ -107,9 +107,15 @@ int main(int argc, char* argv[]) {
         }
         cv::Mat vis;
         if (!results.empty()) {
-            service->Draw(frame, &vis);
+            auto draw_status = service->Draw(frame, &vis);
+            if (draw_status != VISION_SERVICE_OK) {
+                vis = frame.clone();
+            }
         } else {
-            vis = frame;
+            vis = frame.clone();
+            if (use_camera && (frame_count <= 5 || frame_count % 30 == 0)) {
+                std::cout << "Frame " << frame_count << ": no tracks" << std::endl;
+            }
         }
         if (use_camera) {
             char fps_buf[32];

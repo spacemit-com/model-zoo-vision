@@ -171,7 +171,9 @@ def main():
             if tracks:
                 result_frame = tracker.draw_results(frame, tracks, labels)
             else:
-                result_frame = frame
+                result_frame = frame.copy()
+                if args.use_camera and (frame_count <= 5 or frame_count % 30 == 0):
+                    print(f"帧 {frame_count}: 无跟踪目标")
 
             if args.use_camera:
                 cv2.putText(result_frame, f"FPS: {current_fps:.1f}", (10, 30),

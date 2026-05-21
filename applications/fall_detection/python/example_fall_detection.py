@@ -481,6 +481,8 @@ def main():
                     # 无检测时 STGCN buffer 滑动丢弃一帧，画面仍显示上一帧动作信息
                     if keypoint_buffer:
                         keypoint_buffer.popleft()
+                    if args.use_camera and (frame_idx <= 5 or frame_idx % 30 == 0):
+                        print(f"帧 {frame_idx}: 未检测到人")
                     primary_action = last_stgcn_result.get('action_name', '—') if last_stgcn_result else '—'
                     primary_fall_prob = last_stgcn_result.get('fall_prob', 0.0) if last_stgcn_result else 0.0
                     info_line = f"Action: {primary_action}  P(fall): {primary_fall_prob:.2f}"

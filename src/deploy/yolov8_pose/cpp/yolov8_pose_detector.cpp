@@ -174,18 +174,16 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
             float x2 = (output_data[j] + half_width - dw) / ratio;
             float y2 = (output_data[anchors + j] + half_height - dh) / ratio;
 
-            // Filter invalid boxes: must have positive area and reasonable size
-            float box_w = x2 - x1;
-            float box_h = y2 - y1;
-            if (box_w < 10.0f || box_h < 10.0f) {
+            // Clamp to image bounds
+            const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
+            const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
+            x1 = std::clamp(x1, 0.0f, max_x);
+            y1 = std::clamp(y1, 0.0f, max_y);
+            x2 = std::clamp(x2, 0.0f, max_x);
+            y2 = std::clamp(y2, 0.0f, max_y);
+            if (x2 - x1 < 10.0f || y2 - y1 < 10.0f) {
                 continue;
             }
-
-            // Clamp to image bounds
-            x1 = std::max(0.0f, x1);
-            y1 = std::max(0.0f, y1);
-            x2 = std::max(0.0f, x2);
-            y2 = std::max(0.0f, y2);
 
             vision_common::PoseResult det;
             det.bbox = vision_common::BoundingBox{x1, y1, x2, y2};

@@ -32,6 +32,7 @@ class YOLOv8PoseDetector(BaseModel):
     def __init__(self, model_path: str,
                  conf_threshold: float = 0.25,
                  iou_threshold: float = 0.45,
+                 point_confidence_threshold: float = 0.2,
                  num_threads: int = 4,
                  **kwargs):
         """
@@ -46,6 +47,7 @@ class YOLOv8PoseDetector(BaseModel):
         """
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
+        self.point_confidence_threshold = point_confidence_threshold
         self.num_threads = num_threads
         super().__init__(model_path, **kwargs)
 
@@ -197,12 +199,38 @@ class YOLOv8PoseDetector(BaseModel):
                 adjusted_kp.append((x, y, vis))
             adjusted_keypoints.append(adjusted_kp)
 
+        orig_h, orig_w = orig_shape
+        min_box_size = 10
+        min_visible_kpts = 3
+
         detections = []
         for i in range(len(keep_indices)):
+            bx1 = int(x1[i])
+            by1 = int(y1[i])
+            bx2 = int(x2[i])
+            by2 = int(y2[i])
+
+            # Clip to original image (scale_coords may yield negative/out-of-bounds values)
+            bx1 = max(0, min(bx1, orig_w - 1))
+            by1 = max(0, min(by1, orig_h - 1))
+            bx2 = max(0, min(bx2, orig_w - 1))
+            by2 = max(0, min(by2, orig_h - 1))
+
+            if bx2 - bx1 < min_box_size or by2 - by1 < min_box_size:
+                continue
+
+            kps = adjusted_keypoints[i]
+            visible_count = sum(
+                1 for p in kps
+                if len(p) > 2 and p[2] > self.point_confidence_threshold
+            )
+            if visible_count < min_visible_kpts:
+                continue
+
             detections.append({
-                'box': [x1[i], y1[i], x2[i], y2[i]],
+                'box': [bx1, by1, bx2, by2],
                 'score': float(scores[keep_indices[i]]),
-                'keypoints': adjusted_keypoints[i]
+                'keypoints': kps,
             })
 
         return detections

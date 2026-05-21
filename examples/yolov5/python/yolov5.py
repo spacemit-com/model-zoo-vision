@@ -142,7 +142,9 @@ def main():
                     if frame_count <= 5 or frame_count % 30 == 0:
                         print(f"帧 {frame_count}: 检测到 {len(detections)} 个目标")
                 else:
-                    result_frame = frame
+                    result_frame = frame.copy()
+                    if frame_count <= 5 or frame_count % 30 == 0:
+                        print(f"帧 {frame_count}: 未检测到目标")
 
                 cv2.putText(result_frame, f"FPS: {fps:.1f}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)

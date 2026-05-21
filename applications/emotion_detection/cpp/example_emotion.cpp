@@ -220,11 +220,16 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    auto run_face_emotion_on_image = [&](const cv::Mat& image, cv::Mat* out_image) {
+    int frame_count = 0;
+    auto run_face_emotion_on_image = [&](const cv::Mat& image, cv::Mat* out_image, bool log_if_empty = false) {
         std::vector<VisionServiceResult> face_results;
         VisionServiceStatus ret = face_service->InferImage(image, &face_results);
         if (ret != VISION_SERVICE_OK || face_results.empty()) {
             if (out_image) *out_image = image.clone();
+            if (log_if_empty && face_results.empty()
+                    && (frame_count <= 5 || frame_count % 30 == 0)) {
+                std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
+            }
             return;
         }
         cv::Mat vis = image.clone();
@@ -268,8 +273,9 @@ int main(int argc, char* argv[]) {
         cv::Mat frame;
         while (cap.read(frame)) {
             if (frame.empty()) continue;
+            frame_count++;
             cv::Mat vis;
-            run_face_emotion_on_image(frame, &vis);
+            run_face_emotion_on_image(frame, &vis, true);
             cv::imshow("Emotion", vis);
             if ((cv::waitKey(1) & 0xFF) == 'q') break;
         }

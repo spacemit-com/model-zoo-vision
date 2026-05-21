@@ -95,7 +95,7 @@ def main():
                     classes.append(0)
                     scores.append(d["confidence"])
                 if boxes:
-                    frame = draw_detections(
+                    result_frame = draw_detections(
                         frame,
                         np.array(boxes),
                         np.array(classes),
@@ -104,15 +104,19 @@ def main():
                     )
                     if frame_count <= 5 or frame_count % 30 == 0:
                         print(f"帧 {frame_count}: 检测到 {len(detections)} 张人脸")
-                cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
+                else:
+                    result_frame = frame.copy()
+                    if frame_count <= 5 or frame_count % 30 == 0:
+                        print(f"帧 {frame_count}: 未检测到人脸")
+                cv2.putText(result_frame, f"FPS: {fps:.1f}", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.imshow("YOLOv5-Face Detection", frame)
+                cv2.imshow("YOLOv5-Face Detection", result_frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
                 elif key == ord("s"):
                     path = f"camera_face_{frame_count}.jpg"
-                    cv2.imwrite(path, frame)
+                    cv2.imwrite(path, result_frame)
                     print(f"已保存: {path}")
                 t_now = time.perf_counter()
                 fps = 1.0 / (t_now - t_prev) if (t_now - t_prev) > 1e-6 else 0.0

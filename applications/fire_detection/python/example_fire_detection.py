@@ -239,6 +239,7 @@ def main():
         **override_params,
     )
     print("✓ 检测器加载成功")
+    frame_count = 0
     try:
         while True:
             ret, frame = cap.read()
@@ -246,13 +247,18 @@ def main():
                 if not args.use_camera:
                     print("视频结束")
                 break
+            frame_count += 1
             detections = detector.infer(frame)
             if detections:
                 boxes = np.array([d["bbox"] for d in detections])
                 classes = np.array([d["class_id"] for d in detections])
                 scores = np.array([d["confidence"] for d in detections])
-                frame = draw_detections(frame, boxes, classes, scores, labels)
-            cv2.imshow("Fire Detection", frame)
+                display = draw_detections(frame, boxes, classes, scores, labels)
+            else:
+                display = frame.copy()
+                if args.use_camera and (frame_count <= 5 or frame_count % 30 == 0):
+                    print(f"帧 {frame_count}: 未检测到目标")
+            cv2.imshow("Fire Detection", display)
             if (cv2.waitKey(delay_ms) & 0xFF) == ord("q"):
                 break
     except KeyboardInterrupt:

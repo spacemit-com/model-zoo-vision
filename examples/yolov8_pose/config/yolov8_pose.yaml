@@ -8,6 +8,7 @@ class: deploy.yolov8_pose.YOLOv8PoseDetector
 default_params:
   conf_threshold: 0.25
   iou_threshold: 0.45
+  point_confidence_threshold: 0.2
   num_threads: 8
   providers:
     - SpaceMITExecutionProvider

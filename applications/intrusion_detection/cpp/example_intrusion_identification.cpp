@@ -427,6 +427,10 @@ int main(int argc, char** argv) {
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 2);
         }
 
+            if (results.empty() && use_camera && (frame_idx <= 5 || frame_idx % 30 == 0)) {
+                std::cout << "Frame " << frame_idx << ": no tracks" << std::endl;
+            }
+
             char fps_buf[32];
             std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", current_fps);
             cv::putText(vis, fps_buf, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 0), 2);

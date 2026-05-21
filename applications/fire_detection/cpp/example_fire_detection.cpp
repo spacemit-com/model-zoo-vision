@@ -194,7 +194,10 @@ int main(int argc, char** argv) {
             return;
         }
         if (!results.empty()) {
-            service->Draw(image, out_vis);
+            auto draw_status = service->Draw(image, out_vis);
+            if (draw_status != VISION_SERVICE_OK) {
+                *out_vis = image.clone();
+            }
         } else {
             *out_vis = image.clone();
         }

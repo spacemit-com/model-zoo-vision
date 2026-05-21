@@ -588,6 +588,9 @@ int main(int argc, char** argv) {
             if (!keypoint_buffer.empty()) {
                 keypoint_buffer.pop_front();
             }
+            if (frame_idx <= 5 || frame_idx % 30 == 0) {
+                std::cout << "Frame " << frame_idx << ": no person detected" << std::endl;
+            }
         }
 
         std::ostringstream oss_info;

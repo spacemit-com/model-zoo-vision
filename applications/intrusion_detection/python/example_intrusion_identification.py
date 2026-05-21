@@ -468,6 +468,9 @@ def main():
                 cv2.rectangle(vis, (tx1, ty1), (tx2, ty2), color, -1)
                 cv2.putText(vis, text, (x1 + 3, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
+            if not results and args.use_camera and (frame_idx <= 5 or frame_idx % 30 == 0):
+                print(f"帧 {frame_idx}: 无跟踪目标")
+
             # HUD
             cv2.putText(vis, f"Frame: {frame_idx}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
             if args.video and total_frames > 0:

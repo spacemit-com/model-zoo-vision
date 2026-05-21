@@ -214,10 +214,17 @@ def draw_keypoints(
         [3, 5], [4, 6],
     ]
 
+    img_h, img_w = image.shape[:2]
     for det in detections:
         # 绘制检测框
         box = det['box']
-        x1, y1, x2, y2 = box
+        x1, y1, x2, y2 = map(int, box)
+        x1 = max(0, min(x1, img_w - 1))
+        y1 = max(0, min(y1, img_h - 1))
+        x2 = max(0, min(x2, img_w - 1))
+        y2 = max(0, min(y2, img_h - 1))
+        if x2 <= x1 or y2 <= y1:
+            continue
         cv2.rectangle(image, (x1, y1), (x2, y2), box_color, line_thickness)
 
         # 绘制关键点和连接线
@@ -225,7 +232,10 @@ def draw_keypoints(
         for i, (x, y, vis) in enumerate(keypoints):
             if vis < confidence_threshold:
                 continue  # 跳过不可见关键点
-            cv2.circle(image, (int(x), int(y)), kp_radius, kp_color, -1)
+            px, py = int(x), int(y)
+            if px < 0 or py < 0 or px >= img_w or py >= img_h:
+                continue
+            cv2.circle(image, (px, py), kp_radius, kp_color, -1)
 
         # 绘制关键点连接线
         for (start_idx, end_idx) in KP_CONNECTIONS:
@@ -235,13 +245,11 @@ def draw_keypoints(
             end_x, end_y, end_vis = keypoints[end_idx]
             if start_vis < confidence_threshold or end_vis < confidence_threshold:
                 continue
-            cv2.line(
-                image,
-                (int(start_x), int(start_y)),
-                (int(end_x), int(end_y)),
-                kp_color,
-                line_thickness,
-            )
+            sx, sy = int(start_x), int(start_y)
+            ex, ey = int(end_x), int(end_y)
+            if not (0 <= sx < img_w and 0 <= sy < img_h and 0 <= ex < img_w and 0 <= ey < img_h):
+                continue
+            cv2.line(image, (sx, sy), (ex, ey), kp_color, line_thickness)
 
     return image
 

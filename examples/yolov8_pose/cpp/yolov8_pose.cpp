@@ -96,9 +96,15 @@ int main(int argc, char* argv[]) {
             if (!results.empty()) {
                 if (frame_count <= 5 || frame_count % 30 == 0)
                     std::cout << "Frame " << frame_count << ": Detected " << results.size() << " persons" << std::endl;
-                service->Draw(frame, &vis);
+                auto draw_status = service->Draw(frame, &vis);
+                if (draw_status != VISION_SERVICE_OK) {
+                    std::cerr << "Draw error: " << service->LastError() << std::endl;
+                    vis = frame.clone();
+                }
             } else {
-                vis = frame;
+                vis = frame.clone();
+                if (frame_count <= 5 || frame_count % 30 == 0)
+                    std::cout << "Frame " << frame_count << ": no person detected" << std::endl;
             }
             char fps_buf[32];
             std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", fps);

@@ -150,6 +150,8 @@ int main(int argc, char* argv[]) {
                 }
             } else {
                 vis = frame.clone();
+                if (frame_count <= 5 || frame_count % 30 == 0)
+                    std::cout << "Frame " << frame_count << ": no gesture detected" << std::endl;
             }
             char fps_buf[32];
             std::snprintf(fps_buf, sizeof(fps_buf), "FPS: %.1f", fps);

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>cv</name>
+  <name>vision</name>
   <version>0.1.0</version>
   <description>Computer vision model deployment (detection, classification, segmentation, tracking) using ONNX Runtime and OpenCV</description>
   <system_depend arch="riscv64">opencv-spacemit</system_depend>

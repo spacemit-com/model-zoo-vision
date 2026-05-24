@@ -57,6 +57,15 @@ public:
         int image_width,
         int image_height) override;
 
+
+    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
+
+    std::vector<vision_core::InferIntent> supported_intents() const override;
+
+    size_t expected_sequence_size() const override;
+
+    std::vector<std::string> get_sequence_class_names() const override;
+
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     /** Overload: pts as vector. */

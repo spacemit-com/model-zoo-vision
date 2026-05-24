@@ -6,6 +6,7 @@
 #include "stgcn_action_recognizer.h"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -202,8 +204,43 @@ vision_common::ActionResult StgcnActionRecognizer::infer_sequence(const float* p
     return predict(pts, image_width, image_height);
 }
 
+
+std::vector<vision_core::InferIntent> StgcnActionRecognizer::supported_intents() const {
+    return {vision_core::InferIntent::kInferSequence};
+}
+
+size_t StgcnActionRecognizer::expected_sequence_size() const {
+    return static_cast<size_t>(kSequenceLength) * kNumKeypoints * 3;
+}
+
+std::vector<std::string> StgcnActionRecognizer::get_sequence_class_names() const {
+    return get_class_names();
+}
+
+vision_core::InferResponse StgcnActionRecognizer::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kInferSequence);
+    const auto* sequence_input = std::get_if<vision_core::SequenceInput>(&request.input);
+    if (sequence_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "StgcnActionRecognizer expects SequenceInput";
+        return response;
+    }
+    const size_t expected = static_cast<size_t>(kSequenceLength * kNumKeypoints * 3);
+    if (sequence_input->pts.size() != expected) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "StgcnActionRecognizer expects " + std::to_string(expected) + " sequence values";
+        return response;
+    }
+    vision_core::InferResponse response;
+    response.results.emplace_back(
+        predict(sequence_input->pts.data(), sequence_input->image_width, sequence_input->image_height));
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> StgcnActionRecognizer::get_capabilities() const {
-    return {vision_core::ModelCapability::kSequenceInput};
+    return {};
 }
 
 std::vector<Ort::Value> StgcnActionRecognizer::run_session_two_inputs(

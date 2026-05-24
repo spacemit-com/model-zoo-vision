@@ -52,7 +52,7 @@ def parse_args():
         '--config',
         type=str,
         default=None,
-        help='应用配置 yaml 路径 (默认: applications/fall_detection/config/fall_detection.yaml)'
+        help='应用配置 yaml (默认: applications/fall_detection/config/fall_detection.yaml)'
     )
     parser.add_argument(
         '--video',
@@ -70,54 +70,6 @@ def parse_args():
         type=int,
         default=None,
         help='摄像头设备 ID (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--conf-threshold',
-        type=float,
-        default=None,
-        help='置信度阈值 (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--iou-threshold',
-        type=float,
-        default=None,
-        help='IoU 阈值，用于 NMS (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--num-threads',
-        type=int,
-        default=None,
-        help='推理线程数 (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--kp-threshold',
-        type=float,
-        default=None,
-        help='关键点可见度阈值 (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--pose-model',
-        type=str,
-        default=None,
-        help='姿态模型 (YOLOv8-Pose) ONNX 路径，覆盖 yaml 中的 pose_model_path'
-    )
-    parser.add_argument(
-        '--stgcn-model',
-        type=str,
-        default=None,
-        help='STGCN/TSSTG ONNX 模型路径，覆盖 config 中 stgcn_action.yaml 的 model_path（--use-stgcn 时可选）'
-    )
-    parser.add_argument(
-        '--stgcn-wait-frames',
-        type=int,
-        default=10,
-        help='STGCN 每隔 N 帧推理一次（默认 10）'
-    )
-    parser.add_argument(
-        '--smooth-window',
-        type=int,
-        default=None,
-        help='预测类别平滑窗口：最近 N 次推理中超过一半为 Fall Down 才判跌倒（默认从 yaml 读取，若未配置则为 5）'
     )
     return parser.parse_args()
 
@@ -233,30 +185,23 @@ def main():
     """Main function."""
     args = parse_args()
     project_root = Path(__file__).resolve().parents[3]  # applications/fall_detection/python/ -> cv
-    default_config = project_root / "applications" / "fall_detection" / "config" / "fall_detection.yaml"
-    config_path = Path(args.config) if args.config else default_config
-    if not config_path.is_absolute():
-        config_path = (project_root / config_path).resolve()
+    default_app = project_root / "applications" / "fall_detection" / "config" / "fall_detection.yaml"
+    app_path = Path(args.config) if args.config else default_app
+    if not app_path.is_absolute():
+        app_path = (project_root / app_path).resolve()
     try:
-        app_config = _load_app_config(config_path)
+        app_config = _load_app_config(app_path)
     except Exception as e:
         print(f"✗ 加载应用配置失败: {e}")
         return
-    app_config_dir = project_root / "applications" / "fall_detection" / "config"
+    app_config_dir = app_path.parent
 
-    # 默认参数来自应用配置 yaml（命令行可覆盖）
-    if args.kp_threshold is None:
-        args.kp_threshold = float(app_config.get("kp_threshold", 0.3))
+    args.kp_threshold = float(app_config.get("kp_threshold", 0.3))
     if args.camera_id is None:
         args.camera_id = int(app_config.get("camera_id", 0))
-    stgcn_model_name = str(app_config.get("stgcn_model_name", "stgcn_action"))
-    stgcn_wait_frames = int(app_config.get("stgcn_wait_frames", args.stgcn_wait_frames))
-    smooth_window = (
-        int(args.smooth_window) if args.smooth_window is not None
-        else int(app_config.get("stgcn_smooth_window", 5))
-    )
+    stgcn_wait_frames = int(app_config.get("stgcn_wait_frames", 10))
+    smooth_window = int(app_config.get("stgcn_smooth_window", 5))
 
-    # 如果没有提供视频路径且不使用摄像头，优先从应用配置的 test_video 读取
     if args.video is None and not args.use_camera:
         test_video_path = app_config.get("test_video")
         if test_video_path:
@@ -275,12 +220,9 @@ def main():
     print("=" * 60)
     print("Fall Detection Example (跌倒检测示例)")
     print("=" * 60)
-    print(f"应用配置: {config_path}")
-    pose_config_path = app_config.get("pose_config_path", "")
-    if not pose_config_path:
-        print("✗ pose_config_path 未设置，请在 fall_detection.yaml 中指定")
-        return
-    pose_config_path = str(_resolve_path(pose_config_path, project_root))
+    print(f"应用配置: {app_path}")
+    pose_config_path = str(_resolve_path(
+        str(app_config_dir / app_config["pose_model"]), project_root))
     print(f"姿态模型: {pose_config_path}")
     if args.use_camera:
         print(f"使用摄像头: {args.camera_id}")
@@ -291,22 +233,12 @@ def main():
     print("按 'q' 键退出")
     print("=" * 60)
 
-    # 姿态模型：从 fall_detection.yaml 中的 pose_config_path 指向的 yaml 创建
     pose_model_name = Path(pose_config_path).stem
     pose_config_dir_abs = Path(pose_config_path).parent
     if not pose_config_dir_abs.is_dir():
         print(f"✗ 姿态配置目录不存在: {pose_config_dir_abs}")
         return
     override_params = {}
-    pose_path_src = args.pose_model if args.pose_model else app_config.get("pose_model_path", "")
-    if pose_path_src:
-        override_params["model_path"] = str(_resolve_path(pose_path_src, project_root))
-    if args.conf_threshold is not None:
-        override_params['conf_threshold'] = args.conf_threshold
-    if args.iou_threshold is not None:
-        override_params['iou_threshold'] = args.iou_threshold
-    if args.num_threads is not None:
-        override_params['num_threads'] = args.num_threads
 
     print(f"\n从 {pose_config_path} 加载姿态模型...")
     try:
@@ -327,17 +259,15 @@ def main():
         traceback.print_exc()
         return
 
-    # STGCN 动作识别（必选），30 帧序列，多类别；本应用 yaml 的 stgcn_model_path 为默认，--stgcn-model 可覆盖
+    stgcn_config_path = str(_resolve_path(
+        str(app_config_dir / app_config["stgcn_model"]), project_root))
+    stgcn_model_name = Path(stgcn_config_path).stem
+    stgcn_config_dir_abs = Path(stgcn_config_path).parent
     stgcn_override = {}
-    raw_stgcn = app_config.get("stgcn_model_path", "")
-    if raw_stgcn:
-        stgcn_override["model_path"] = str(_resolve_path(raw_stgcn, project_root))
-    if args.stgcn_model:
-        stgcn_override["model_path"] = str(_resolve_path(args.stgcn_model, project_root))
     try:
         action_model = create_model(
             model_name=stgcn_model_name,
-            config_dir=app_config_dir,
+            config_dir=stgcn_config_dir_abs,
             **stgcn_override
         )
         keypoint_buffer = deque(maxlen=action_model.sequence_length)

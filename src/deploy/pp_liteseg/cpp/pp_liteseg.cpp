@@ -7,6 +7,7 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <onnxruntime_cxx_api.h>  // NOLINT(build/include_order)
@@ -311,10 +313,32 @@ vision_common::SegmentationResultList PPLiteSeg::segment(
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> PPLiteSeg::supported_intents() const {
+    return {vision_core::InferIntent::kSegment};
+}
+
+vision_core::InferResponse PPLiteSeg::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kSegment);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "PPLiteSeg expects ImageInput";
+        return response;
+    }
+
+    vision_common::SegmentationResultList task_results = segment(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> PPLiteSeg::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 static vision_core::ModelRegistrar<PPLiteSeg> registrar("PPLiteSeg");

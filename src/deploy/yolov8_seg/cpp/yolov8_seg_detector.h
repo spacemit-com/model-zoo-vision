@@ -52,6 +52,11 @@ public:
         float conf_threshold = -1.0f,
         float iou_threshold = -1.0f) override;
 
+
+    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
+
+    std::vector<vision_core::InferIntent> supported_intents() const override;
+
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     // Factory hook: used by vision_core::ModelRegistrar for self-registration

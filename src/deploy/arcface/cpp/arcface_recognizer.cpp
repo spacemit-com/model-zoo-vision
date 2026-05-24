@@ -5,6 +5,7 @@
 
 #include "arcface_recognizer.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -127,10 +129,27 @@ vision_common::EmbeddingResult ArcFaceRecognizer::infer_embedding(const cv::Mat&
     return result;
 }
 
+
+std::vector<vision_core::InferIntent> ArcFaceRecognizer::supported_intents() const {
+    return {vision_core::InferIntent::kEmbed};
+}
+
+vision_core::InferResponse ArcFaceRecognizer::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kEmbed);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "ArcFaceRecognizer expects ImageInput";
+        return response;
+    }
+    vision_core::InferResponse response;
+    response.results.emplace_back(infer_embedding(image_input->image));
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> ArcFaceRecognizer::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kEmbedding};
+    return {};
 }
 
 std::vector<float> ArcFaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {

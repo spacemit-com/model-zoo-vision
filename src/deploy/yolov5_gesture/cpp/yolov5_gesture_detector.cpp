@@ -5,6 +5,7 @@
 
 #include "yolov5_gesture_detector.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -116,10 +118,32 @@ vision_common::DetectionResultList YOLOv5GestureDetector::detect(
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> YOLOv5GestureDetector::supported_intents() const {
+    return {vision_core::InferIntent::kDetect};
+}
+
+vision_core::InferResponse YOLOv5GestureDetector::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kDetect);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "YOLOv5GestureDetector expects ImageInput";
+        return response;
+    }
+
+    vision_common::DetectionResultList task_results = detect(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(

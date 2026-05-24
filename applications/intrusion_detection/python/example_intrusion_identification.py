@@ -195,7 +195,7 @@ def _parse_args():
         "--config",
         type=str,
         default=None,
-        help="应用配置 yaml 路径 (默认: applications/intrusion_detection/config/intrusion_detection.yaml)",
+        help="应用配置 yaml (默认: applications/intrusion_detection/config/intrusion_detection.yaml)",
     )
     parser.add_argument(
         "--video",
@@ -211,8 +211,8 @@ def _parse_args():
     parser.add_argument(
         "--camera-id",
         type=int,
-        default=0,
-        help="摄像头设备 ID (默认: 0)",
+        default=None,
+        help="摄像头设备 ID (默认: 应用配置 camera_id 或 0)",
     )
     parser.add_argument(
         "--conf-threshold",
@@ -298,30 +298,35 @@ def _is_person(class_id: int, labels: Optional[List[str]]) -> bool:
 def main():
     args = _parse_args()
     project_root = _project_root()
-    default_config = project_root / "applications" / "intrusion_detection" / "config" / "intrusion_detection.yaml"
-    config_path = Path(args.config) if args.config else default_config
-    if not config_path.is_absolute():
-        config_path = (project_root / config_path).resolve()
+    default_app = project_root / "applications" / "intrusion_detection" / "config" / "intrusion_detection.yaml"
+    app_path = Path(args.config) if args.config else default_app
+    if not app_path.is_absolute():
+        app_path = (project_root / app_path).resolve()
     try:
-        app_config = _load_app_config(config_path)
+        app_config = _load_app_config(app_path)
     except Exception as e:
         print(f"✗ 加载应用配置失败: {e}")
         return
 
-    # 从应用配置读取追踪模型名与配置目录（与 fall_detection 一致）
-    tracker_config_path = app_config.get("tracker_config_path", "")
-    if not tracker_config_path:
-        print("✗ tracker_config_path 未设置，请在 intrusion_detection.yaml 中指定")
-        return
-    tracker_config_path = str(_resolve_path(tracker_config_path, extra_bases=[project_root]))
+    config_dir = app_path.parent
+    tracker_config_path = str(_resolve_path(
+        str(config_dir / app_config["tracker_model"]), extra_bases=[project_root]))
     tracker_config_dir_abs = Path(tracker_config_path).parent
     tracker_model_name = Path(tracker_config_path).stem
     if not tracker_config_dir_abs.is_dir():
         print(f"✗ 追踪模型配置目录不存在: {tracker_config_dir_abs}")
         return
 
-    # 标签文件从应用配置读取
-    labels = _load_labels_from_config(app_config, project_root)
+    try:
+        tracker_model_config = _load_app_config(Path(tracker_config_path))
+    except Exception as e:
+        print(f"✗ 加载 bytetrack.yaml 失败: {e}")
+        return
+
+    labels = _load_labels_from_config(tracker_model_config, project_root)
+
+    if args.camera_id is None:
+        args.camera_id = int(app_config.get("camera_id", 0))
 
     # 若未提供视频且非摄像头，优先从应用配置的 test_video 读取
     if args.video is None and not args.use_camera:
@@ -339,17 +344,9 @@ def main():
         args.video = str(resolved)
 
     override_params: Dict = {}
-    tracker_path_src = args.model_path or app_config.get("tracker_model_path", "")
-    if tracker_path_src:
-        override_params["model_path"] = str(_resolve_path(str(tracker_path_src), extra_bases=[project_root]))
-    if args.conf_threshold is not None:
-        override_params["conf_threshold"] = args.conf_threshold
-    if args.iou_threshold is not None:
-        override_params["iou_threshold"] = args.iou_threshold
-    if args.frame_rate is not None:
-        override_params["frame_rate"] = args.frame_rate
-    if args.num_threads is not None:
-        override_params["num_threads"] = args.num_threads
+    if tracker_model_config.get("model_path"):
+        override_params["model_path"] = str(_resolve_path(
+            str(tracker_model_config["model_path"]), extra_bases=[project_root]))
 
     print(f"\n从 {tracker_config_path} 加载 ByteTrack 模型中...")
     tracker = create_model(model_name=tracker_model_name, config_dir=tracker_config_dir_abs, **override_params)

@@ -92,49 +92,6 @@ std::vector<float> keypoint_buffer_to_pts(const std::deque<std::vector<float>>& 
     return pts;
 }
 
-std::filesystem::path find_project_root_from_exe(const std::filesystem::path& exe_path) {
-    namespace fs = std::filesystem;
-    fs::path dir = exe_path;
-    if (fs::is_regular_file(dir)) dir = dir.parent_path();
-    for (int i = 0; i < 8; ++i) {
-        if (fs::exists(dir / "applications") && fs::exists(dir / "examples")) {
-            fs::path abs = fs::absolute(dir);
-            if (abs.filename() == "build" && abs.has_parent_path()) {
-                return abs.parent_path();
-            }
-            return abs;
-        }
-        if (!dir.has_parent_path()) break;
-        dir = dir.parent_path();
-    }
-    fs::path cwd = fs::current_path();
-    if (cwd.filename() == "build" && cwd.has_parent_path()) {
-        return cwd.parent_path();
-    }
-    return cwd;
-}
-
-std::string resolve_under_root(const std::filesystem::path& project_root, const std::string& p) {
-    namespace fs = std::filesystem;
-    if (p.empty()) return "";
-    std::string path = p;
-    if (path[0] == '~') {
-        const char* home = std::getenv("HOME");
-        if (home && home[0] != '\0')
-            path = (path.size() == 1 || path[1] == '/') ? std::string(home) + path.substr(1) : path;
-    }
-    fs::path in(path);
-    if (in.is_absolute()) return in.string();
-    return (project_root / in).lexically_normal().string();
-}
-
-YAML::Node load_app_yaml(const std::filesystem::path& config_file) {
-    if (!std::filesystem::exists(config_file)) {
-        throw std::runtime_error("Config file not found: " + config_file.string());
-    }
-    return YAML::LoadFile(config_file.string());
-}
-
 inline bool is_nan(float v) {
     return std::isnan(v);
 }
@@ -264,193 +221,221 @@ void draw_one_pose_with_action(cv::Mat& image, const PoseResult& r, float kp_thr
     }
 }
 
-bool ends_with(const std::string& s, const std::string& suffix) {
-    if (s.size() < suffix.size()) return false;
-    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}  // namespace
+
+namespace {
+
+constexpr const char* kDefaultAppConfig =
+    "applications/fall_detection/config/fall_detection.yaml";
+
+std::filesystem::path FindProjectRoot(const std::filesystem::path& exe_path) {
+    namespace fs = std::filesystem;
+    auto is_repo_root = [](const fs::path& dir) {
+        return fs::exists(dir / "applications") && fs::exists(dir / "examples") &&
+            fs::exists(dir / "src");
+    };
+    fs::path dir = exe_path;
+    if (!dir.empty() && fs::is_regular_file(dir)) {
+        dir = dir.parent_path();
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (is_repo_root(dir)) {
+            return fs::absolute(dir);
+        }
+        if (!dir.has_parent_path()) {
+            break;
+        }
+        dir = dir.parent_path();
+    }
+    fs::path cwd = fs::current_path();
+    if (is_repo_root(cwd)) {
+        return fs::absolute(cwd);
+    }
+    if (cwd.filename() == "build" && cwd.has_parent_path()) {
+        fs::path parent = cwd.parent_path();
+        if (is_repo_root(parent)) {
+            return fs::absolute(parent);
+        }
+    }
+    return fs::absolute(cwd);
+}
+
+std::string ExpandTilde(const std::string& path) {
+    if (path.empty() || path[0] != '~') {
+        return path;
+    }
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+        return path;
+    }
+    if (path.size() == 1 || path[1] == '/') {
+        return std::string(home) + path.substr(1);
+    }
+    return path;
+}
+
+std::string ResolveUserPath(const std::filesystem::path& project_root, const std::string& path) {
+    namespace fs = std::filesystem;
+    if (path.empty()) {
+        return "";
+    }
+    fs::path in(ExpandTilde(path));
+    if (in.is_absolute()) {
+        return in.lexically_normal().string();
+    }
+    const fs::path cwd = fs::current_path();
+    const fs::path candidates[] = {cwd / in, project_root / in};
+    for (const fs::path& candidate : candidates) {
+        const fs::path abs = fs::absolute(candidate).lexically_normal();
+        if (fs::exists(abs)) {
+            return abs.string();
+        }
+    }
+    return fs::absolute(project_root / in).lexically_normal().string();
+}
+
+std::string ResolveUnderRoot(const std::filesystem::path& project_root, const std::string& path) {
+    return ResolveUserPath(project_root, path);
+}
+
+std::string YamlString(const YAML::Node& node, const char* key) {
+    if (!node[key]) {
+        return "";
+    }
+    return node[key].as<std::string>();
+}
+
+bool LooksLikeYamlPath(const std::string& path) {
+    if (path.size() < 5) {
+        return false;
+    }
+    return path.compare(path.size() - 5, 5, ".yaml") == 0 ||
+        path.compare(path.size() - 4, 4, ".yml") == 0;
+}
+
+std::string ResolveConfigPath(
+    const std::filesystem::path& config_dir,
+    const std::filesystem::path& project_root,
+    const std::string& path) {
+    namespace fs = std::filesystem;
+    if (path.empty()) {
+        return "";
+    }
+    fs::path local = config_dir / path;
+    if (fs::exists(local)) {
+        return local.lexically_normal().string();
+    }
+    return ResolveUnderRoot(project_root, path);
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     namespace fs = std::filesystem;
-    const fs::path exe_path = (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path();
-    fs::path project_root_path = find_project_root_from_exe(exe_path);
 
-    // Application config: <cv>/applications/fall_detection/config/fall_detection.yaml
-    const fs::path config_rel = fs::path("applications") / "fall_detection" / "config" / "fall_detection.yaml";
-    fs::path config_file = project_root_path / config_rel;
-    for (int up = 0; up < 6 && !fs::exists(config_file) && project_root_path.has_parent_path(); ++up) {
-        project_root_path = project_root_path.parent_path();
-        config_file = project_root_path / config_rel;
-    }
+    const fs::path project_root_path = FindProjectRoot(
+        (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path());
 
+    std::string app_config_rel = kDefaultAppConfig;
     std::string video_path;
     bool use_camera = false;
     int camera_id = 0;
-    std::optional<float> kp_threshold_cli;
-    std::string pose_model_path_cli;
-    std::string stgcn_model_path_cli;
 
-    int start_i = 1;
-    if (argc >= 2 && argv[1] && ends_with(argv[1], ".yaml")) {
-        config_file = argv[1];
-        start_i = 2;
-    }
-    // Minimal CLI (yaml-first)
-    for (int i = start_i; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--config" && i + 1 < argc) {
-            config_file = argv[++i];
+            app_config_rel = argv[++i];
         } else if (a == "--video" && i + 1 < argc) {
             video_path = argv[++i];
         } else if (a == "--use-camera") {
             use_camera = true;
         } else if (a == "--camera-id" && i + 1 < argc) {
             camera_id = std::stoi(argv[++i]);
-        } else if (a == "--kp-threshold" && i + 1 < argc) {
-            kp_threshold_cli = std::stof(argv[++i]);
-        } else if (a == "--pose-model" && i + 1 < argc) {
-            pose_model_path_cli = argv[++i];
-        } else if (a == "--stgcn-model" && i + 1 < argc) {
-            stgcn_model_path_cli = argv[++i];
         } else if (a == "-h" || a == "--help") {
             std::cout << "Usage: " << argv[0]
-                        << " [config_yaml] [--config <yaml>] [--video <path>] [--use-camera]"
-                        << " [--camera-id <id>] [--kp-threshold <v>] [--pose-model <path>] [--stgcn-model <path>]\n";
-            std::cout << "  Default config: applications/fall_detection/config/fall_detection.yaml\n";
-            std::cout << "  Example: " << argv[0] << " applications/fall_detection/config/fall_detection.yaml\n";
+                << " [config.yaml] [--config <app.yaml>] [--video <path>]"
+                << " [--use-camera] [--camera-id <id>]\n";
             return 0;
+        } else if (!a.empty() && a[0] != '-') {
+            if (LooksLikeYamlPath(a) && app_config_rel == kDefaultAppConfig) {
+                app_config_rel = a;
+            } else {
+                std::cerr << "Unknown argument: " << a << "\n";
+                return -1;
+            }
         } else {
             std::cerr << "Unknown argument: " << a << "\n";
-            std::cerr << "Run with --help to see usage.\n";
             return -1;
         }
     }
 
+    const fs::path app_config_path = fs::path(ResolveUserPath(project_root_path, app_config_rel));
+    if (!fs::exists(app_config_path)) {
+        std::cerr << "Error: config not found: " << app_config_path << std::endl;
+        return -1;
+    }
+    const fs::path config_dir = app_config_path.parent_path();
+
     YAML::Node app_cfg;
     try {
-        if (!config_file.is_absolute()) {
-            // Prefer resolving relative config path from current working directory
-            // so that paths like ../applications/fall_detection/config/fall_detection.yaml
-            // work when run from model_zoo/cv (e.g. ./applications/example_fall_detection ../applications/...).
-            fs::path from_cwd = fs::absolute(fs::current_path() / config_file).lexically_normal();
-            if (fs::exists(from_cwd)) {
-                config_file = from_cwd;
-            } else {
-                config_file = fs::path(resolve_under_root(project_root_path, config_file.string()));
-            }
-        }
-        // Derive cv root from config path so examples/... and applications/... resolve from any cwd
-        if (config_file.is_absolute()) {
-            fs::path p = config_file.parent_path();
-            for (int i = 0; i < 3 && p.has_parent_path(); ++i) p = p.parent_path();
-            project_root_path = p;
-        }
-        app_cfg = load_app_yaml(config_file);
+        app_cfg = YAML::LoadFile(app_config_path.string());
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return -1;
     }
 
-    const float kp_threshold = kp_threshold_cli.has_value()
-        ? kp_threshold_cli.value()
-        : (app_cfg["kp_threshold"] ? app_cfg["kp_threshold"].as<float>() : 0.3f);
+    const float kp_threshold =
+        app_cfg["kp_threshold"] ? app_cfg["kp_threshold"].as<float>() : 0.3f;
 
     if (!use_camera) {
         if (video_path.empty()) {
-            if (app_cfg["test_video"]) {
-                video_path = resolve_under_root(project_root_path, app_cfg["test_video"].as<std::string>());
-                std::cout << "Using test_video from " << config_file << ": " << video_path << std::endl;
-            } else {
-                std::cerr << "Error: --video not provided and test_video not found in " << config_file << std::endl;
+            const std::string test_video = YamlString(app_cfg, "test_video");
+            if (test_video.empty()) {
+                std::cerr << "Error: --video not provided and test_video missing in "
+                    << app_config_path << std::endl;
                 return -1;
             }
+            video_path = ResolveUnderRoot(project_root_path, test_video);
         } else {
-            video_path = resolve_under_root(project_root_path, video_path);
+            video_path = ResolveUnderRoot(project_root_path, video_path);
         }
-    } else {
-        if (app_cfg["camera_id"]) camera_id = app_cfg["camera_id"].as<int>();
+    } else if (app_cfg["camera_id"]) {
+        camera_id = app_cfg["camera_id"].as<int>();
     }
 
+    const std::string pose_rel = YamlString(app_cfg, "pose_model");
+    const std::string stgcn_rel = YamlString(app_cfg, "stgcn_model");
+    if (pose_rel.empty() || stgcn_rel.empty()) {
+        std::cerr << "Error: pose_model and stgcn_model required in "
+            << app_config_path << std::endl;
+        return -1;
+    }
+    const std::string pose_cfg_abs = ResolveConfigPath(config_dir, project_root_path, pose_rel);
+    const std::string stgcn_cfg_abs = ResolveConfigPath(config_dir, project_root_path, stgcn_rel);
+
     try {
-        // Create pose detector (YOLOv8-Pose) from examples yaml, per-app model path.
-        // fall_detection.yaml is app config (no class/model_path); do not createModel("fall_detection").
-        std::string pose_config_path = app_cfg["pose_config_path"]
-            ? app_cfg["pose_config_path"].as<std::string>() : "";
-        std::string pose_model_path = !pose_model_path_cli.empty()
-            ? pose_model_path_cli
-            : (app_cfg["pose_model_path"] ? app_cfg["pose_model_path"].as<std::string>() : "");
-        pose_model_path = resolve_under_root(project_root_path, pose_model_path);
-
-        if (pose_config_path.empty()) {
-            throw std::runtime_error("pose_config_path is required in fall_detection.yaml");
-        }
-        const fs::path pose_cfg_file = (project_root_path / pose_config_path).lexically_normal();
-        if (!fs::exists(pose_cfg_file)) {
-            throw std::runtime_error("Pose config yaml not found: " + pose_cfg_file.string());
-        }
-
-        auto write_yaml = [](const fs::path& p, const YAML::Node& n) {
-            YAML::Emitter out;
-            out << n;
-            std::ofstream ofs(p);
-            if (!ofs) {
-                throw std::runtime_error("Failed to write yaml: " + p.string());
-            }
-            ofs << out.c_str();
-        };
-
-        const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-        const fs::path tmp_dir = (fs::temp_directory_path()
-            / ("vision_modelzoo_fall_" + std::to_string(now))).lexically_normal();
-        fs::create_directories(tmp_dir);
-
-        // STGCN action recognizer: config from app dir, model path from app yaml
-        std::string stgcn_model_name = app_cfg["stgcn_model_name"]
-            ? app_cfg["stgcn_model_name"].as<std::string>() : "stgcn_action";
-        std::string stgcn_model_path = !stgcn_model_path_cli.empty()
-            ? stgcn_model_path_cli
-            : (app_cfg["stgcn_model_path"] ? app_cfg["stgcn_model_path"].as<std::string>() : "");
-        stgcn_model_path = resolve_under_root(project_root_path, stgcn_model_path);
-        const fs::path app_config_dir = project_root_path / "applications" / "fall_detection" / "config";
-        const fs::path stgcn_cfg_file = app_config_dir / (stgcn_model_name + ".yaml");
-        YAML::Node stgcn_cfg;
-        if (fs::exists(stgcn_cfg_file)) {
-            stgcn_cfg = YAML::LoadFile(stgcn_cfg_file.string());
-            if (!stgcn_model_path.empty()) stgcn_cfg["model_path"] = stgcn_model_path;
-        } else {
-            stgcn_cfg["class"] = "deploy.stgcn.StgcnActionRecognizer";
-            stgcn_cfg["model_path"] = stgcn_model_path.empty()
-                ? resolve_under_root(project_root_path, "applications/fall_detection/models/stgcn.fp32.onnx")
-                : stgcn_model_path;
-            stgcn_cfg["default_params"] = YAML::Node();
-            stgcn_cfg["default_params"]["num_threads"] = 4;
-            stgcn_cfg["default_params"]["providers"] =
-                std::vector<std::string>{"CPUExecutionProvider"};
-        }
-        const fs::path tmp_stgcn_yaml = tmp_dir / (stgcn_model_name + ".yaml");
-        write_yaml(tmp_stgcn_yaml, stgcn_cfg);
-
-        std::unique_ptr<VisionService> pose_service = VisionService::Create(
-            pose_cfg_file.string(),
-            pose_model_path,
-            true);
+        std::unique_ptr<VisionService> pose_service =
+            VisionService::Create(pose_cfg_abs, "", false);
         if (!pose_service) {
             std::string msg = "Pose model create failed";
             const std::string& err = VisionService::LastCreateError();
-            if (!err.empty()) msg += ": " + err;
+            if (!err.empty()) {
+                msg += ": " + err;
+            }
             throw std::runtime_error(msg);
         }
 
-        std::unique_ptr<VisionService> stgcn_service = VisionService::Create(
-            tmp_stgcn_yaml.string(), "", true);
+        std::unique_ptr<VisionService> stgcn_service =
+            VisionService::Create(stgcn_cfg_abs, "", false);
         if (!stgcn_service) {
             std::string msg = "STGCN model create failed";
             const std::string& err = VisionService::LastCreateError();
-            if (!err.empty()) msg += ": " + err;
+            if (!err.empty()) {
+                msg += ": " + err;
+            }
             throw std::runtime_error(msg);
         }
-        int fall_down_class_index = stgcn_service->GetFallDownClassIndex();
+        const int fall_down_class_index = stgcn_service->GetFallDownClassIndex();
         if (fall_down_class_index < 0) {
             throw std::runtime_error("STGCN model does not support fall-down class index");
         }

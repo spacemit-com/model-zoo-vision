@@ -14,6 +14,7 @@
 #include <onnxruntime_cxx_api.h>  // NOLINT(build/include_order)
 
 #include "spacemit_ort_env.h"
+#include "vision_infer_types.h"
 
 #ifdef DEBUG
 #include <thread>
@@ -31,11 +32,7 @@ struct RuntimeProfile {
 };
 
 enum class ModelCapability {
-    kImageInput,
-    kSequenceInput,
     kDraw,
-    kEmbedding,
-    kTrackUpdate
 };
 
 /**
@@ -114,6 +111,29 @@ public:
      * @thread_safety NOT thread-safe.
      */
     void reset_runtime_profile();
+
+    /**
+     * @brief Unified inference entry (internal; not part of public vision_service.h API).
+     * @thread_safety NOT thread-safe.
+     */
+    virtual InferResponse Run(const InferRequest& request) = 0;
+
+    /**
+     * @brief Declared inference intents for dispatch validation.
+     * @thread_safety Thread-safe (read-only after construction).
+     */
+    virtual std::vector<InferIntent> supported_intents() const = 0;
+
+    /**
+     * @brief Expected number of floats in the raw sequence input buffer.
+     * Sequence models override this; default returns 0 (not a sequence model).
+     */
+    virtual size_t expected_sequence_size() const;
+
+    /**
+     * @brief Sequence action class names (empty unless sequence-action model).
+     */
+    virtual std::vector<std::string> get_sequence_class_names() const;
 
 protected:
     std::string model_path_;

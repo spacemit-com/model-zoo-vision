@@ -5,6 +5,7 @@
 
 #include "vision_service.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -13,6 +14,7 @@
 #include <iostream>
 #include <memory>
 #include <new>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,9 +26,9 @@
 #include "common/cpp/drawing.h"
 #include "common/cpp/embedding_utils.h"
 #include "common/cpp/image_processing.h"
+#include "core/cpp/vision_infer_types.h"
 #include "core/cpp/vision_model_base.h"
 #include "core/cpp/vision_model_factory.h"
-#include "core/cpp/vision_task_interfaces.h"
 
 struct VisionService::Impl {
     std::unique_ptr<vision_core::BaseModel> model;
@@ -167,6 +169,45 @@ std::vector<std::string> loadLabelsForConfig(const YAML::Node& config, const std
     } catch (...) {
         return {};
     }
+}
+
+bool IntentDeclared(const std::vector<vision_core::InferIntent>& intents,
+                    vision_core::InferIntent intent) {
+    for (vision_core::InferIntent declared : intents) {
+        if (declared == intent) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ValidateIntentInputPair(const vision_core::InferRequest& request) {
+    if (request.intent == vision_core::InferIntent::kInferSequence) {
+        return std::holds_alternative<vision_core::SequenceInput>(request.input);
+    }
+    return std::holds_alternative<vision_core::ImageInput>(request.input);
+}
+
+std::optional<vision_core::InferIntent> PickImageIntent(
+    const std::vector<vision_core::InferIntent>& intents) {
+    if (intents.empty()) {
+        return std::nullopt;
+    }
+
+    const vision_core::InferIntent priority[] = {
+        vision_core::InferIntent::kTrack,
+        vision_core::InferIntent::kEstimatePose,
+        vision_core::InferIntent::kSegment,
+        vision_core::InferIntent::kDetect,
+        vision_core::InferIntent::kClassify,
+    };
+    for (vision_core::InferIntent preferred : priority) {
+        if (IntentDeclared(intents, preferred)) {
+            return preferred;
+        }
+    }
+
+    return std::nullopt;
 }
 
 void ConvertResults(const std::vector<vision_common::ModelResult>& raw_results,
@@ -393,57 +434,40 @@ VisionServiceStatus VisionService::InferImage(const cv::Mat& image,
         }
         vision_core::BaseModel* model = impl_->model.get();
 
-        const bool is_tracking = model->supports_capability(vision_core::ModelCapability::kTrackUpdate);
-        if (is_tracking) {
-            auto* tracking_model = dynamic_cast<vision_core::ITrackingModel*>(model);
-            if (tracking_model != nullptr) {
-                auto results = tracking_model->track(image, conf_threshold, iou_threshold);
-                impl_->last_raw_results.clear();
-                impl_->last_raw_results.reserve(results.size());
-                for (auto& r : results) {
-                    impl_->last_raw_results.push_back(std::move(r));
-                }
-            } else {
-                impl_->last_raw_results.clear();  // Clear on error
-                return SetError(VISION_SERVICE_INFER_FAILED, "Model advertises tracking but ITrackingModel is missing");
-            }
-        } else if (auto* pose_model = dynamic_cast<vision_core::IPoseModel*>(model);
-                    pose_model != nullptr) {
-            auto results = pose_model->estimate_pose(image, conf_threshold, iou_threshold);
+        const std::vector<vision_core::InferIntent> declared_intents = model->supported_intents();
+        const std::optional<vision_core::InferIntent> intent = PickImageIntent(declared_intents);
+        if (!intent.has_value()) {
             impl_->last_raw_results.clear();
-            impl_->last_raw_results.reserve(results.size());
-            for (auto& r : results) {
-                impl_->last_raw_results.push_back(std::move(r));
-            }
-        } else if (auto* seg_model = dynamic_cast<vision_core::ISegmentationModel*>(model);
-                    seg_model != nullptr) {
-            auto results = seg_model->segment(image, conf_threshold, iou_threshold);
+            return SetError(
+                VISION_SERVICE_INFER_FAILED,
+                "this model does not support InferImage; use InferEmbedding or InferSequence");
+        }
+        if (!IntentDeclared(declared_intents, *intent)) {
             impl_->last_raw_results.clear();
-            impl_->last_raw_results.reserve(results.size());
-            for (auto& r : results) {
-                impl_->last_raw_results.push_back(std::move(r));
-            }
-        } else if (auto* det_model = dynamic_cast<vision_core::IDetectionModel*>(model);
-                    det_model != nullptr) {
-            auto results = det_model->detect(image, conf_threshold, iou_threshold);
-            impl_->last_raw_results.clear();
-            impl_->last_raw_results.reserve(results.size());
-            for (auto& r : results) {
-                impl_->last_raw_results.push_back(std::move(r));
-            }
-        } else if (auto* cls_model = dynamic_cast<vision_core::IClassificationModel*>(model);
-                    cls_model != nullptr) {
-            auto results = cls_model->classify(image);
-            impl_->last_raw_results.clear();
-            impl_->last_raw_results.reserve(results.size());
-            for (auto& r : results) {
-                impl_->last_raw_results.push_back(std::move(r));
-            }
-        } else {
-            impl_->last_raw_results.clear();  // Clear on error
-            return SetError(VISION_SERVICE_INFER_FAILED, "Model does not provide a supported image task interface");
+            return SetError(VISION_SERVICE_INFER_FAILED, "model does not support selected image intent");
         }
 
+        vision_core::InferParams infer_params;
+        infer_params.conf_threshold = conf_threshold;
+        infer_params.iou_threshold = iou_threshold;
+        vision_core::InferRequest request{
+            vision_core::ImageInput{image},
+            *intent,
+            infer_params};
+        if (!ValidateIntentInputPair(request)) {
+            impl_->last_raw_results.clear();
+            return SetError(VISION_SERVICE_INVALID_ARGUMENT, "intent and input type mismatch");
+        }
+
+        vision_core::InferResponse response = model->Run(request);
+        if (!response.ok) {
+            impl_->last_raw_results.clear();
+            return SetError(VISION_SERVICE_INFER_FAILED, response.error_message);
+        }
+
+        impl_->last_raw_results = std::move(response.results);
+
+        const bool is_tracking = (*intent == vision_core::InferIntent::kTrack);
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
@@ -530,15 +554,30 @@ VisionServiceStatus VisionService::InferEmbedding(const cv::Mat& image,
             t0 = std::chrono::steady_clock::now();
         }
         vision_core::BaseModel* model = impl_->model.get();
-        if (!model->supports_capability(vision_core::ModelCapability::kEmbedding)) {
+        const std::vector<vision_core::InferIntent> declared_intents = model->supported_intents();
+        if (!IntentDeclared(declared_intents, vision_core::InferIntent::kEmbed)) {
             return SetError(VISION_SERVICE_INFER_FAILED, "current model does not support embedding");
         }
-        auto* embedding_model = dynamic_cast<vision_core::IEmbeddingModel*>(model);
-        if (embedding_model == nullptr) {
-            return SetError(VISION_SERVICE_INFER_FAILED, "Model advertises embedding but IEmbeddingModel is missing");
+
+        vision_core::InferRequest request{
+            vision_core::ImageInput{image},
+            vision_core::InferIntent::kEmbed,
+            vision_core::InferParams{}};
+        if (!ValidateIntentInputPair(request)) {
+            return SetError(VISION_SERVICE_INVALID_ARGUMENT, "intent and input type mismatch");
         }
-        vision_common::EmbeddingResult result = embedding_model->infer_embedding(image);
-        *out_embedding = std::move(result.embedding);
+
+        vision_core::InferResponse response = model->Run(request);
+        if (!response.ok) {
+            return SetError(VISION_SERVICE_INFER_FAILED, response.error_message);
+        }
+        if (response.results.size() != 1 ||
+            !std::holds_alternative<vision_common::EmbeddingResult>(response.results[0])) {
+            return SetError(VISION_SERVICE_INFER_FAILED, "embedding model returned unexpected results");
+        }
+
+        *out_embedding = std::move(
+            std::get<vision_common::EmbeddingResult>(response.results[0]).embedding);
         if (out_embedding->empty()) {
             return SetError(VISION_SERVICE_INFER_FAILED, "Embedding output is empty");
         }
@@ -586,16 +625,39 @@ VisionServiceStatus VisionService::InferSequence(const float* pts, int image_wid
             t0 = std::chrono::steady_clock::now();
         }
         vision_core::BaseModel* model = impl_->model.get();
-        if (!model->supports_capability(vision_core::ModelCapability::kSequenceInput)) {
+        const std::vector<vision_core::InferIntent> declared_intents = model->supported_intents();
+        if (!IntentDeclared(declared_intents, vision_core::InferIntent::kInferSequence)) {
             return SetError(VISION_SERVICE_INFER_FAILED, "current model does not support sequence inference");
         }
-        auto* seq_model = dynamic_cast<vision_core::ISequenceActionModel*>(model);
-        if (seq_model == nullptr) {
-            return SetError(VISION_SERVICE_INFER_FAILED,
-                "Model advertises sequence but ISequenceActionModel is missing");
+
+        const size_t seq_size = model->expected_sequence_size();
+        if (seq_size == 0) {
+            return SetError(VISION_SERVICE_INFER_FAILED, "model does not report expected sequence size");
         }
-        vision_common::ActionResult result = seq_model->infer_sequence(pts, image_width, image_height);
-        *out_scores = std::move(result.class_scores);
+        vision_core::SequenceInput sequence_input;
+        sequence_input.image_width = image_width;
+        sequence_input.image_height = image_height;
+        sequence_input.pts.assign(pts, pts + seq_size);
+
+        vision_core::InferRequest request{
+            std::move(sequence_input),
+            vision_core::InferIntent::kInferSequence,
+            vision_core::InferParams{}};
+        if (!ValidateIntentInputPair(request)) {
+            return SetError(VISION_SERVICE_INVALID_ARGUMENT, "intent and input type mismatch");
+        }
+
+        vision_core::InferResponse response = model->Run(request);
+        if (!response.ok) {
+            return SetError(VISION_SERVICE_INFER_FAILED, response.error_message);
+        }
+        if (response.results.size() != 1 ||
+            !std::holds_alternative<vision_common::ActionResult>(response.results[0])) {
+            return SetError(VISION_SERVICE_INFER_FAILED, "sequence model returned unexpected results");
+        }
+
+        *out_scores = std::move(
+            std::get<vision_common::ActionResult>(response.results[0]).class_scores);
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
@@ -619,18 +681,20 @@ std::vector<std::string> VisionService::GetSequenceClassNames() {
     if (impl_ == nullptr || impl_->model == nullptr) {
         return {};
     }
-    auto* seq_model = dynamic_cast<vision_core::ISequenceActionModel*>(impl_->model.get());
-    if (seq_model == nullptr) return {};
-    return seq_model->get_class_names();
+    return impl_->model->get_sequence_class_names();
 }
 
 int VisionService::GetFallDownClassIndex() {
     if (impl_ == nullptr || impl_->model == nullptr) {
         return -1;
     }
-    auto* seq_model = dynamic_cast<vision_core::ISequenceActionModel*>(impl_->model.get());
-    if (seq_model == nullptr) return -1;
-    return seq_model->get_fall_down_class_index();
+    const std::vector<std::string> class_names = impl_->model->get_sequence_class_names();
+    for (size_t i = 0; i < class_names.size(); ++i) {
+        if (class_names[i] == "fall_down" || class_names[i] == "Fall Down") {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 VisionServiceStatus VisionService::Draw(const cv::Mat& image, cv::Mat* out_image) {

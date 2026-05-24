@@ -5,6 +5,7 @@
 
 #include "yolov8_pose_detector.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -130,10 +132,32 @@ vision_common::PoseResultList YOLOv8PoseDetector::estimate_pose(const cv::Mat& i
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> YOLOv8PoseDetector::supported_intents() const {
+    return {vision_core::InferIntent::kEstimatePose};
+}
+
+vision_core::InferResponse YOLOv8PoseDetector::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kEstimatePose);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "YOLOv8PoseDetector expects ImageInput";
+        return response;
+    }
+
+    vision_common::PoseResultList task_results = estimate_pose(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> YOLOv8PoseDetector::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 vision_common::PoseResultList YOLOv8PoseDetector::postprocess(

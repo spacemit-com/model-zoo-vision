@@ -123,7 +123,7 @@ void BaseModel::release() {
 }
 
 std::vector<ModelCapability> BaseModel::get_capabilities() const {
-    return {ModelCapability::kImageInput};
+    return {};
 }
 
 bool BaseModel::supports_capability(ModelCapability capability) const {
@@ -200,14 +200,15 @@ void BaseModel::init_session(int num_threads, const std::string& provider) {
 
     if (provider == "SpaceMITExecutionProvider") {
         Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
-        if (status.IsOK()) {
-            std::cout << "SpaceMIT EP initialized successfully!" << std::endl;
-        } else {
+        if (!status.IsOK()) {
             std::cerr << "SpaceMIT EP init failed: " << status.GetErrorMessage() << std::endl;
         }
     }
 
     session_ = std::make_unique<Ort::Session>(*env_, model_path_.c_str(), session_options);
+    if (provider == "SpaceMITExecutionProvider") {
+        std::cout << "SpaceMIT EP initialized: " << model_path_ << std::endl;
+    }
 
     size_t num_inputs = session_->GetInputCount();
     input_node_names_.resize(num_inputs);
@@ -306,5 +307,13 @@ void BaseModel::check_thread_safety(const char* method_name) const {
     }
 }
 #endif
+
+size_t BaseModel::expected_sequence_size() const {
+    return 0;
+}
+
+std::vector<std::string> BaseModel::get_sequence_class_names() const {
+    return {};
+}
 
 }  // namespace vision_core

@@ -21,7 +21,7 @@ namespace vision_core {
  * Models that detect objects in images (bounding boxes + classes).
  * Examples: YOLOv5, YOLOv8, YOLOv11, YOLOv5-face, YOLOv5-gesture
  */
-class IDetectionModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kDetect")]] IDetectionModel {
 public:
     virtual ~IDetectionModel() = default;
 
@@ -44,7 +44,7 @@ public:
  * Models that classify entire images into categories.
  * Examples: ResNet, Emotion recognition
  */
-class IClassificationModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kClassify")]] IClassificationModel {
 public:
     virtual ~IClassificationModel() = default;
 
@@ -62,7 +62,7 @@ public:
  * Models that perform instance or semantic segmentation.
  * Examples: YOLOv8-seg, PP-LiteSeg
  */
-class ISegmentationModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kSegment")]] ISegmentationModel {
 public:
     virtual ~ISegmentationModel() = default;
 
@@ -85,7 +85,7 @@ public:
  * Models that detect human poses (keypoints).
  * Examples: YOLOv8-pose
  */
-class IPoseModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kEstimatePose")]] IPoseModel {
 public:
     virtual ~IPoseModel() = default;
 
@@ -108,7 +108,7 @@ public:
  * Models that track objects across video frames.
  * Examples: ByteTrack, OC-SORT
  */
-class ITrackingModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kTrack")]] ITrackingModel {
 public:
     virtual ~ITrackingModel() = default;
 
@@ -131,7 +131,7 @@ public:
  * Models that extract feature embeddings from images.
  * Examples: ArcFace (face recognition)
  */
-class IEmbeddingModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kEmbed")]] IEmbeddingModel {
 public:
     virtual ~IEmbeddingModel() = default;
 
@@ -160,7 +160,7 @@ public:
  * Models that recognize actions from temporal sequences (e.g., skeleton sequences).
  * Examples: STGCN (fall detection)
  */
-class ISequenceActionModel {
+class [[deprecated("Use BaseModel::Run with InferIntent::kInferSequence")]] ISequenceActionModel {
 public:
     virtual ~ISequenceActionModel() = default;
 

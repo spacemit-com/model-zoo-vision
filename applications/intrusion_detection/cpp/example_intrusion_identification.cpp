@@ -153,170 +153,204 @@ bool is_person_label(int class_id, const std::vector<std::string>& labels) {
 
 }  // namespace
 
+namespace {
+
+constexpr const char* kDefaultAppConfig =
+    "applications/intrusion_detection/config/intrusion_detection.yaml";
+
+std::filesystem::path FindProjectRoot(const std::filesystem::path& exe_path) {
+    namespace fs = std::filesystem;
+    auto is_repo_root = [](const fs::path& dir) {
+        return fs::exists(dir / "applications") && fs::exists(dir / "examples") &&
+            fs::exists(dir / "src");
+    };
+    fs::path dir = exe_path;
+    if (!dir.empty() && fs::is_regular_file(dir)) {
+        dir = dir.parent_path();
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (is_repo_root(dir)) {
+            return fs::absolute(dir);
+        }
+        if (!dir.has_parent_path()) {
+            break;
+        }
+        dir = dir.parent_path();
+    }
+    fs::path cwd = fs::current_path();
+    if (is_repo_root(cwd)) {
+        return fs::absolute(cwd);
+    }
+    if (cwd.filename() == "build" && cwd.has_parent_path()) {
+        fs::path parent = cwd.parent_path();
+        if (is_repo_root(parent)) {
+            return fs::absolute(parent);
+        }
+    }
+    return fs::absolute(cwd);
+}
+
+std::string ExpandTilde(const std::string& path) {
+    if (path.empty() || path[0] != '~') {
+        return path;
+    }
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+        return path;
+    }
+    if (path.size() == 1 || path[1] == '/') {
+        return std::string(home) + path.substr(1);
+    }
+    return path;
+}
+
+std::string ResolveUserPath(const std::filesystem::path& project_root, const std::string& path) {
+    namespace fs = std::filesystem;
+    if (path.empty()) {
+        return "";
+    }
+    fs::path in(ExpandTilde(path));
+    if (in.is_absolute()) {
+        return in.lexically_normal().string();
+    }
+    const fs::path cwd = fs::current_path();
+    const fs::path candidates[] = {cwd / in, project_root / in};
+    for (const fs::path& candidate : candidates) {
+        const fs::path abs = fs::absolute(candidate).lexically_normal();
+        if (fs::exists(abs)) {
+            return abs.string();
+        }
+    }
+    return fs::absolute(project_root / in).lexically_normal().string();
+}
+
+std::string ResolveUnderRoot(const std::filesystem::path& project_root, const std::string& path) {
+    return ResolveUserPath(project_root, path);
+}
+
+std::string YamlString(const YAML::Node& node, const char* key) {
+    if (!node[key]) {
+        return "";
+    }
+    return node[key].as<std::string>();
+}
+
+bool LooksLikeYamlPath(const std::string& path) {
+    if (path.size() < 5) {
+        return false;
+    }
+    return path.compare(path.size() - 5, 5, ".yaml") == 0 ||
+        path.compare(path.size() - 4, 4, ".yml") == 0;
+}
+
+std::string ResolveConfigPath(
+    const std::filesystem::path& config_dir,
+    const std::filesystem::path& project_root,
+    const std::string& path) {
+    namespace fs = std::filesystem;
+    if (path.empty()) {
+        return "";
+    }
+    fs::path local = config_dir / path;
+    if (fs::exists(local)) {
+        return local.lexically_normal().string();
+    }
+    return ResolveUnderRoot(project_root, path);
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     namespace fs = std::filesystem;
 
-    auto find_project_root = [](const fs::path& exe_path) -> fs::path {
-        fs::path dir = exe_path;
-        if (!dir.empty() && fs::is_regular_file(dir)) dir = dir.parent_path();
-        for (int i = 0; i < 8; ++i) {
-            if (fs::exists(dir / "applications") && fs::exists(dir / "examples")) {
-                fs::path abs = fs::absolute(dir);
-                if (abs.filename() == "build" && abs.has_parent_path()) {
-                    return abs.parent_path();
-                }
-                return abs;
-            }
-            if (!dir.has_parent_path()) break;
-            dir = dir.parent_path();
-        }
-        fs::path cwd = fs::current_path();
-        if (cwd.filename() == "build" && cwd.has_parent_path()) {
-            return cwd.parent_path();
-        }
-        return cwd;
-    };
+    const fs::path project_root_path = FindProjectRoot(
+        (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path());
 
-    auto resolve_under_root = [](const fs::path& project_root, const std::string& p) -> std::string {
-        if (p.empty()) return "";
-        std::string path = p;
-        if (path[0] == '~') {
-            const char* home = std::getenv("HOME");
-            if (home && home[0] != '\0')
-                path = (path.size() == 1 || path[1] == '/') ? std::string(home) + path.substr(1) : path;
-        }
-        fs::path in(path);
-        if (in.is_absolute()) return in.string();
-        return (project_root / in).lexically_normal().string();
-    };
-
-    const fs::path exe_path = (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path();
-    fs::path project_root_path = find_project_root(exe_path);
-
-    // Default application config: <cv>/applications/intrusion_detection/config/intrusion_detection.yaml
-    const fs::path config_rel = fs::path("applications") / "intrusion_detection" / "config"
-        / "intrusion_detection.yaml";
-    fs::path config_file = project_root_path / config_rel;
-    for (int up = 0; up < 6 && !fs::exists(config_file) && project_root_path.has_parent_path(); ++up) {
-        project_root_path = project_root_path.parent_path();
-        config_file = project_root_path / config_rel;
-    }
+    std::string app_config_rel = kDefaultAppConfig;
     std::string video_path;
     bool use_camera = false;
     int camera_id = 0;
-    std::string tracker_model_path_cli;
 
-    int start_i = 1;
-    if (argc >= 2 && argv[1] && ends_with(argv[1], ".yaml")) {
-        config_file = argv[1];
-        start_i = 2;
-    }
-    // Minimal CLI (yaml-first)
-    for (int i = start_i; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--config" && i + 1 < argc) {
-            config_file = argv[++i];
+            app_config_rel = argv[++i];
         } else if (a == "--video" && i + 1 < argc) {
             video_path = argv[++i];
         } else if (a == "--use-camera") {
             use_camera = true;
         } else if (a == "--camera-id" && i + 1 < argc) {
             camera_id = std::stoi(argv[++i]);
-        } else if (a == "--model-path" && i + 1 < argc) {
-            tracker_model_path_cli = argv[++i];
         } else if (a == "-h" || a == "--help") {
             std::cout << "Usage: " << argv[0]
-                        << " [config_yaml] [--config <yaml>] [--video <path>] [--use-camera]"
-                        << " [--camera-id <id>] [--model-path <path>]\n";
-            std::cout << "  Default config: applications/intrusion_detection/config/intrusion_detection.yaml\n";
-            std::cout << "  Example: " << argv[0]
-                        << " applications/intrusion_detection/config/intrusion_detection.yaml\n";
+                << " [config.yaml] [--config <app.yaml>] [--video <path>]"
+                << " [--use-camera] [--camera-id <id>]\n";
             return 0;
+        } else if (!a.empty() && a[0] != '-') {
+            if (LooksLikeYamlPath(a) && app_config_rel == kDefaultAppConfig) {
+                app_config_rel = a;
+            } else {
+                std::cerr << "Unknown argument: " << a << "\n";
+                return -1;
+            }
         } else {
             std::cerr << "Unknown argument: " << a << "\n";
-            std::cerr << "Run with --help to see usage.\n";
             return -1;
         }
     }
 
-    // If user passed relative config path, prefer resolving from current working directory
-    // so that paths like ../applications/intrusion_detection/config/... work when run from model_zoo/cv.
-    if (!config_file.is_absolute()) {
-        fs::path from_cwd = fs::absolute(fs::current_path() / config_file).lexically_normal();
-        if (fs::exists(from_cwd)) {
-            config_file = from_cwd;
-        } else {
-            config_file = fs::path(resolve_under_root(project_root_path, config_file.string()));
-        }
+    const fs::path app_config_path = fs::path(ResolveUserPath(project_root_path, app_config_rel));
+    if (!fs::exists(app_config_path)) {
+        std::cerr << "Error: config not found: " << app_config_path << std::endl;
+        return -1;
     }
-    // Derive cv root from config path so examples/... and applications/... resolve from any cwd
-    if (config_file.is_absolute()) {
-        fs::path p = config_file.parent_path();
-        for (int i = 0; i < 3 && p.has_parent_path(); ++i) p = p.parent_path();
-        project_root_path = p;
-    }
+    const fs::path config_dir = app_config_path.parent_path();
 
     YAML::Node app_cfg;
+    YAML::Node tracker_cfg;
+    std::string tracker_cfg_abs;
     try {
-        if (!fs::exists(config_file)) {
-            throw std::runtime_error("Config file not found: " + config_file.string());
+        app_cfg = YAML::LoadFile(app_config_path.string());
+        const std::string tracker_rel = YamlString(app_cfg, "tracker_model");
+        if (tracker_rel.empty()) {
+            std::cerr << "Error: tracker_model required in " << app_config_path << std::endl;
+            return -1;
         }
-        app_cfg = YAML::LoadFile(config_file.string());
+        tracker_cfg_abs = ResolveConfigPath(config_dir, project_root_path, tracker_rel);
+        tracker_cfg = YAML::LoadFile(tracker_cfg_abs);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return -1;
     }
 
     if (use_camera) {
-        if (app_cfg["camera_id"]) camera_id = app_cfg["camera_id"].as<int>();
-    } else {
-        if (video_path.empty()) {
-            if (app_cfg["test_video"]) {
-                video_path = resolve_under_root(project_root_path, app_cfg["test_video"].as<std::string>());
-                std::cout << "Using test_video from " << config_file << ": " << video_path << std::endl;
-            } else {
-                std::cerr << "Error: --video not provided and test_video not found in " << config_file << std::endl;
-                return -1;
-            }
-        } else {
-            video_path = resolve_under_root(project_root_path, video_path);
+        if (app_cfg["camera_id"]) {
+            camera_id = app_cfg["camera_id"].as<int>();
         }
+    } else if (video_path.empty()) {
+        const std::string test_video = YamlString(app_cfg, "test_video");
+        if (test_video.empty()) {
+            std::cerr << "Error: --video not provided and test_video missing in "
+                << app_config_path << std::endl;
+            return -1;
+        }
+        video_path = ResolveUnderRoot(project_root_path, test_video);
+    } else {
+        video_path = ResolveUnderRoot(project_root_path, video_path);
     }
 
-    // Load labels (optional, from application yaml)
     std::vector<std::string> labels;
     try {
-        if (app_cfg["label_file_path"]) {
-            labels = vision_common::load_labels(resolve_under_root(project_root_path,
-                app_cfg["label_file_path"].as<std::string>()));
+        const std::string label_path = YamlString(tracker_cfg, "label_file_path");
+        if (!label_path.empty()) {
+            labels = vision_common::load_labels(
+                ResolveUnderRoot(project_root_path, label_path));
         }
     } catch (...) {
         labels.clear();
     }
-    if (!labels.empty()) {
-        std::cout << "Loaded " << labels.size() << " labels from " << config_file << std::endl;
-    }
 
-    std::string tracker_config_path = app_cfg["tracker_config_path"]
-        ? app_cfg["tracker_config_path"].as<std::string>() : "";
-    std::string tracker_model_path = !tracker_model_path_cli.empty()
-        ? tracker_model_path_cli
-        : (app_cfg["tracker_model_path"] ? app_cfg["tracker_model_path"].as<std::string>() : "");
-    if (tracker_config_path.empty()) {
-        std::cerr << "Error: tracker_config_path is required in intrusion_detection.yaml" << std::endl;
-        return -1;
-    }
-    const fs::path tracker_cfg_file = (project_root_path / tracker_config_path).lexically_normal();
-    if (!fs::exists(tracker_cfg_file)) {
-        std::cerr << "Error: Tracker config not found: " << tracker_cfg_file << std::endl;
-        return -1;
-    }
-    tracker_model_path = resolve_under_root(project_root_path, tracker_model_path);
-
-    std::unique_ptr<VisionService> service = VisionService::Create(
-        tracker_cfg_file.string(),
-        tracker_model_path,
-        true);
+    std::unique_ptr<VisionService> service = VisionService::Create(tracker_cfg_abs, "", false);
     if (!service) {
         std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
         return -1;

@@ -5,11 +5,13 @@
 
 #include "ocsort_tracker.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -139,11 +141,32 @@ vision_common::TrackingResultList OCSortTracker::track(
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> OCSortTracker::supported_intents() const {
+    return {vision_core::InferIntent::kTrack};
+}
+
+vision_core::InferResponse OCSortTracker::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kTrack);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "OCSortTracker expects ImageInput";
+        return response;
+    }
+
+    vision_common::TrackingResultList task_results = track(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> OCSortTracker::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kTrackUpdate,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 Eigen::MatrixXf OCSortTracker::convert_results_to_dets(

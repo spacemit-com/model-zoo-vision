@@ -250,7 +250,7 @@ target_link_libraries(your_app PRIVATE
 #include "vision_service.h"
 #include <opencv2/opencv.hpp>
 
-auto service = VisionService::Create(config_path, model_path_override, true);
+auto service = VisionService::Create(config_path, model_path_override, false);
 if (!service) { /* 使用 VisionService::LastCreateError() */ return; }
 
 cv::Mat image = cv::imread(image_path);

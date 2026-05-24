@@ -3,13 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @brief Fire Detection Example (火焰检测示例)
- *
- * Uses vision_service API: one detector from detector_config_path + detector_model_path override.
- * App config: applications/fire_detection/config/fire_detection.yaml.
- */
-
 #include "example_fire_detection.h"
 
 #include <cstdlib>
@@ -25,180 +18,193 @@
 #include "vision_service.h"
 
 namespace {
-    namespace fs = std::filesystem;
+namespace fs = std::filesystem;
 
-    bool ends_with(const std::string& s, const std::string& suffix) {
-        if (s.size() < suffix.size()) return false;
-        return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-    }
+constexpr const char* kDefaultAppConfig =
+    "applications/fire_detection/config/fire_detection.yaml";
 
-    fs::path find_project_root_from_exe(const fs::path& exe_path) {
-        fs::path dir = exe_path;
-        if (!dir.empty() && fs::is_regular_file(dir)) dir = dir.parent_path();
-        for (int i = 0; i < 8; ++i) {
-            if (fs::exists(dir / "applications" / "fire_detection" / "config")) {
-                fs::path abs = fs::absolute(dir);
-                if (abs.filename() == "build" && abs.has_parent_path()) {
-                    return abs.parent_path();
-                }
-                return abs;
-            }
-            if (fs::exists(dir / "applications") && fs::exists(dir / "examples")) {
-                fs::path abs = fs::absolute(dir);
-                if (abs.filename() == "build" && abs.has_parent_path()) {
-                    return abs.parent_path();
-                }
-                return abs;
-            }
-            if (!dir.has_parent_path()) break;
-            dir = dir.parent_path();
-        }
-        fs::path cwd = fs::current_path();
-        if (cwd.filename() == "build" && cwd.has_parent_path()) {
-            return cwd.parent_path();
-        }
-        return cwd;
-    }
+bool IsRepoRoot(const fs::path& dir) {
+    return fs::exists(dir / "applications") && fs::exists(dir / "examples") &&
+        fs::exists(dir / "src");
+}
 
-    std::string resolve_under_root(const fs::path& project_root, const std::string& p) {
-        if (p.empty()) return "";
-        std::string path = p;
-        if (path[0] == '~') {
-            const char* home = std::getenv("HOME");
-            if (home && home[0] != '\0')
-                path = (path.size() == 1 || path[1] == '/') ? std::string(home) + path.substr(1) : path;
-        }
-        fs::path in(path);
-        if (in.is_absolute()) return in.string();
-        return (project_root / in).lexically_normal().string();
+fs::path FindProjectRoot(const fs::path& exe_path) {
+    fs::path dir = exe_path;
+    if (!dir.empty() && fs::is_regular_file(dir)) {
+        dir = dir.parent_path();
     }
+    for (int i = 0; i < 8; ++i) {
+        if (IsRepoRoot(dir)) {
+            return fs::absolute(dir);
+        }
+        if (!dir.has_parent_path()) {
+            break;
+        }
+        dir = dir.parent_path();
+    }
+    fs::path cwd = fs::current_path();
+    if (IsRepoRoot(cwd)) {
+        return fs::absolute(cwd);
+    }
+    if (cwd.filename() == "build" && cwd.has_parent_path()) {
+        fs::path parent = cwd.parent_path();
+        if (IsRepoRoot(parent)) {
+            return fs::absolute(parent);
+        }
+    }
+    return fs::absolute(cwd);
+}
 
-    YAML::Node load_app_yaml(const fs::path& config_file) {
-        if (!fs::exists(config_file)) {
-            throw std::runtime_error("Config file not found: " + config_file.string());
-        }
-        return YAML::LoadFile(config_file.string());
+std::string ExpandTilde(const std::string& path) {
+    if (path.empty() || path[0] != '~') {
+        return path;
     }
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+        return path;
+    }
+    if (path.size() == 1 || path[1] == '/') {
+        return std::string(home) + path.substr(1);
+    }
+    return path;
+}
+
+std::string ResolveUserPath(const fs::path& project_root, const std::string& path) {
+    if (path.empty()) {
+        return "";
+    }
+    fs::path in(ExpandTilde(path));
+    if (in.is_absolute()) {
+        return in.lexically_normal().string();
+    }
+    const fs::path cwd = fs::current_path();
+    const fs::path candidates[] = {cwd / in, project_root / in};
+    for (const fs::path& candidate : candidates) {
+        const fs::path abs = fs::absolute(candidate).lexically_normal();
+        if (fs::exists(abs)) {
+            return abs.string();
+        }
+    }
+    return fs::absolute(project_root / in).lexically_normal().string();
+}
+
+bool LooksLikeYamlPath(const std::string& path) {
+    if (path.size() < 5) {
+        return false;
+    }
+    return path.compare(path.size() - 5, 5, ".yaml") == 0 ||
+        path.compare(path.size() - 4, 4, ".yml") == 0;
+}
+
+std::string ResolveUnderRoot(const fs::path& project_root, const std::string& path) {
+    return ResolveUserPath(project_root, path);
+}
+
+std::string YamlString(const YAML::Node& node, const char* key) {
+    if (!node[key]) {
+        return "";
+    }
+    return node[key].as<std::string>();
+}
+
+std::string ResolveConfigPath(
+    const fs::path& config_dir,
+    const fs::path& project_root,
+    const std::string& path) {
+    if (path.empty()) {
+        return "";
+    }
+    fs::path local = config_dir / path;
+    if (fs::exists(local)) {
+        return local.lexically_normal().string();
+    }
+    return ResolveUnderRoot(project_root, path);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 1) {
+    const fs::path project_root = FindProjectRoot(
+        (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path());
+
+    std::string app_config_rel = kDefaultAppConfig;
+    std::string image_path;
+    std::string output_path = "result_fire_detection.jpg";
+    bool use_camera = false;
+    int camera_id = 0;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--config" && i + 1 < argc) {
+            app_config_rel = argv[++i];
+        } else if (arg == "--image" && i + 1 < argc) {
+            image_path = argv[++i];
+        } else if (arg == "--use-camera") {
+            use_camera = true;
+        } else if (arg == "--camera-id" && i + 1 < argc) {
+            camera_id = std::stoi(argv[++i]);
+        } else if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: " << argv[0]
+                << " [config.yaml] [--config <app.yaml>] [--image <path>] [output_path]"
+                << " [--use-camera] [--camera-id <id>]\n";
+            return 0;
+        } else if (!arg.empty() && arg[0] != '-') {
+            if (LooksLikeYamlPath(arg) && app_config_rel == kDefaultAppConfig) {
+                app_config_rel = arg;
+            } else if (image_path.empty()) {
+                image_path = arg;
+            } else {
+                output_path = arg;
+            }
+        }
+    }
+
+    const fs::path app_config_path = fs::path(ResolveUserPath(project_root, app_config_rel));
+    if (!fs::exists(app_config_path)) {
+        std::cerr << "Error: config not found: " << app_config_path << std::endl;
         return -1;
     }
-
-    const fs::path exe_path = (argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path();
-    fs::path project_root_path = find_project_root_from_exe(exe_path);
-    const fs::path app_cfg_rel = fs::path("applications") / "fire_detection" / "config" / "fire_detection.yaml";
-    fs::path app_cfg_file = project_root_path / app_cfg_rel;
-    bool app_cfg_from_arg = false;
-    if (argc >= 2 && argv[1] && ends_with(argv[1], ".yaml")) {
-        app_cfg_file = fs::absolute(fs::path(argv[1]));
-        app_cfg_from_arg = true;
-        if (!fs::exists(app_cfg_file)) {
-            std::cerr << "Error: config file not found: " << app_cfg_file << std::endl;
-            return -1;
-        }
-        // app_cfg is at applications/fire_detection/config/fire_detection.yaml -> go up 3 to cv root
-        fs::path p = app_cfg_file.parent_path();
-        for (int i = 0; i < 3 && p.has_parent_path(); ++i) {
-            p = p.parent_path();
-        }
-        project_root_path = p;
-    }
-    if (!app_cfg_from_arg) {
-        for (int up = 0; up < 6 && !fs::exists(app_cfg_file) && project_root_path.has_parent_path(); ++up) {
-            project_root_path = project_root_path.parent_path();
-            app_cfg_file = project_root_path / app_cfg_rel;
-        }
-    }
-
     YAML::Node app_cfg;
     try {
-        app_cfg = load_app_yaml(app_cfg_file);
+        app_cfg = YAML::LoadFile(app_config_path.string());
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return -1;
     }
-
-    std::string image_path;
-    std::string output_path = "result_fire_detection.jpg";
-    std::string model_path_cli;
-    bool use_camera = false;
-    int camera_id = app_cfg["camera_id"] ? app_cfg["camera_id"].as<int>() : 0;
-    int start_i = app_cfg_from_arg ? 2 : 1;
-    for (int i = start_i; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a == "--use-camera") {
-            use_camera = true;
-        } else if (a == "--camera-id" && i + 1 < argc) {
-            camera_id = std::stoi(argv[++i]);
-        } else if (a == "--model-path" && i + 1 < argc) {
-            model_path_cli = argv[++i];
-        } else if (a == "-h" || a == "--help") {
-            std::cout << "Usage: " << argv[0] << " <config_yaml> [options]\n"
-                << "Options: [image_path] [output_path] [--use-camera] [--camera-id <id>] [--model-path <path>]\n"
-                << "  With --use-camera: read from camera. Press 'q' to quit.\n";
-            return 0;
-        } else if (!a.empty() && a[0] != '-') {
-            if (image_path.empty()) {
-                image_path = a;
-            } else {
-                output_path = a;
-            }
-        }
-    }
-    if (!image_path.empty()) {
-        image_path = resolve_under_root(project_root_path, image_path);
-    }
-    if (!use_camera && image_path.empty() && app_cfg["test_image"]) {
-        image_path = resolve_under_root(project_root_path, app_cfg["test_image"].as<std::string>());
-    }
-    if (!use_camera && image_path.empty()) {
-        std::cout << "Usage: " << argv[0]
-            << " [config_yaml] [image_path] [output_path] [--use-camera] [--camera-id <id>]"
-            << std::endl;
+    const std::string model_rel = YamlString(app_cfg, "model");
+    if (model_rel.empty()) {
+        std::cerr << "Error: model is required in " << app_config_path << std::endl;
         return -1;
     }
+    const std::string detector_cfg_abs =
+        ResolveConfigPath(app_config_path.parent_path(), project_root, model_rel);
 
-    std::string detector_config_path =
-        app_cfg["detector_config_path"] ? app_cfg["detector_config_path"].as<std::string>() : "";
-    std::string detector_model_path =
-        app_cfg["detector_model_path"] ? app_cfg["detector_model_path"].as<std::string>() : "";
-    if (detector_config_path.empty()) {
-        std::cerr << "Error: detector_config_path is required in fire_detection.yaml" << std::endl;
-        return -1;
-    }
-    fs::path detector_cfg_abs = (project_root_path / detector_config_path).lexically_normal();
-    if (!fs::exists(detector_cfg_abs)) {
-        std::cerr << "Error: Detector config not found: " << detector_cfg_abs << std::endl;
-        return -1;
-    }
-    std::string model_override = !model_path_cli.empty()
-        ? resolve_under_root(project_root_path, model_path_cli)
-        : resolve_under_root(project_root_path, detector_model_path);
-
-    std::unique_ptr<VisionService> service = VisionService::Create(
-        detector_cfg_abs.string(),
-        model_override,
-        true);
+    std::unique_ptr<VisionService> service = VisionService::Create(detector_cfg_abs, "", false);
     if (!service) {
         std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
         return -1;
     }
 
+    if (!use_camera && image_path.empty()) {
+        image_path = service->GetDefaultImage();
+    } else if (!image_path.empty()) {
+        image_path = ResolveUnderRoot(project_root, image_path);
+    }
+
+    if (!use_camera && image_path.empty()) {
+        std::cerr << "Error: provide --image or set test_image in " << detector_cfg_abs << std::endl;
+        return -1;
+    }
+
     auto run_detect_and_draw = [&](const cv::Mat& image, cv::Mat* out_vis) {
         std::vector<VisionServiceResult> results;
-        int ret = service->InferImage(image, &results);
-        if (ret != VISION_SERVICE_OK) {
+        if (service->InferImage(image, &results) != VISION_SERVICE_OK) {
             *out_vis = image.clone();
             return;
         }
-        if (!results.empty()) {
-            auto draw_status = service->Draw(image, out_vis);
-            if (draw_status != VISION_SERVICE_OK) {
-                *out_vis = image.clone();
-            }
-        } else {
+        if (!results.empty() && service->Draw(image, out_vis) != VISION_SERVICE_OK) {
+            *out_vis = image.clone();
+        } else if (results.empty()) {
             *out_vis = image.clone();
         }
     };
@@ -211,11 +217,15 @@ int main(int argc, char** argv) {
         }
         cv::Mat frame;
         while (cap.read(frame)) {
-            if (frame.empty()) continue;
+            if (frame.empty()) {
+                continue;
+            }
             cv::Mat vis;
             run_detect_and_draw(frame, &vis);
             cv::imshow("Fire Detection", vis);
-            if ((cv::waitKey(1) & 0xFF) == 'q') break;
+            if ((cv::waitKey(1) & 0xFF) == 'q') {
+                break;
+            }
         }
         cap.release();
         cv::destroyAllWindows();

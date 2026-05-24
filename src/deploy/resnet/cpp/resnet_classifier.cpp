@@ -5,6 +5,7 @@
 
 #include "resnet_classifier.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -107,8 +109,32 @@ vision_common::ClassificationResultList ResNetClassifier::classify(const cv::Mat
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> ResNetClassifier::supported_intents() const {
+    return {vision_core::InferIntent::kClassify};
+}
+
+vision_core::InferResponse ResNetClassifier::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kClassify);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "ResNetClassifier expects ImageInput";
+        return response;
+    }
+
+    vision_common::ClassificationResultList task_results = classify(image_input->image);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> ResNetClassifier::get_capabilities() const {
-    return {vision_core::ModelCapability::kImageInput};
+    return {};
 }
 
 vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vector<Ort::Value>& outputs) {

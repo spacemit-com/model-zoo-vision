@@ -5,6 +5,7 @@
 
 #include "yolov8_detector.h"
 
+#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -129,10 +131,33 @@ vision_common::DetectionResultList YOLOv8Detector::detect(
     return results;
 }
 
+std::vector<vision_core::InferIntent> YOLOv8Detector::supported_intents() const {
+    return {vision_core::InferIntent::kDetect};
+}
+
+vision_core::InferResponse YOLOv8Detector::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kDetect);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "YOLOv8Detector expects ImageInput";
+        return response;
+    }
+
+    vision_common::DetectionResultList detections =
+        detect(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+
+    vision_core::InferResponse response;
+    response.results.reserve(detections.size());
+    for (auto& detection : detections) {
+        response.results.emplace_back(std::move(detection));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> YOLOv8Detector::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 // DFL decode now uses common function

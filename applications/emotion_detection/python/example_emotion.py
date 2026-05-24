@@ -7,8 +7,8 @@ Emotion Recognition Example
 
 This example demonstrates how to use the emotion recognition model to detect faces
 and recognize emotions in images.
-从 applications/emotion_detection/config/emotion_detection.yaml 读取应用配置，
-模型由 emotion_config_path / face_detector_config_path 指向的 yaml 加载。
+从 config/emotion_detection.yaml 读取应用配置（引用 face_detector.yaml / emotion.yaml）。
+默认测试图由 emotion.yaml 的 test_image 提供。
 """
 
 import sys
@@ -57,16 +57,15 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  python example_emotion.py --config ../config/emotion_detection.yaml   # 在 python/ 目录下运行时
-  python example_emotion.py --config applications/emotion_detection/config/emotion_detection.yaml --image test.jpg
-  python example_emotion.py  # 使用默认配置（无需 --config）
+  python example_emotion.py --image test.jpg
+  python example_emotion.py  # 使用 emotion.yaml 中的 test_image
         """
     )
     parser.add_argument(
         '--config',
         type=str,
         default=None,
-        help='应用配置 yaml 路径 (默认: applications/emotion_detection/config/emotion_detection.yaml)'
+        help='应用配置 yaml (默认: applications/emotion_detection/config/emotion_detection.yaml)'
     )
     parser.add_argument(
         '--image',
@@ -80,36 +79,6 @@ def parse_args():
         default=None,
         help='输出图片路径 (默认: output_emotion.jpg)'
     )
-    parser.add_argument(
-        '--conf-threshold',
-        type=float,
-        default=None,
-        help='人脸检测置信度阈值 (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--iou-threshold',
-        type=float,
-        default=None,
-        help='IoU 阈值，用于 NMS (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--num-threads',
-        type=int,
-        default=None,
-        help='推理线程数 (覆盖 yaml 中的默认值)'
-    )
-    parser.add_argument(
-        '--face-model-path',
-        type=str,
-        default=None,
-        help='人脸检测模型 ONNX 路径，覆盖 yaml 中的 face_detector_path'
-    )
-    parser.add_argument(
-        '--emotion-model-path',
-        type=str,
-        default=None,
-        help='情绪模型 ONNX 路径，覆盖 yaml 中的 emotion_model_path'
-    )
     return parser.parse_args()
 
 
@@ -117,26 +86,33 @@ def main():
     """Main function."""
     args = parse_args()
     project_root = Path(__file__).resolve().parents[3]  # applications/emotion_detection/python/ -> cv
-    default_config = project_root / "applications" / "emotion_detection" / "config" / "emotion_detection.yaml"
-    config_path = Path(args.config) if args.config else default_config
-    if not config_path.is_absolute():
-        # Prefer cwd-relative path (e.g. ../config/emotion_detection.yaml when run from python/)
-        cwd_resolved = (Path.cwd() / config_path).resolve()
-        config_path = cwd_resolved if cwd_resolved.exists() else (project_root / config_path).resolve()
+    default_app = project_root / "applications" / "emotion_detection" / "config" / "emotion_detection.yaml"
+    app_path = Path(args.config) if args.config else default_app
+    if not app_path.is_absolute():
+        app_path = (project_root / app_path).resolve()
     try:
-        app_config = _load_app_config(config_path)
+        app_config = _load_app_config(app_path)
     except Exception as e:
         print(f"✗ 加载应用配置失败: {e}")
         return
+    config_dir = app_path.parent
+    face_yaml = _resolve_path(str(config_dir / app_config["face_model"]), project_root)
+    emotion_yaml = _resolve_path(str(config_dir / app_config["emotion_model"]), project_root)
 
-    # 如果没有提供图片路径，优先从应用配置的 test_image 读取
+    try:
+        face_model_config = _load_app_config(Path(face_yaml))
+        emotion_model_config = _load_app_config(Path(emotion_yaml))
+    except Exception as e:
+        print(f"✗ 加载模型配置失败: {e}")
+        return
+
     if args.image is None:
-        test_image_path = app_config.get("test_image")
+        test_image_path = emotion_model_config.get("test_image")
         if test_image_path:
             args.image = str(_resolve_path(str(test_image_path), project_root))
             print(f"从配置读取图片路径: {args.image}")
         else:
-            print("错误: 未提供 --image，且应用配置中无 test_image")
+            print("错误: 未提供 --image，且 emotion.yaml 中无 test_image")
             return
 
     # 检查图片文件是否存在
@@ -146,19 +122,10 @@ def main():
 
     # 设置输出路径：命令行 > 应用配置 output_path > 默认
     if args.output is None:
-        args.output = app_config.get("output_path") or "output_emotion.jpg"
+        args.output = "output_emotion.jpg"
 
-    # 从应用配置读取模型 yaml 路径
-    emotion_config_path = app_config.get("emotion_config_path", "")
-    face_detector_config_path = app_config.get("face_detector_config_path", "")
-    if not emotion_config_path:
-        print("✗ emotion_config_path 未设置，请在 emotion_detection.yaml 中指定")
-        return
-    if not face_detector_config_path:
-        print("✗ face_detector_config_path 未设置，请在 emotion_detection.yaml 中指定")
-        return
-    emotion_config_path = str(_resolve_path(emotion_config_path, project_root))
-    face_detector_config_path = str(_resolve_path(face_detector_config_path, project_root))
+    emotion_config_path = str(emotion_yaml)
+    face_detector_config_path = str(face_yaml)
     emotion_config_dir_abs = Path(emotion_config_path).parent
     face_detector_config_dir_abs = Path(face_detector_config_path).parent
     emotion_model_name = Path(emotion_config_path).stem
@@ -167,25 +134,17 @@ def main():
     print("=" * 60)
     print("Emotion Recognition Example")
     print("=" * 60)
-    print(f"应用配置: {config_path}")
-    print(f"情绪模型: {emotion_config_path}")
-    print(f"人脸检测: {face_detector_config_path}")
+    print(f"情绪模型配置: {emotion_config_path}")
+    print(f"人脸模型配置: {face_detector_config_path}")
     print(f"图片: {args.image}")
-    if app_config.get("image_size"):
-        print(f"Emotion 输入尺寸: {app_config['image_size']}，人脸检测: [640, 640] (固定)")
+    if emotion_model_config.get("image_size"):
+        print(f"Emotion 输入尺寸: {emotion_model_config['image_size']}，人脸检测: [640, 640] (固定)")
     print("=" * 60)
 
-    # 覆盖参数：命令行 --face-model-path / --emotion-model-path 优先于 yaml
     face_override_params = {}
-    face_path_src = args.face_model_path or app_config.get("face_detector_path", "")
-    if face_path_src:
-        face_override_params["model_path"] = str(_resolve_path(face_path_src, project_root))
-    if args.conf_threshold is not None:
-        face_override_params["conf_thres"] = args.conf_threshold
-    if args.iou_threshold is not None:
-        face_override_params["iou_thres"] = args.iou_threshold
-    if args.num_threads is not None:
-        face_override_params["num_threads"] = args.num_threads
+    if face_model_config.get("model_path"):
+        face_override_params["model_path"] = str(
+            _resolve_path(str(face_model_config["model_path"]), project_root))
 
     if not face_detector_config_dir_abs.is_dir():
         print(f"✗ 人脸检测配置目录不存在: {face_detector_config_dir_abs}")
@@ -206,11 +165,9 @@ def main():
         return
 
     emotion_override_params = {}
-    emotion_path_src = args.emotion_model_path or app_config.get("emotion_model_path", "")
-    if emotion_path_src:
-        emotion_override_params["emotion_model_path"] = str(_resolve_path(emotion_path_src, project_root))
-    if args.num_threads is not None:
-        emotion_override_params["num_threads"] = args.num_threads
+    if emotion_model_config.get("model_path"):
+        emotion_override_params["emotion_model_path"] = str(
+            _resolve_path(str(emotion_model_config["model_path"]), project_root))
     if not emotion_config_dir_abs.is_dir():
         print(f"✗ 情绪模型配置目录不存在: {emotion_config_dir_abs}")
         return

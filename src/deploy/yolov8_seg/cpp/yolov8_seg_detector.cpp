@@ -7,6 +7,7 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -154,10 +156,32 @@ vision_common::SegmentationResultList YOLOv8SegDetector::segment(
     return results;
 }
 
+
+std::vector<vision_core::InferIntent> YOLOv8SegDetector::supported_intents() const {
+    return {vision_core::InferIntent::kSegment};
+}
+
+vision_core::InferResponse YOLOv8SegDetector::Run(const vision_core::InferRequest& request) {
+    assert(request.intent == vision_core::InferIntent::kSegment);
+    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
+    if (image_input == nullptr) {
+        vision_core::InferResponse response;
+        response.ok = false;
+        response.error_message = "YOLOv8SegDetector expects ImageInput";
+        return response;
+    }
+
+    vision_common::SegmentationResultList task_results = segment(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_core::InferResponse response;
+    response.results.reserve(task_results.size());
+    for (auto& item : task_results) {
+        response.results.emplace_back(std::move(item));
+    }
+    return response;
+}
+
 std::vector<vision_core::ModelCapability> YOLOv8SegDetector::get_capabilities() const {
-    return {
-        vision_core::ModelCapability::kImageInput,
-        vision_core::ModelCapability::kDraw};
+    return {vision_core::ModelCapability::kDraw};
 }
 
 vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector<Ort::Value>& outputs,

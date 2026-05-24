@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::unique_ptr<VisionService> service =
-        VisionService::Create(config_path, model_path_override, true);
+        VisionService::Create(config_path, model_path_override, false);
     if (!service) {
         std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
         return 1;

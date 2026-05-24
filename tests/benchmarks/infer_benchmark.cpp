@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto service = VisionService::Create(args.config_path, args.model_path_override, true);
+    auto service = VisionService::Create(args.config_path, args.model_path_override, false);
     if (!service) {
         std::cerr << "Error: create service failed: " << VisionService::LastCreateError() << std::endl;
         return 1;

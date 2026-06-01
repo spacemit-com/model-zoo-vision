@@ -191,6 +191,32 @@ make -j$(nproc)
 
 更多模型（ByteTrack、OC-SORT、ArcFace 等）的用法与参数见**各示例子目录 README**。
 
+#### 2.4.3. CI 自动化测试
+
+模块提供 `test.yaml` 与 `tests/`，由 SDK 根目录的 `robot-test` 驱动。**逐步操作见 [`tests/TESTING_GUIDE.md`](tests/TESTING_GUIDE.md)**；设计说明见 [`tests/TEST_DESIGN.md`](tests/TEST_DESIGN.md)。
+
+**在 SDK 根目录执行（PR 在 k3-com260 板上跑，需先 `mm` 构建 vision）：**
+
+```bash
+scripts/test/robot-test list components/model_zoo/vision
+scripts/test/robot-test run components/model_zoo/vision --scope pr
+scripts/test/robot-test run components/model_zoo/vision --scope scheduled --target k3-com260-omni-agent
+```
+
+| 用例 | scope | 说明 |
+| ---- | ----- | ---- |
+| `vision-cpp-functional` | pr | yolov8n + `006_test.jpg` 真实推理；断言检出、类别、分数、bbox |
+| `vision-cpp-invalid-input` | pr | Create 错误路径（空/缺/坏 yaml），无需模型 |
+| `vision-python-invalid-input` | pr | ModelFactory 异常类型 + nms/letterbox 纯逻辑 smoke |
+| `vision-infer-perf` | scheduled | `vision_infer_benchmark` 采集 FPS / model_infer_ms |
+
+PR 用例 1 需要 `~/.cache/models/vision/yolov8/yolov8n.q.onnx` 与 `~/.cache/assets/image/006_test.jpg`；缺失时脚本会尝试兜底下载，仍缺则 FAIL。x86 开发机可单独跑 Python 用例：
+
+```bash
+cd components/model_zoo/vision
+PYTHONPATH=src pytest -q tests/pr/test_python_invalid_input.py
+```
+
 ## 3. 应用开发
 
 本章说明如何在自有工程中**集成 CV 并调用 API**。环境与依赖见 [2.1](#21-安装依赖)，模型准备见 [2.2](#22-下载模型)，编译与运行示例见 [2.4](#24-测试)。

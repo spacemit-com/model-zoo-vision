@@ -1,0 +1,4 @@
+# Missing 'class' field — should trigger ModelConfigError
+model_path: /tmp/unused.onnx
+default_params:
+  conf_threshold: 0.25

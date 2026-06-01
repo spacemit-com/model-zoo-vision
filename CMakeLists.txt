@@ -193,8 +193,9 @@ endif()
 
 # Tests and benchmarks
 if(BUILD_TESTS)
-    enable_testing()    
+    enable_testing()
     add_subdirectory(tests/benchmarks)
+    add_subdirectory(tests/cpp)
 endif()
 
 # ============================================================================

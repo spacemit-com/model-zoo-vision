@@ -1,0 +1,3 @@
+# class points to a non-existent module — should trigger ModelImportError
+class: totally_fake_module_xyz.NonExistentDetector
+model_path: /tmp/unused.onnx

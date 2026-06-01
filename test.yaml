@@ -1,0 +1,47 @@
+module: components/model_zoo/vision
+
+tests:
+  # ---------- PR：板上执行，mm 已构建 libvision ----------
+  - name: vision-cpp-functional
+    description: Link libvision and run real Create+InferImage (yolov8n + sample image); assert OK status, detection count, class range, score range and bbox bounds.
+    category: functional
+    scopes: [pr]
+    timeout_s: 300
+    workdir: module
+    artifacts:
+      - tests/output/cpp_functional.txt
+    command: |
+      bash tests/cpp/run_cpp_tests.sh functional
+
+  - name: vision-cpp-invalid-input
+    description: Bad/missing/syntactically-invalid config path makes Create return null with a non-empty LastCreateError. Pure Create error path, no model, no crash, no hang.
+    category: functional
+    scopes: [pr]
+    timeout_s: 180
+    workdir: module
+    command: |
+      bash tests/cpp/run_cpp_tests.sh invalid
+
+  - name: vision-python-invalid-input
+    description: ModelFactory rejects missing config, missing class, bad class path, model URL and missing model file with the correct exception types; plus nms/letterbox smoke.
+    category: functional
+    scopes: [pr]
+    timeout_s: 120
+    workdir: module
+    python_env:
+      install:
+        - "-r tests/requirements.txt"
+    command: |
+      pytest -q tests/pr/test_python_invalid_input.py
+
+  # ---------- scheduled：性能采集 ----------
+  - name: vision-infer-perf
+    description: Collect yolov8n end-to-end FPS / model_infer_ms via vision_infer_benchmark (runs=50, warmup=5). Collect-only by default; threshold assertion gated by env.
+    category: performance
+    scopes: [scheduled]
+    timeout_s: 600
+    workdir: module
+    artifacts:
+      - tests/output/infer_perf.txt
+    command: |
+      bash tests/scheduled/run_infer_perf.sh

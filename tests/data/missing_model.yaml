@@ -1,0 +1,3 @@
+# Valid stub class but model file absent — should trigger ModelNotFoundError
+class: stub_model.StubDetector
+model_path: /tmp/vision_test_missing_model_xyz.onnx

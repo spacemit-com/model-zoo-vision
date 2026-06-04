@@ -5,7 +5,7 @@
 ## 1. 模型与权重
 
 - **模型类型**：多目标跟踪（YOLOv8 检测 + ByteTrack）
-- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n.q.onnx`（与 `config/bytetrack.yaml` 中 `model_path` 一致）
+- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`（与 `config/bytetrack.yaml` 中 `model_path` 一致）
 - **下载**：在本示例目录下执行  
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
@@ -49,6 +49,6 @@ python bytetrack.py --config ../config/bytetrack.yaml --use-camera
 
 ## 5. 故障排查
 
-- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n.q.onnx`。
+- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`。
 - **测试视频未找到**：默认视频在 `~/.cache/assets/video/` 下。在 cv 根目录执行 `bash scripts/download_assets.sh` 可下载资源。
 

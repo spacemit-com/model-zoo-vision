@@ -5,7 +5,7 @@
 ## 1. 模型与权重
 
 - **模型类型**：目标检测（YOLOv8）
-- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n.q.onnx`（与 `config/yolov8.yaml` 中 `model_path` 一致）
+- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`（与 `config/yolov8.yaml` 中 `model_path` 一致）
 - **下载**：在本示例目录下执行  
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
@@ -24,7 +24,7 @@ bash scripts/download_assets.sh
 
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
-| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8/yolov8n.q.onnx` |
+| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
 | `label_file_path` | 类别标签文件（如 COCO） | `assets/labels/coco.txt` |
 | `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
@@ -73,5 +73,5 @@ python yolov8.py --config ../config/yolov8.yaml --use-camera --camera-id 0
 
 ## 5. 故障排查
 
-- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n.q.onnx`。
+- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`。
 - **测试图片未找到**：默认图片在 `~/.cache/assets/image/` 下。在 cv 根目录执行 `bash scripts/download_assets.sh` 可下载资源。

@@ -21,8 +21,10 @@ namespace vision_deploy {
 
 /**
  * @brief YOLOv8 Object Detector
- * 
- * Supports detection with various input sizes and configurations.
+ *
+ * Auto-selects postprocess by ONNX output count:
+ * - 1 output: Ultralytics export, e.g. [1, 84, 8400]
+ * - 6+ outputs: multi-branch DFL heads (boxes / scores / score_sum per scale)
  */
 class YOLOv8Detector : public vision_core::BaseModel, public vision_core::IDetectionModel {
 public:

@@ -66,7 +66,7 @@ bianbu@k3:~/.cache/models/vision# tree
 │   └── arcface_mobilefacenet_cut.q.onnx
 ├── ocsort
 │   ├── ocsort_yoloxs_sim.fp32.onnx
-│   └── yolov8n.q.onnx
+│   └── yolov8n_no_dfl.q.onnx
 ├── resnet
 │   ├── emotion_resnet50_final.q.onnx
 │   └── resnet50.q.onnx
@@ -82,9 +82,9 @@ bianbu@k3:~/.cache/models/vision# tree
 │   └── yolov5n-face_cut.q.onnx
 ├── yolov8
 │   ├── yolov8_fire.q.onnx
-│   ├── yolov8m.q.onnx
-│   ├── yolov8n.q.onnx
-│   └── yolov8s.q.onnx
+│   ├── yolov8m_no_dfl.q.onnx
+│   ├── yolov8n_no_dfl.q.onnx
+│   └── yolov8s_no_dfl.q.onnx
 ├── yolov8_pose
 │   ├── yolov8m-pose.q.onnx
 │   ├── yolov8n-pose.q.onnx
@@ -362,7 +362,7 @@ K3:
 
 若 Vision 作为 SDK 子目录且路径仍为 `components/model_zoo/vision/`，可将 `--config` 换为 `components/model_zoo/vision/examples/yolov8/config/yolov8.yaml`。
 
-> 以上命令默认使用 yolov8n 模型；如需指定其他模型，可使用 `--model-path` 参数，例如：`--model-path /path/to/yolov8s.onnx`。
+> 以上命令默认使用 yolov8n_no_dfl 模型；如需指定其他模型，可使用 `--model-path` 参数，例如：`--model-path /path/to/yolov8s_no_dfl.q.onnx`。
 
 **不包含前后处理：**
 
@@ -415,7 +415,7 @@ K3:
 参照 2.1 节安装 C++ 依赖后，再按照2.2下载模型，之后可使用 onnxruntime_perf_test 复现（以 yolov8n 为例）：
 
 ```shell
-onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n.q.onnx  -e spacemit -r 20 -x 1 -S 1 -s -I -c 1 -i "SPACEMIT_EP_INTRA_THREAD_NUM|4"
+onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx  -e spacemit -r 20 -x 1 -S 1 -s -I -c 1 -i "SPACEMIT_EP_INTRA_THREAD_NUM|4"
 ```
 
 详细说明见 SpacemiT 社区文档 [AI 计算栈 · ONNX Runtime](https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md) 中的 **onnxruntime_perf_test** 章节。

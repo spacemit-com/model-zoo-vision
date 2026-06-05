@@ -25,6 +25,32 @@
 
 namespace vision_deploy {
 
+namespace {
+
+// Resolve the single-output seg layout for output0 dims [dim1, dim2].
+// cn layout = [features, anchors] (Ultralytics default); features sit on the smaller
+// trailing dim (channels << anchors). Shared by load_model() and the postprocess path
+// so both agree on which axis is features vs anchors. Equal dims are ambiguous.
+struct SegLayout {
+    bool cn;            // true if [features, anchors]
+    int64_t features;
+    int64_t anchors;
+};
+
+SegLayout resolve_seg_layout(int64_t dim1, int64_t dim2) {
+    if (dim1 == dim2) {
+        throw std::runtime_error(
+            "YOLOv8-Seg: ambiguous output0 shape (channels == anchors), "
+            "cannot distinguish features from anchors");
+    }
+    if (dim1 < dim2) {
+        return SegLayout{true, dim1, dim2};
+    }
+    return SegLayout{false, dim2, dim1};
+}
+
+}  // namespace
+
 std::unique_ptr<vision_core::BaseModel> YOLOv8SegDetector::create(const YAML::Node& config, bool lazy_load) {
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
@@ -66,25 +92,57 @@ YOLOv8SegDetector::YOLOv8SegDetector(const std::string& model_path,
 void YOLOv8SegDetector::load_model() {
     init_session(num_threads_, provider_);
 
-    // Extract num_classes and proto_channels from output shapes
-    // Output structure: [box0, score0, sum0, box1, score1, sum1, box2, score2, sum2, seg0, seg1, seg2, proto]
-    // score output shape: [1, num_classes, h, w]
-    if (output_num_ >= 2) {
-        Ort::TypeInfo score_type_info = session_->GetOutputTypeInfo(1);
-        auto score_tensor_info = score_type_info.GetTensorTypeAndShapeInfo();
-        auto score_dims = score_tensor_info.GetShape();
-        if (score_dims.size() >= 2 && score_dims[1] > 0) {
-            num_classes_ = static_cast<int>(score_dims[1]);
+    if (output_num_ == 2) {
+        // Ultralytics export: output0 = [1, 4 + num_classes + proto_channels, num_anchors],
+        // proto = [1, proto_channels, mask_h, mask_w].
+        Ort::TypeInfo proto_type_info = session_->GetOutputTypeInfo(1);
+        auto proto_dims = proto_type_info.GetTensorTypeAndShapeInfo().GetShape();
+        // Expect 4-D [1, C, H, W]; reject e.g. a batch-less [C, H, W] where dims[1]
+        // would be a spatial size rather than the channel count.
+        if (proto_dims.size() != 4) {
+            throw std::runtime_error(
+                "YOLOv8-Seg: unexpected proto output rank (expected 4: [1, C, H, W])");
         }
-    }
-
-    // proto output shape: [1, proto_channels, mask_h, mask_w]
-    if (output_num_ >= 13) {
-        Ort::TypeInfo proto_type_info = session_->GetOutputTypeInfo(12);
-        auto proto_tensor_info = proto_type_info.GetTensorTypeAndShapeInfo();
-        auto proto_dims = proto_tensor_info.GetShape();
-        if (proto_dims.size() >= 2 && proto_dims[1] > 0) {
+        if (proto_dims[1] > 0) {
             proto_channels_ = static_cast<int>(proto_dims[1]);
+        }
+        if (proto_channels_ <= 0) {
+            throw std::runtime_error(
+                "YOLOv8-Seg: cannot read proto_channels from proto output shape");
+        }
+
+        Ort::TypeInfo out0_type_info = session_->GetOutputTypeInfo(0);
+        auto out0_dims = out0_type_info.GetTensorTypeAndShapeInfo().GetShape();
+        if (out0_dims.size() != 3) {
+            throw std::runtime_error("YOLOv8-Seg: unexpected output0 rank (expected 3)");
+        }
+        // Shared layout resolver throws on ambiguous (features == anchors) shapes rather
+        // than silently mis-deriving num_classes and shifting the mask-coefficient channels.
+        const SegLayout layout = resolve_seg_layout(out0_dims[1], out0_dims[2]);
+        const int derived = static_cast<int>(layout.features) - 4 - proto_channels_;
+        if (derived <= 0) {
+            throw std::runtime_error(
+                "YOLOv8-Seg: derived num_classes <= 0 from output0 shape");
+        }
+        num_classes_ = derived;
+    } else {
+        // DFL multi-branch export:
+        // [box0, score0, sum0, box1, score1, sum1, box2, score2, sum2, seg0, seg1, seg2, proto]
+        // score output shape: [1, num_classes, h, w]
+        if (output_num_ >= 2) {
+            Ort::TypeInfo score_type_info = session_->GetOutputTypeInfo(1);
+            auto score_dims = score_type_info.GetTensorTypeAndShapeInfo().GetShape();
+            if (score_dims.size() >= 2 && score_dims[1] > 0) {
+                num_classes_ = static_cast<int>(score_dims[1]);
+            }
+        }
+        // proto output shape: [1, proto_channels, mask_h, mask_w]
+        if (output_num_ >= 13) {
+            Ort::TypeInfo proto_type_info = session_->GetOutputTypeInfo(12);
+            auto proto_dims = proto_type_info.GetTensorTypeAndShapeInfo().GetShape();
+            if (proto_dims.size() >= 2 && proto_dims[1] > 0) {
+                proto_channels_ = static_cast<int>(proto_dims[1]);
+            }
         }
     }
 
@@ -188,6 +246,23 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
                                                                 const cv::Size& orig_size,
                                                                 float conf_threshold,
                                                                 float iou_threshold) {
+    // outputs.size() == output_num_ (session output node count, fixed by the model graph):
+    // 2 outputs -> Ultralytics single-output seg export; otherwise -> multi-branch DFL heads.
+    // Both paths must agree with load_model(), which keys num_classes_/proto_channels_ off
+    // the same output_num_.
+    if (outputs.size() == 2) {
+        return postprocess_single_output_seg(outputs, orig_size, conf_threshold, iou_threshold);
+    }
+
+    // DFL path indexes outputs[0..8] (box/score/score_sum x3), outputs[9..11] (seg coeffs)
+    // and outputs[12] (proto), so it requires the full 13-output export. Guard the lower
+    // bound up front to fail clearly instead of reading out of bounds on a malformed model.
+    if (outputs.size() < 13) {
+        throw std::runtime_error(
+            "YOLOv8-Seg: expected 2 (single-output) or 13 (DFL multi-branch) outputs, got "
+            + std::to_string(outputs.size()));
+    }
+
     // Temporary structure to hold results with mask coefficients before NMS
     struct TempSegResult {
         vision_common::SegmentationResult result;
@@ -207,7 +282,6 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
         const float* seg_part = outputs[9 + i].GetTensorMutableData<float>();
         std::vector<int64_t> dims = outputs[i * 3].GetTensorTypeAndShapeInfo().GetShape();
 
-        // Collect detections with mask coefficients
         int grid_w = static_cast<int>(dims[2]);
         int grid_h = static_cast<int>(dims[3]);
         int anchors_per_branch = grid_w * grid_h;
@@ -298,6 +372,159 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector
         for (size_t i = 0; i < results.size() && i < masks.size(); i++) {
             results[i].mask = masks[i];
         }
+    }
+
+    return results;
+}
+
+
+vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_output_seg(
+    std::vector<Ort::Value>& outputs,
+    const cv::Size& orig_size,
+    float conf_threshold,
+    float iou_threshold) {
+    Ort::Value& out0 = outputs[0];
+    std::vector<int64_t> dims = out0.GetTensorTypeAndShapeInfo().GetShape();
+    if (dims.size() != 3) {
+        throw std::runtime_error("Unexpected YOLOv8-Seg single output rank (expected 3)");
+    }
+
+    const int input_height = static_cast<int>(input_shape_[2]);
+    const int input_width = static_cast<int>(input_shape_[3]);
+
+    std::vector<int64_t> proto_dims = outputs[1].GetTensorTypeAndShapeInfo().GetShape();
+    // Expect 4-D [1, C, H, W] (same assumption as load_model); reject a batch-less
+    // [C, H, W] where dims[1] would be a spatial size rather than the channel count.
+    if (proto_dims.size() != 4 || proto_dims[1] <= 0) {
+        throw std::runtime_error(
+            "YOLOv8-Seg proto output shape invalid (expected 4: [1, C, H, W])");
+    }
+    const int num_masks = static_cast<int>(proto_dims[1]);
+
+    // Same resolver as load_model() so feature/anchor axes are chosen identically.
+    const SegLayout layout = resolve_seg_layout(dims[1], dims[2]);
+    const bool layout_cn = layout.cn;
+    const int64_t features = layout.features;
+    const int64_t num_anchors = layout.anchors;
+
+    const int num_classes = static_cast<int>(features) - 4 - num_masks;
+    if (num_classes <= 0) {
+        throw std::runtime_error("YOLOv8-Seg single output feature size too small");
+    }
+
+    const float* data = out0.GetTensorData<float>();
+    auto at = [&](int c, int64_t i) -> float {
+        return layout_cn ? data[static_cast<size_t>(c) * num_anchors + i]
+            : data[static_cast<size_t>(i) * features + c];
+    };
+
+    // Collect candidates: max class score over [4, 4+num_classes), keep mask coeffs aligned.
+    // Ultralytics exports box xywh in input-pixel scale, so no normalization rescale.
+    std::vector<cv::Rect2f> cand_rects;   // xywh in input space, for NMS
+    std::vector<float> cand_scores;
+    std::vector<int> cand_labels;
+    std::vector<std::vector<float>> cand_coeffs;
+    cand_rects.reserve(256);
+    cand_scores.reserve(256);
+    cand_labels.reserve(256);
+    cand_coeffs.reserve(256);
+
+    for (int64_t i = 0; i < num_anchors; ++i) {
+        float best = -1.0f;
+        int best_cls = -1;
+        for (int c = 0; c < num_classes; ++c) {
+            const float s = at(4 + c, i);
+            if (s > best) {
+                best = s;
+                best_cls = c;
+            }
+        }
+        if (best_cls < 0 || best < conf_threshold) {
+            continue;
+        }
+
+        const float w = at(2, i);
+        const float h = at(3, i);
+        const float x = at(0, i) - w * 0.5f;
+        const float y = at(1, i) - h * 0.5f;
+        cand_rects.emplace_back(x, y, w, h);
+        cand_scores.push_back(best);
+        cand_labels.push_back(best_cls);
+
+        std::vector<float> coeffs;
+        coeffs.reserve(num_masks);
+        for (int k = 0; k < num_masks; ++k) {
+            coeffs.push_back(at(4 + num_classes + k, i));
+        }
+        cand_coeffs.push_back(std::move(coeffs));
+    }
+
+    if (cand_rects.empty()) {
+        return {};
+    }
+
+    // Per-class NMS; map kept indices straight back to results + mask coeffs.
+    const float gain = std::min(
+        static_cast<float>(input_height) / static_cast<float>(orig_size.height),
+        static_cast<float>(input_width) / static_cast<float>(orig_size.width));
+    const float pad_w = (static_cast<float>(input_width) - orig_size.width * gain) / 2.0f;
+    const float pad_h = (static_cast<float>(input_height) - orig_size.height * gain) / 2.0f;
+    const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
+    const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
+
+    std::vector<std::vector<size_t>> by_class(static_cast<size_t>(num_classes));
+    for (size_t i = 0; i < cand_rects.size(); ++i) {
+        by_class[static_cast<size_t>(cand_labels[i])].push_back(i);
+    }
+
+    vision_common::SegmentationResultList results;
+    std::vector<std::vector<float>> kept_coeffs;
+    for (const auto& cls_indices : by_class) {
+        if (cls_indices.empty()) {
+            continue;
+        }
+        std::vector<cv::Rect2f> rects;
+        std::vector<float> scores;
+        rects.reserve(cls_indices.size());
+        scores.reserve(cls_indices.size());
+        for (size_t idx : cls_indices) {
+            rects.push_back(cand_rects[idx]);
+            scores.push_back(cand_scores[idx]);
+        }
+
+        std::vector<int> keep = vision_common::nms(rects, scores, iou_threshold);
+        for (int k : keep) {
+            const size_t idx = cls_indices[static_cast<size_t>(k)];
+            const cv::Rect2f& b = cand_rects[idx];
+            float x1 = (b.x - pad_w) / gain;
+            float y1 = (b.y - pad_h) / gain;
+            float x2 = (b.x + b.width - pad_w) / gain;
+            float y2 = (b.y + b.height - pad_h) / gain;
+            x1 = std::max(0.0f, std::min(x1, max_x));
+            y1 = std::max(0.0f, std::min(y1, max_y));
+            x2 = std::max(0.0f, std::min(x2, max_x));
+            y2 = std::max(0.0f, std::min(y2, max_y));
+
+            vision_common::SegmentationResult r;
+            r.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
+            r.label = cand_labels[idx];
+            r.score = cand_scores[idx];
+            r.mask = nullptr;
+            results.push_back(r);
+            kept_coeffs.push_back(cand_coeffs[idx]);
+        }
+    }
+
+    if (results.empty()) {
+        return results;
+    }
+
+    // proto = outputs[1] = [1, proto_channels, mask_h, mask_w]
+    const float* proto = outputs[1].GetTensorData<float>();
+    std::vector<std::shared_ptr<cv::Mat>> masks =
+        _process_masks(proto, proto_dims, kept_coeffs, results, orig_size);
+    for (size_t i = 0; i < results.size() && i < masks.size(); ++i) {
+        results[i].mask = masks[i];
     }
 
     return results;

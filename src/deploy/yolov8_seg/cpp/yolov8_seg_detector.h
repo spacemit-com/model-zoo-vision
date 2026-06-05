@@ -77,6 +77,13 @@ private:
     int proto_channels_;
     std::string provider_;
 
+    /** @brief Ultralytics single-output seg path: output0 = [1, 4+nc+nm, anchors], proto. */
+    vision_common::SegmentationResultList postprocess_single_output_seg(
+        std::vector<Ort::Value>& outputs,
+        const cv::Size& orig_size,
+        float conf_threshold,
+        float iou_threshold);
+
     std::vector<std::shared_ptr<cv::Mat>> _process_masks(
         const float* protos,
         const std::vector<int64_t>& proto_dims,

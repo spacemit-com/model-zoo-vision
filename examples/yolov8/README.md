@@ -5,10 +5,21 @@
 ## 1. 模型与权重
 
 - **模型类型**：目标检测（YOLOv8）
-- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n.q.onnx`（与 `config/yolov8.yaml` 中 `model_path` 一致）
+- **默认模型文件**：`~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`（与 `config/yolov8.yaml` 中 `model_path` 一致）
 - **下载**：在本示例目录下执行  
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
+
+### 模型格式说明
+
+本示例的检测器**同时支持两种 ONNX 导出格式**，运行时按模型输出数量自动选择后处理路径，无需额外配置：
+
+| 模型文件 | 导出格式 | ONNX 输出 | 后处理路径 |
+|----------|----------|-----------|------------|
+| `yolov8n_no_dfl.q.onnx`（默认）| 多分支头，DFL 解码层未内置、留给后处理端 | 多个（box/score/score_sum 每尺度一组）| 多分支 DFL 解码 |
+| `yolov8n.q.onnx` | 官方 Ultralytics 单输出（含内置解码）| 1 个，形如 `[1, 84, 8400]` | 单输出解析 |
+
+`s` / `m` 规格同理。文件名中的 `_no_dfl` 指模型图内**未内置** DFL 解码层，因此导出为多分支裸输出，由后处理端完成 DFL 解码（即多分支路径）；无后缀文件则是官方导出的单输出格式，解码已内置在模型图内。`download_models.sh` 会同时下载两套模型，便于对比与回归测试；默认 `model_path` 指向 `_no_dfl` 多分支模型。切换到官方单输出模型时，将 `config/yolov8.yaml` 的 `model_path` 改为对应文件名（或用 `--model-path` 覆盖）即可，代码会按输出数量自动切换后处理路径。
 
 **数据（测试图片）**：默认测试图 `test_image` 指向 `~/.cache/assets/image/006_test.jpg`。若尚未下载资源，请在 **cv 组件根目录** 执行：
 
@@ -24,7 +35,7 @@ bash scripts/download_assets.sh
 
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
-| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8/yolov8n.q.onnx` |
+| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
 | `label_file_path` | 类别标签文件（如 COCO） | `assets/labels/coco.txt` |
 | `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
@@ -73,5 +84,5 @@ python yolov8.py --config ../config/yolov8.yaml --use-camera --camera-id 0
 
 ## 5. 故障排查
 
-- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n.q.onnx`。
+- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx`。
 - **测试图片未找到**：默认图片在 `~/.cache/assets/image/` 下。在 cv 根目录执行 `bash scripts/download_assets.sh` 可下载资源。

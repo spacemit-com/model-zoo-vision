@@ -74,7 +74,7 @@ setup_ld_library_path() {
 }
 
 ensure_model_and_image() {
-  local model="${HOME}/.cache/models/vision/yolov8/yolov8n.q.onnx"
+  local model="${HOME}/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx"
   local image="${HOME}/.cache/assets/image/006_test.jpg"
   local missing=0
 

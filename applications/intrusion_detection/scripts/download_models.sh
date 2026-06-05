@@ -22,7 +22,7 @@ download() {
   fi
 }
 
-download "yolov8n.q.onnx"
+download "yolov8n_no_dfl.q.onnx"
 
 echo "完成。模型目录: $MODEL_DIR"
-echo "配置中请使用: tracker_model_path: ~/.cache/models/vision/yolov8/yolov8n.q.onnx"
+echo "配置中请使用: tracker_model_path: ~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx"

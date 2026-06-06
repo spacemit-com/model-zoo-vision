@@ -16,7 +16,8 @@ from pathlib import Path
 from core import BaseModel
 from common import (
     letterbox, nms, sigmoid,
-    flatten_yolo_tensor, scale_boxes_letterbox, process_box_dfl
+    flatten_yolo_tensor, scale_boxes_letterbox, process_box_dfl,
+    xywh2xyxy
 )
 from core.python.vision_model_exceptions import (
     ModelNotFoundError,
@@ -143,6 +144,19 @@ class YOLOv8SegDetector(BaseModel):
             - detections: List of detections, each containing bbox, class_id, confidence
             - masks: Optional array of segmentation masks
         """
+        if len(outputs) == 2:
+            return self._postprocess_single_output(outputs, orig_shape, ratio, pad)
+
+        # DFL path indexes outputs[0..8] (box/score/score_sum x3), outputs[9..11] (seg coeffs)
+        # and outputs[-1] (proto), so it requires the full 13-output export. Guard up front
+        # to fail clearly instead of raising a bare IndexError on a malformed model.
+        if len(outputs) < 13:
+            raise ModelInferenceError(
+                model_name="YOLOv8-Seg",
+                reason=f"expected 2 or 13 outputs, got {len(outputs)}",
+                message=f"YOLOv8-Seg 后处理错误: 期望 2 或 13 个输出, 实际 {len(outputs)}",
+            )
+
         boxes, scores, classes_conf, seg_part = [], [], [], []
         default_branch = 3
         branch_element = 3
@@ -187,6 +201,98 @@ class YOLOv8SegDetector(BaseModel):
         masks = None
         if output_proto is not None and len(seg_part) > 0:
             masks = self._process_masks(output_proto, seg_part, boxes, orig_shape)
+
+        detections = []
+        for i in range(len(boxes)):
+            detections.append({
+                "bbox": [float(boxes[i][0]), float(boxes[i][1]), float(boxes[i][2]), float(boxes[i][3])],
+                "class_id": int(classes[i]),
+                "confidence": float(scores[i])
+            })
+
+        return detections, masks
+
+    def _postprocess_single_output(
+        self,
+        outputs: List[np.ndarray],
+        orig_shape: Tuple[int, int],
+        ratio: float,
+        pad: Tuple[float, float],
+    ) -> Tuple[List[Dict[str, Any]], Optional[np.ndarray]]:
+        """Ultralytics single-output seg layout: output0 = [1, 4+nc+nm, anchors], proto."""
+        output0 = outputs[0]
+        proto = outputs[1]
+        num_masks = int(proto.shape[1])
+
+        if output0.ndim != 3:
+            raise ValueError(f"unexpected seg output rank: {output0.ndim}")
+
+        # Layout: cn = [1, features, anchors] (Ultralytics default), nc = [1, anchors, features].
+        # features sit on the smaller trailing dim (channels << anchors). Equal dims are
+        # ambiguous — refuse, matching the C++/Python detectors and seg's resolve_seg_layout.
+        if output0.shape[1] == output0.shape[2]:
+            raise ValueError(
+                f"ambiguous seg output shape (channels == anchors): {output0.shape}"
+            )
+        if output0.shape[1] < output0.shape[2]:
+            data = output0[0]                 # (features, anchors)
+        else:
+            data = output0[0].transpose(1, 0)  # -> (features, anchors)
+
+        num_features, num_anchors = data.shape
+        num_classes = num_features - 4 - num_masks
+        if num_classes <= 0:
+            raise ValueError(f"unexpected seg feature size: {num_features}")
+
+        # Ultralytics exports box xywh in input-pixel scale, so no normalization rescale.
+        cls_scores = data[4 : 4 + num_classes]
+        class_ids = np.argmax(cls_scores, axis=0)
+        scores = cls_scores[class_ids, np.arange(num_anchors)]
+        mask = scores >= self.conf_threshold
+        if not mask.any():
+            return [], None
+
+        cx = data[0, mask]
+        cy = data[1, mask]
+        w = data[2, mask]
+        h = data[3, mask]
+        boxes_xywh = np.stack([cx, cy, w, h], axis=1)
+        scores = scores[mask]
+        class_ids = class_ids[mask]
+        seg_part = data[4 + num_classes :, mask].transpose(1, 0)  # (N, num_masks)
+
+        boxes_xyxy = xywh2xyxy(boxes_xywh)
+
+        # Per-class NMS, keeping seg coefficients aligned via kept indices.
+        # common.nms returns indices LOCAL to the (b, s) subset it was given — not global
+        # indices into the full anchor set. seg_part[inds] selects the SAME per-class subset
+        # as b/s (same `inds`), so seg_part[inds][keep] stays aligned with b[keep]/s[keep].
+        # np.unique keeps the class dtype stable.
+        nboxes, nclasses, nscores, nseg = [], [], [], []
+        for c in np.unique(class_ids):
+            inds = np.where(class_ids == c)
+            b = boxes_xyxy[inds]
+            s = scores[inds]
+            keep = nms(b, s, self.iou_threshold)
+            if len(keep) != 0:
+                nboxes.append(b[keep])
+                nclasses.append(class_ids[inds][keep])
+                nscores.append(s[keep])
+                nseg.append(seg_part[inds][keep])
+
+        if len(nboxes) == 0:
+            return [], None
+
+        boxes = np.concatenate(nboxes)
+        classes = np.concatenate(nclasses)
+        scores = np.concatenate(nscores)
+        seg_part = np.concatenate(nseg)
+
+        boxes = scale_boxes_letterbox(boxes, ratio, pad, orig_shape)
+
+        masks = None
+        if proto is not None and len(seg_part) > 0:
+            masks = self._process_masks(proto, seg_part, boxes, orig_shape)
 
         detections = []
         for i in range(len(boxes)):

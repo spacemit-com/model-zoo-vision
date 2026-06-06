@@ -22,6 +22,9 @@ download() {
   fi
 }
 
+download "yolov8n_no_dfl.q.onnx"
+download "yolov8s_no_dfl.q.onnx"
+download "yolov8m_no_dfl.q.onnx"
 download "yolov8n.q.onnx"
 download "yolov8s.q.onnx"
 download "yolov8m.q.onnx"

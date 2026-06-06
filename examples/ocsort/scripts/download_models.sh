@@ -23,7 +23,7 @@ download() {
 }
 
 # Detector used by ocsort config
-download "https://archive.spacemit.com/spacemit-ai/model_zoo/vision/yolov8/yolov8n.q.onnx" "yolov8n.q.onnx"
+download "https://archive.spacemit.com/spacemit-ai/model_zoo/vision/yolov8/yolov8n_no_dfl.q.onnx" "yolov8n_no_dfl.q.onnx"
 # Optional: OC-SORT YOLOX backbone (if config uses it)
 download "https://archive.spacemit.com/spacemit-ai/model_zoo/vision/ocsort/ocsort_yoloxs_sim.fp32.onnx" "ocsort_yoloxs_sim.fp32.onnx"
 echo "Done. Models in $MODEL_DIR"

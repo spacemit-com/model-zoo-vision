@@ -1,5 +1,5 @@
 # ByteTrack 目标追踪模型配置
-model_path: ~/.cache/models/vision/yolov8/yolov8n.q.onnx
+model_path: ~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx
 test_video: ~/.cache/assets/video/003_palace.mp4
 image_size: [640, 640]
 label_file_path: assets/labels/coco.txt

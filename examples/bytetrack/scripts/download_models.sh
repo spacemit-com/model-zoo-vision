@@ -22,5 +22,5 @@ download() {
   fi
 }
 
-download "yolov8n.q.onnx"
+download "yolov8n_no_dfl.q.onnx"
 echo "Done. Models in $MODEL_DIR"

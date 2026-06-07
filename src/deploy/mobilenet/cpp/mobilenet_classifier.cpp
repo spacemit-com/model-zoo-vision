@@ -3,13 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "resnet_classifier.h"
+#include "mobilenet_classifier.h"
 
 #include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -36,12 +35,11 @@ bool readScalar3(const YAML::Node& node, const std::string& key, cv::Scalar* out
     return true;
 }
 
-// Read a 2-element int sequence from YAML (e.g. resize_size [h, w] or [w, h]).
+// Read a 2-element int sequence from YAML (e.g. resize_size).
 bool readSize(const YAML::Node& node, const std::string& key, cv::Size* out) {
     if (!node || !node[key] || !node[key].IsSequence() || node[key].size() < 2) {
         return false;
     }
-    // Stored as [w, h] to match cv::Size(width, height); both dims equal for square sizes.
     *out = cv::Size(node[key][0].as<int>(), node[key][1].as<int>());
     return true;
 }
@@ -57,27 +55,25 @@ int parseInterpolation(const std::string& name, int default_flag) {
 
 }  // namespace
 
-std::unique_ptr<vision_core::BaseModel> ResNetClassifier::create(const YAML::Node& config, bool lazy_load) {
+std::unique_ptr<vision_core::BaseModel> MobileNetV1Classifier::create(const YAML::Node& config, bool lazy_load) {
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
-        throw std::runtime_error("model_path not found in config for ResNetClassifier");
+        throw std::runtime_error("model_path not found in config for MobileNetV1Classifier");
     }
 
     YAML::Node default_params = config["default_params"];
     if (!default_params) {
-        throw std::runtime_error("default_params not found in config for ResNetClassifier");
+        throw std::runtime_error("default_params not found in config for MobileNetV1Classifier");
     }
 
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 
-    // Preprocessing params (fall back to ImageNet defaults when not specified).
     cv::Size resize_size(256, 256);
     readSize(default_params, "resize_size", &resize_size);
 
     cv::Scalar mean(0.485f * 255.0f, 0.456f * 255.0f, 0.406f * 255.0f);
     cv::Scalar std(0.229f * 255.0f, 0.224f * 255.0f, 0.225f * 255.0f);
-    // YAML mean/std are in [0,1] range (same as Python); scale to [0,255] for blob math.
     cv::Scalar mean_norm, std_norm;
     if (readScalar3(default_params, "mean", &mean_norm)) {
         mean = mean_norm * 255.0;
@@ -92,19 +88,20 @@ std::unique_ptr<vision_core::BaseModel> ResNetClassifier::create(const YAML::Nod
         vision_core::yaml_utils::getString(default_params, "interpolation", "bilinear"),
         cv::INTER_LINEAR);
 
-    return std::make_unique<ResNetClassifier>(model_path, num_threads, lazy_load, provider,
+    return std::make_unique<MobileNetV1Classifier>(model_path, num_threads, lazy_load, provider,
         resize_size, mean, std, center_crop, interpolation);
 }
 
-ResNetClassifier::ResNetClassifier(const std::string& model_path,
-                                    int num_threads,
-                                    bool lazy_load,
-                                    const std::string& provider,
-                                    const cv::Size& resize_size,
-                                    const cv::Scalar& mean,
-                                    const cv::Scalar& std,
-                                    bool center_crop,
-                                    int interpolation)
+MobileNetV1Classifier::MobileNetV1Classifier(
+    const std::string& model_path,
+    int num_threads,
+    bool lazy_load,
+    const std::string& provider,
+    const cv::Size& resize_size,
+    const cv::Scalar& mean,
+    const cv::Scalar& std,
+    bool center_crop,
+    int interpolation)
     : BaseModel(model_path, lazy_load),
         num_threads_(num_threads),
         resize_size_(resize_size),
@@ -118,24 +115,21 @@ ResNetClassifier::ResNetClassifier(const std::string& model_path,
     }
 }
 
-void ResNetClassifier::load_model() {
+void MobileNetV1Classifier::load_model() {
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }
 
-cv::Mat ResNetClassifier::preprocess(const cv::Mat& image) {
+cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
 
     ensure_model_loaded();
 
-    int inputWidth = static_cast<int>(input_shape_[3]);  // width
-    int inputHeight = static_cast<int>(input_shape_[2]);  // height
+    int inputWidth = static_cast<int>(input_shape_[3]);
+    int inputHeight = static_cast<int>(input_shape_[2]);
 
-    // Use common preprocess_classification function.
-    // Preprocessing params (resize_size / mean / std / center_crop) come from config
-    // via the constructor, so different classification models can configure them.
     cv::Mat blob = vision_common::preprocess_classification(
         image,
         std::make_pair(inputHeight, inputWidth),
@@ -148,24 +142,21 @@ cv::Mat ResNetClassifier::preprocess(const cv::Mat& image) {
     return blob;
 }
 
-vision_common::ClassificationResultList ResNetClassifier::classify(const cv::Mat& image) {
+vision_common::ClassificationResultList MobileNetV1Classifier::classify(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
     cv::Mat inputTensor = preprocess(image);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
-    // Run inference using base class method
     const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = run_session(inputTensor);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
-    // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::ClassificationResultList results = postprocess(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
@@ -177,18 +168,17 @@ vision_common::ClassificationResultList ResNetClassifier::classify(const cv::Mat
     return results;
 }
 
-
-std::vector<vision_core::InferIntent> ResNetClassifier::supported_intents() const {
+std::vector<vision_core::InferIntent> MobileNetV1Classifier::supported_intents() const {
     return {vision_core::InferIntent::kClassify};
 }
 
-vision_core::InferResponse ResNetClassifier::Run(const vision_core::InferRequest& request) {
+vision_core::InferResponse MobileNetV1Classifier::Run(const vision_core::InferRequest& request) {
     assert(request.intent == vision_core::InferIntent::kClassify);
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;
         response.ok = false;
-        response.error_message = "ResNetClassifier expects ImageInput";
+        response.error_message = "MobileNetV1Classifier expects ImageInput";
         return response;
     }
 
@@ -201,11 +191,11 @@ vision_core::InferResponse ResNetClassifier::Run(const vision_core::InferRequest
     return response;
 }
 
-std::vector<vision_core::ModelCapability> ResNetClassifier::get_capabilities() const {
+std::vector<vision_core::ModelCapability> MobileNetV1Classifier::get_capabilities() const {
     return {};
 }
 
-vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vector<Ort::Value>& outputs) {
+vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(std::vector<Ort::Value>& outputs) {
     const float* output_data = outputs[0].GetTensorMutableData<float>();
     auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
     std::vector<int64_t> dims = tensor_info.GetShape();
@@ -215,12 +205,15 @@ vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vecto
         num_classes *= dims[i];
     }
 
-    std::vector<float> class_scores(output_data, output_data + num_classes);
+    // Drop leading background class (index 0) for the 1001-class TF-Slim export,
+    // so labels align with the 1000-class ImageNet file.
+    size_t offset = (num_classes == 1001) ? 1 : 0;
+    std::vector<float> class_scores(output_data + offset, output_data + num_classes);
     return vision_common::build_classification_top_k(std::move(class_scores), 5);
 }
 
 // Self-registration (runs at program startup)
-static vision_core::ModelRegistrar<ResNetClassifier> registrar("ResNetClassifier");
+static vision_core::ModelRegistrar<MobileNetV1Classifier> registrar("MobileNetV1Classifier");
 
 }  // namespace vision_deploy
 

@@ -9,10 +9,22 @@ ResNet Image Classifier Implementation
 import numpy as np
 import onnxruntime as ort
 import spacemit_ort  # noqa: F401 - register SpaceMITExecutionProvider
+import cv2
 from typing import List
 
 from core import BaseModel
 from common import preprocess_classification
+
+
+# Map human-readable interpolation names (from YAML) to cv2 flags.
+_INTERPOLATION_MAP = {
+    "bilinear": cv2.INTER_LINEAR,
+    "linear": cv2.INTER_LINEAR,
+    "bicubic": cv2.INTER_CUBIC,
+    "cubic": cv2.INTER_CUBIC,
+    "nearest": cv2.INTER_NEAREST,
+    "area": cv2.INTER_AREA,
+}
 
 
 class ResNetClassifier(BaseModel):
@@ -28,11 +40,21 @@ class ResNetClassifier(BaseModel):
 
         Args:
             model_path: Path to ONNX model
-            resize_size: Size to resize before center crop
             num_threads: Number of threads
-            **kwargs: Additional parameters
+            **kwargs: Additional parameters. Recognized preprocessing keys:
+                resize_size: Size to resize before center crop (default (256, 256))
+                mean: Per-channel normalization mean (default ImageNet)
+                std: Per-channel normalization std (default ImageNet)
+                center_crop: Whether to center crop after resize (default True)
+                interpolation: Resize interpolation name (default "bilinear")
         """
-        self.resize_size = (256,256)
+        resize_size = kwargs.get('resize_size', (256, 256))
+        self.resize_size = tuple(resize_size) if resize_size is not None else None
+        self.mean = tuple(kwargs.get('mean', (0.485, 0.456, 0.406)))
+        self.std = tuple(kwargs.get('std', (0.229, 0.224, 0.225)))
+        self.center_crop = kwargs.get('center_crop', True)
+        interp_name = str(kwargs.get('interpolation', 'bilinear')).lower()
+        self.interpolation = _INTERPOLATION_MAP.get(interp_name, cv2.INTER_LINEAR)
         self.num_threads = num_threads
         super().__init__(model_path, **kwargs)
 
@@ -54,7 +76,15 @@ class ResNetClassifier(BaseModel):
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
         """Preprocess image for ResNet."""
-        img_batch = preprocess_classification(image, self.input_shape, resize_size=self.resize_size)
+        img_batch = preprocess_classification(
+            image,
+            self.input_shape,
+            mean=self.mean,
+            std=self.std,
+            resize_size=self.resize_size,
+            center_crop=self.center_crop,
+            interpolation=self.interpolation,
+        )
 
         return img_batch
 
@@ -70,16 +100,18 @@ class ResNetClassifier(BaseModel):
 
     def predict_top_k(self, image: np.ndarray, labels: List[str],
                      k: int = 5) -> List[tuple]:
-        """Predict top-K classes."""
-        outputs = self.infer(image)
-        outputs = np.squeeze(outputs)
+        """Predict top-K classes (softmax probabilities)."""
+        outputs = np.squeeze(self.infer(image)).astype(np.float64)
+        outputs = outputs - np.max(outputs)
+        exp_scores = np.exp(outputs)
+        probs = exp_scores / np.sum(exp_scores)
 
-        top_indices = np.argsort(outputs)[-k:][::-1]
-        top_scores = outputs[top_indices]
+        top_indices = np.argsort(probs)[-k:][::-1]
+        top_scores = probs[top_indices]
 
         results = []
         for idx, score in zip(top_indices, top_scores):
-            if idx < len(labels):
+            if labels and idx < len(labels):
                 results.append((labels[idx], float(score)))
             else:
                 results.append((f"Class {idx}", float(score)))

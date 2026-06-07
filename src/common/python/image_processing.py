@@ -147,7 +147,8 @@ def preprocess_classification(image: np.ndarray,
                              mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
                              std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
                              resize_size: Optional[Tuple[int, int]] = None,
-                             center_crop: bool = True) -> np.ndarray:
+                             center_crop: bool = True,
+                             interpolation: int = cv2.INTER_LINEAR) -> np.ndarray:
     """
     Preprocess image for classification models.
 
@@ -158,6 +159,7 @@ def preprocess_classification(image: np.ndarray,
         std: Std values for normalization
         resize_size: Resize to this size before cropping (if None, skip)
         center_crop: Whether to center crop
+        interpolation: cv2 interpolation flag for resize (default bilinear)
 
     Returns:
         Preprocessed tensor ready for inference
@@ -167,7 +169,7 @@ def preprocess_classification(image: np.ndarray,
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     # Resize if needed
     if resize_size is not None:
-        img = cv2.resize(img, resize_size, interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, resize_size, interpolation=interpolation)
 
     # Center crop
     if center_crop:
@@ -177,7 +179,7 @@ def preprocess_classification(image: np.ndarray,
         x0 = (w - tw) // 2
         img = img[y0:y0+th, x0:x0+tw]
     else:
-        img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR)
+        img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=interpolation)
 
     # Normalize
     mean = np.array(mean, dtype=np.float32).reshape(1, 1, 3)

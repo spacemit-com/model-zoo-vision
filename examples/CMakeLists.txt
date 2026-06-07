@@ -41,6 +41,15 @@ add_model_example(resnet resnet)
 add_model_example(emotion emotion)
 add_model_example(bytetrack bytetrack)
 add_model_example(ocsort ocsort)
+add_model_example(efficientnet resnet)
+add_model_example(efficientnet_v2s resnet)
+# mobilenet V2/V3: class=deploy.resnet.ResNetClassifier, intentionally reuses resnet deploy.
+# The second arg (deploy_dir) is unused by add_model_example; all examples link libvision.so.
+add_model_example(mobilenet resnet)
+# mobilenetv1: class=deploy.mobilenet.MobileNetV1Classifier, independent deploy for 1001->1000 class fix.
+add_model_example(mobilenetv1 mobilenet)
+add_model_example(vit resnet)
+add_model_example(yolo12 yolov8)
 
 # Install examples (only install targets that were actually created)
 if(EXAMPLE_TARGETS)

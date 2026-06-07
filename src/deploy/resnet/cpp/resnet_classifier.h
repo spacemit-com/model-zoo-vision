@@ -29,7 +29,12 @@ public:
     ResNetClassifier(const std::string& model_path,
                         int num_threads = 4,
                         bool lazy_load = false,
-                        const std::string& provider = "SpaceMITExecutionProvider");
+                        const std::string& provider = "SpaceMITExecutionProvider",
+                        const cv::Size& resize_size = cv::Size(256, 256),
+                        const cv::Scalar& mean = cv::Scalar(0.485f * 255.0f, 0.456f * 255.0f, 0.406f * 255.0f),
+                        const cv::Scalar& std = cv::Scalar(0.229f * 255.0f, 0.224f * 255.0f, 0.225f * 255.0f),
+                        bool center_crop = true,
+                        int interpolation = cv::INTER_LINEAR);
 
     virtual ~ResNetClassifier() = default;
 
@@ -63,6 +68,10 @@ public:
 private:
     int num_threads_;
     cv::Size resize_size_;
+    cv::Scalar mean_;
+    cv::Scalar std_;
+    bool center_crop_;
+    int interpolation_;
     std::string provider_;
 };
 

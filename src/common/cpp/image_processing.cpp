@@ -67,12 +67,13 @@ cv::Mat preprocess_classification(
     const cv::Scalar& mean,
     const cv::Scalar& std,
     const cv::Size& resize_size,
-    bool center_crop) {
+    bool center_crop,
+    int interpolation) {
     cv::Mat img = image;
 
     // Resize on uint8 first — much faster than resizing float32 data
     if (resize_size.width > 0 && resize_size.height > 0) {
-        cv::resize(img, img, resize_size, 0, 0, cv::INTER_LINEAR);
+        cv::resize(img, img, resize_size, 0, 0, interpolation);
     }
 
     // Center crop on uint8
@@ -82,7 +83,7 @@ cv::Mat preprocess_classification(
         img = img(cv::Rect(x0, y0, input_shape.second, input_shape.first)).clone();
     } else {
         cv::resize(img, img, cv::Size(input_shape.second, input_shape.first),
-                    0, 0, cv::INTER_LINEAR);
+                    0, 0, interpolation);
     }
 
     // blobFromImage: BGR->RGB (swapRB), float conversion, 1/255 scale,

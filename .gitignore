@@ -42,7 +42,6 @@ applications/*/models/
 # Model dirs in src/deploy that have no example (ignore to avoid untracked deploy-only models)
 .cursorignore
 docs/design_roadmap.md
-tests/benchmarks/track_benchmark.cpp
 .cursor/
 bindings/
 ai_gateway.md
@@ -50,3 +49,4 @@ vision_openapi/
 mpp/
 applications/rtsp_detection/
 applications/rtsp_tracking/
+examples/yolov6/

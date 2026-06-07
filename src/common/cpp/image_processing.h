@@ -36,6 +36,7 @@ cv::Mat letterbox(
  * @param std Std values for normalization (default: ImageNet std)
  * @param resize_size Resize to this size before cropping (if (0,0), skip resize)
  * @param center_crop Whether to center crop
+ * @param interpolation OpenCV interpolation flag for resize (default INTER_LINEAR)
  * @return Preprocessed tensor ready for inference
  */
 cv::Mat preprocess_classification(
@@ -44,7 +45,8 @@ cv::Mat preprocess_classification(
     const cv::Scalar& mean = cv::Scalar(0.485f * 255.0f, 0.456f * 255.0f, 0.406f * 255.0f),
     const cv::Scalar& std = cv::Scalar(0.229f * 255.0f, 0.224f * 255.0f, 0.225f * 255.0f),
     const cv::Size& resize_size = cv::Size(0, 0),
-    bool center_crop = true
+    bool center_crop = true,
+    int interpolation = cv::INTER_LINEAR
 );
 
 /**

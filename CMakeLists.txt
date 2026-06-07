@@ -93,6 +93,7 @@ file(GLOB_RECURSE CV_YOLOV5_SOURCES "src/deploy/yolov5/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV5_FACE_SOURCES "src/deploy/yolov5_face/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV5_GESTURE_SOURCES "src/deploy/yolov5_gesture/cpp/*.cpp")
 file(GLOB_RECURSE CV_RESNET_SOURCES "src/deploy/resnet/cpp/*.cpp")
+file(GLOB_RECURSE CV_MOBILENET_SOURCES "src/deploy/mobilenet/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_SEG_SOURCES "src/deploy/yolov8_seg/cpp/*.cpp")
 file(GLOB_RECURSE CV_PP_LITESEG_SOURCES "src/deploy/pp_liteseg/cpp/*.cpp")
 file(GLOB_RECURSE CV_EMOTION_SOURCES "src/deploy/emotion/cpp/*.cpp")
@@ -117,6 +118,7 @@ add_library(vision SHARED
     ${CV_YOLOV5_FACE_SOURCES}
     ${CV_YOLOV5_GESTURE_SOURCES}
     ${CV_RESNET_SOURCES}
+    ${CV_MOBILENET_SOURCES}
     ${CV_YOLOV8_SEG_SOURCES}
     ${CV_PP_LITESEG_SOURCES}
     ${CV_EMOTION_SOURCES}
@@ -157,6 +159,7 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_face/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_gesture/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/resnet/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/mobilenet/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_seg/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/pp_liteseg/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/emotion/cpp

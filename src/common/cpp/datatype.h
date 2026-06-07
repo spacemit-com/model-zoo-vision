@@ -298,6 +298,48 @@ using PoseResultList = std::vector<PoseResult>;
 using SegmentationResultList = std::vector<SegmentationResult>;
 using TrackingResultList = std::vector<TrackingResult>;
 
+/**
+ * @brief Build a top-k classification result list from per-class scores.
+ * @param scores Per-class logits or probabilities (modified in-place when apply_softmax).
+ * @param k Number of top predictions to return (default 5).
+ * @param apply_softmax Whether to apply softmax before ranking.
+ */
+inline ClassificationResultList build_classification_top_k(
+    std::vector<float> scores, int k = 5, bool apply_softmax = true) {
+    ClassificationResultList results;
+    if (scores.empty()) {
+        return results;
+    }
+
+    if (apply_softmax) {
+        const float max_score = *std::max_element(scores.begin(), scores.end());
+        float exp_sum = 0.0f;
+        for (float& score : scores) {
+            score = std::exp(score - max_score);
+            exp_sum += score;
+        }
+        for (float& score : scores) {
+            score /= exp_sum;
+        }
+    }
+
+    ClassificationResult summary;
+    summary.class_scores = scores;
+    const auto ranked = summary.top_k(k);
+
+    results.reserve(ranked.size());
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        ClassificationResult item;
+        item.label = ranked[i].first;
+        item.score = ranked[i].second;
+        if (i == 0) {
+            item.class_scores = scores;
+        }
+        results.push_back(item);
+    }
+    return results;
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

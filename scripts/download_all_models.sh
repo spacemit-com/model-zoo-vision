@@ -7,7 +7,9 @@ CV_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$CV_ROOT"
 
 echo "========== Examples =========="
-for dir in examples/resnet examples/yolov8 examples/yolov8_pose examples/yolov8_seg examples/yolov11 \
+for dir in examples/resnet examples/efficientnet examples/efficientnet_v2s examples/mobilenet examples/mobilenetv1 examples/vit \
+           examples/yolov8 examples/yolov8_pose examples/yolov8_seg examples/yolov11 \
+           examples/yolo12 \
            examples/yolov5 examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
            examples/bytetrack examples/emotion examples/pp_liteseg; do
   if [ -f "$dir/scripts/download_models.sh" ]; then

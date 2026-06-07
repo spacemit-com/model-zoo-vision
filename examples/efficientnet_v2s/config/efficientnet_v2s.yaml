@@ -1,0 +1,16 @@
+# EfficientNet-V2-S 图像分类模型配置
+# V2-S 直接 resize 到 224、无 center crop，与 B0/B1 不同，故独立 config。
+model_path: ~/.cache/models/vision/efficientnet/efficientnet_v2_s.q.onnx
+test_image: ~/.cache/assets/image/005_kitten.jpg
+label_file_path: assets/labels/imagenet.txt
+image_size: [224, 224]
+class: deploy.resnet.ResNetClassifier
+default_params:
+  num_threads: 8
+  resize_size: [224, 224]
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  center_crop: false
+  interpolation: bicubic
+  providers:
+    - SpaceMITExecutionProvider

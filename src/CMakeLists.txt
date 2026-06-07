@@ -71,6 +71,7 @@ include_directories(
     ${ONNXRUNTIME_INCLUDE_DIR}
     ${SPACEMIT_ORT_INCLUDE_DIR}
     src/deploy/resnet/cpp
+    src/deploy/mobilenet/cpp
     src/deploy/yolov5/cpp
     src/deploy/yolov8_seg/cpp
     src/deploy/pp_liteseg/cpp
@@ -118,6 +119,10 @@ set(RESNET_SOURCES
     deploy/resnet/cpp/resnet_classifier.cpp
 )
 
+set(MOBILENET_SOURCES
+    deploy/mobilenet/cpp/mobilenet_classifier.cpp
+)
+
 set(YOLOV8_SEG_SOURCES
     deploy/yolov8_seg/cpp/yolov8_seg_detector.cpp
 )
@@ -136,6 +141,7 @@ add_library(vision SHARED
     ${YOLOV5_SOURCES}
     ${YOLOV5_FACE_SOURCES}
     ${RESNET_SOURCES}
+    ${MOBILENET_SOURCES}
     ${YOLOV8_SEG_SOURCES}
     ${PP_LITESEG_SOURCES}
 )
@@ -226,6 +232,11 @@ install(DIRECTORY deploy/yolov5_face/cpp/
 
 install(DIRECTORY deploy/resnet/cpp/
     DESTINATION include/vision_models/deploy/resnet
+    FILES_MATCHING PATTERN "*.h"
+)
+
+install(DIRECTORY deploy/mobilenet/cpp/
+    DESTINATION include/vision_models/deploy/mobilenet
     FILES_MATCHING PATTERN "*.h"
 )
 

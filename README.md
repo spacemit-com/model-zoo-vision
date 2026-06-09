@@ -37,7 +37,9 @@ sudo apt-get install -y python3-spacemit-ort opencv-spacemit libeigen3-dev space
 - **SpacemiT SDK 工程内**：若 Vision 组件位于 `components/model_zoo/vision`，则在该目录执行：
   ```bash
   cd components/model_zoo/vision
-  pip install -e .
+  pip install -e . --break-system-packages \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --extra-index-url https://git.spacemit.com/api/v4/projects/33/packages/pypi/simple
   ```
 
 ### 2.2. 下载模型

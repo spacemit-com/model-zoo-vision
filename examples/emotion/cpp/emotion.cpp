@@ -111,7 +111,9 @@ int main(int argc, char* argv[]) {
             }
         } catch (...) {}
     }
-    if (labels.empty()) labels = {"neutral", "happy", "sad", "angry", "fear", "disgust", "surprise"};
+    if (labels.empty()) {
+        labels = {"neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"};
+    }
 
     std::cout << "Loading image: " << image_path << std::endl;
     cv::Mat img = cv::imread(image_path);

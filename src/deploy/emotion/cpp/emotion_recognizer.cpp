@@ -35,17 +35,20 @@ std::unique_ptr<vision_core::BaseModel> EmotionRecognizer::create(const YAML::No
 
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
-    return std::make_unique<EmotionRecognizer>(model_path, num_threads, lazy_load, provider);
+    bool feature_mode = vision_core::yaml_utils::getBool(default_params, "feature_mode", false);
+    return std::make_unique<EmotionRecognizer>(model_path, num_threads, lazy_load, provider, feature_mode);
 }
 
 EmotionRecognizer::EmotionRecognizer(const std::string& model_path,
                                     int num_threads,
                                     bool lazy_load,
-                                    const std::string& provider)
+                                    const std::string& provider,
+                                    bool feature_mode)
     : BaseModel(model_path, lazy_load),
         num_threads_(num_threads),
         target_size_(224, 224),
-        provider_(provider) {
+        provider_(provider),
+        feature_mode_(feature_mode) {
     if (!lazy_load) {
         load_model();
     }
@@ -104,12 +107,56 @@ vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Ma
 }
 
 
+vision_common::EmbeddingResult EmotionRecognizer::infer_embedding(const cv::Mat& image) {
+    ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t0 = std::chrono::steady_clock::now();
+
+    const auto t_pre0 = std::chrono::steady_clock::now();
+    cv::Mat inputTensor = preprocess(image);
+    const auto t_pre1 = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+
+    const auto t_infer0 = std::chrono::steady_clock::now();
+    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    const auto t_infer1 = std::chrono::steady_clock::now();
+    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
+
+    // Feature mode: return raw output vector (no argmax, no L2 normalization).
+    const auto t_post0 = std::chrono::steady_clock::now();
+    if (outputs.empty()) {
+        throw std::runtime_error("EmotionRecognizer::infer_embedding: outputs is empty");
+    }
+    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> dims = tensor_info.GetShape();
+    size_t feature_size = 1;
+    for (size_t i = 1; i < dims.size(); ++i) {
+        feature_size *= static_cast<size_t>(dims[i]);
+    }
+    const float* output_data = outputs[0].GetTensorMutableData<float>();
+    if (output_data == nullptr) {
+        throw std::runtime_error("EmotionRecognizer::infer_embedding: output_data is null");
+    }
+    vision_common::EmbeddingResult result;
+    result.embedding.assign(output_data, output_data + feature_size);
+    result.score = 1.0f;
+    const auto t_post1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
+
+    const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
+    return result;
+}
+
+
 std::vector<vision_core::InferIntent> EmotionRecognizer::supported_intents() const {
+    if (feature_mode_) {
+        return {vision_core::InferIntent::kEmbed};
+    }
     return {vision_core::InferIntent::kClassify};
 }
 
 vision_core::InferResponse EmotionRecognizer::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kClassify);
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;
@@ -118,8 +165,14 @@ vision_core::InferResponse EmotionRecognizer::Run(const vision_core::InferReques
         return response;
     }
 
-    vision_common::ClassificationResultList task_results = classify(image_input->image);
     vision_core::InferResponse response;
+    if (request.intent == vision_core::InferIntent::kEmbed) {
+        response.results.emplace_back(infer_embedding(image_input->image));
+        return response;
+    }
+
+    // Default: classification
+    vision_common::ClassificationResultList task_results = classify(image_input->image);
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
         response.results.emplace_back(std::move(item));

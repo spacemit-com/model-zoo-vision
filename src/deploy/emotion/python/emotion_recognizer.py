@@ -30,6 +30,7 @@ class EmotionRecognizer:
 
     def __init__(self, model_path: str,
                  num_threads: int = 4,
+                 feature_mode: bool = False,
                  **kwargs):
         """
         Initialize Emotion Recognizer.
@@ -37,10 +38,13 @@ class EmotionRecognizer:
         Args:
             model_path: Path to emotion recognition ONNX model（与 C++ 统一用 model_path）
             num_threads: Number of threads for ONNX Runtime
+            feature_mode: 若为 True，模型当作特征提取器使用——推理时跳过 argmax，
+                          直接返回原始输出向量（动态情绪 LSTM 的 backbone 用此模式）。
             **kwargs: Additional parameters
         """
         self.emotion_model_path = model_path
         self.num_threads = num_threads
+        self.feature_mode = bool(feature_mode)
         # 兼容 factory 的多路径参数：这里不再初始化人脸检测器，所以丢弃该参数，避免误传给 ORT 配置
         kwargs.pop("face_detector_path", None)
 
@@ -117,6 +121,35 @@ class EmotionRecognizer:
 
         return img_tensor
 
+    def extract_features(self, face_image: np.ndarray) -> np.ndarray:
+        """
+        特征提取：返回模型原始输出向量（不做 argmax），用作动态情绪 LSTM 的 backbone。
+
+        Args:
+            face_image: 单张 BGR 人脸裁剪图
+
+        Returns:
+            一维 np.ndarray 特征向量（如 512 维）
+        """
+        try:
+            face_tensor = self.preprocess(face_image)
+        except Exception as e:
+            raise ModelInferenceError(
+                model_name="EmotionRecognizer",
+                reason=f"图像预处理失败: {e}",
+                message=f"Emotion 特征提取 - 预处理错误: {e}",
+            )
+        try:
+            output = self.session.run(None, {self.input_name: face_tensor})
+        except Exception as e:
+            raise ModelInferenceError(
+                model_name="EmotionRecognizer",
+                reason=f"模型推理失败: {e}",
+                message=f"Emotion 特征提取 - 推理错误: {e}",
+            )
+        output_tensor = output[0] if isinstance(output, list) else output
+        return np.asarray(output_tensor, dtype=np.float32).reshape(-1)
+
     def infer(self, face_images: Union[np.ndarray, Sequence[np.ndarray]]) -> List[Dict[str, Any]]:
         """
         Run emotion recognition (classification only).
@@ -138,6 +171,10 @@ class EmotionRecognizer:
 
         if not face_images_list:
             return []
+
+        # 特征模式：返回原始特征向量，供动态情绪 LSTM 使用
+        if self.feature_mode:
+            return [{"features": self.extract_features(f)} for f in face_images_list]
 
         results: List[Dict[str, Any]] = []
 

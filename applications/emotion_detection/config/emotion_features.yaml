@@ -1,0 +1,11 @@
+# Backbone for dynamic emotion recognition (camera mode).
+# Reuses EmotionRecognizer in feature mode: skips argmax, returns the raw
+# 512-d feature vector instead of a class index.
+model_path: ~/.cache/models/vision/emotion/emotion_resnet50_features.dynq.onnx
+image_size: [224, 224]
+class: deploy.emotion.EmotionRecognizer
+default_params:
+  feature_mode: true
+  num_threads: 2
+  providers:
+    - SpaceMITExecutionProvider

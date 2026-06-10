@@ -5,7 +5,9 @@
 
 #include "example_emotion.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -180,20 +182,11 @@ int main(int argc, char* argv[]) {
     }
 
     const std::string face_rel = YamlString(app_cfg, "face_model");
-    const std::string emotion_rel = YamlString(app_cfg, "emotion_model");
-    if (face_rel.empty() || emotion_rel.empty()) {
-        std::cerr << "Error: face_model and emotion_model required in "
-            << app_config_path << std::endl;
+    if (face_rel.empty()) {
+        std::cerr << "Error: face_model required in " << app_config_path << std::endl;
         return -1;
     }
     const std::string face_cfg_abs = ResolveConfigPath(config_dir, project_root, face_rel);
-    emotion_cfg_abs = ResolveConfigPath(config_dir, project_root, emotion_rel);
-    try {
-        emotion_cfg = YAML::LoadFile(emotion_cfg_abs);
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return -1;
-    }
 
     std::unique_ptr<VisionService> face_service =
         VisionService::Create(face_cfg_abs, "", false);
@@ -201,11 +194,54 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
         return -1;
     }
-    std::unique_ptr<VisionService> emotion_service =
-        VisionService::Create(emotion_cfg_abs, "", false);
-    if (!emotion_service) {
-        std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
-        return -1;
+
+    // image mode: static ResNet50 classifier. Loaded only when NOT using camera.
+    std::unique_ptr<VisionService> emotion_service;
+    if (!use_camera) {
+        const std::string emotion_rel = YamlString(app_cfg, "emotion_model");
+        if (emotion_rel.empty()) {
+            std::cerr << "Error: emotion_model required for image mode in "
+                << app_config_path << std::endl;
+            return -1;
+        }
+        emotion_cfg_abs = ResolveConfigPath(config_dir, project_root, emotion_rel);
+        try {
+            emotion_cfg = YAML::LoadFile(emotion_cfg_abs);
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            return -1;
+        }
+        emotion_service = VisionService::Create(emotion_cfg_abs, "", false);
+        if (!emotion_service) {
+            std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
+            return -1;
+        }
+    }
+
+    // camera mode: dynamic emotion (ResNet50 features backbone + LSTM).
+    // Loaded only when --use-camera is set.
+    std::unique_ptr<VisionService> feature_service;
+    std::unique_ptr<VisionService> lstm_service;
+    if (use_camera) {
+        const std::string feature_rel = YamlString(app_cfg, "feature_model");
+        const std::string lstm_rel = YamlString(app_cfg, "lstm_model");
+        if (feature_rel.empty() || lstm_rel.empty()) {
+            std::cerr << "Error: camera mode needs feature_model and lstm_model in "
+                << app_config_path << std::endl;
+            return -1;
+        }
+        const std::string feature_cfg_abs = ResolveConfigPath(config_dir, project_root, feature_rel);
+        const std::string lstm_cfg_abs = ResolveConfigPath(config_dir, project_root, lstm_rel);
+        feature_service = VisionService::Create(feature_cfg_abs, "", false);
+        if (!feature_service) {
+            std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
+            return -1;
+        }
+        lstm_service = VisionService::Create(lstm_cfg_abs, "", false);
+        if (!lstm_service) {
+            std::cerr << "Error: " << VisionService::LastCreateError() << std::endl;
+            return -1;
+        }
     }
 
     if (!use_camera && image_path.empty()) {
@@ -230,7 +266,8 @@ int main(int argc, char* argv[]) {
         }
     }
     if (emotion_labels.empty()) {
-        emotion_labels = {"neutral", "happy", "sad", "angry", "fear", "disgust", "surprise"};
+        emotion_labels = {
+            "neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"};
     }
 
     int frame_count = 0;
@@ -292,14 +329,93 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: Could not open camera " << camera_id << std::endl;
             return -1;
         }
+
+        // Dynamic emotion: per-frame ResNet50 feature (512-d) accumulated into a
+        // 10-frame sliding window, then classified by the LSTM via InferSequence.
+        constexpr int kSeqLen = 10;
+        constexpr int kFeatureDim = 512;
+        std::deque<std::vector<float>> feat_buffer;
+
         cv::Mat frame;
         while (cap.read(frame)) {
             if (frame.empty()) {
                 continue;
             }
             ++frame_count;
-            cv::Mat vis;
-            run_face_emotion_on_image(frame, &vis, true);
+            cv::Mat vis = frame.clone();
+
+            std::vector<VisionServiceResult> face_results;
+            const VisionServiceStatus ret = face_service->InferImage(frame, &face_results);
+            if (ret != VISION_SERVICE_OK || face_results.empty()) {
+                feat_buffer.clear();  // drop window on lost track
+                if (frame_count <= 5 || frame_count % 30 == 0) {
+                    std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
+                }
+                cv::imshow("Emotion", vis);
+                if ((cv::waitKey(1) & 0xFF) == 'q') {
+                    break;
+                }
+                continue;
+            }
+
+            // Highest-confidence face only (single-subject dynamic emotion).
+            const VisionServiceResult* best = &face_results[0];
+            for (const auto& r : face_results) {
+                if (r.score > best->score) {
+                    best = &r;
+                }
+            }
+            const int x1 = static_cast<int>(std::max(0.f, best->x1));
+            const int y1 = static_cast<int>(std::max(0.f, best->y1));
+            const int x2 = static_cast<int>(std::min(static_cast<float>(frame.cols), best->x2));
+            const int y2 = static_cast<int>(std::min(static_cast<float>(frame.rows), best->y2));
+            if (x2 <= x1 || y2 <= y1) {
+                cv::imshow("Emotion", vis);
+                if ((cv::waitKey(1) & 0xFF) == 'q') break;
+                continue;
+            }
+
+            const cv::Mat face_roi = frame(cv::Rect(x1, y1, x2 - x1, y2 - y1));
+            std::vector<float> feat;
+            if (feature_service->InferEmbedding(face_roi, &feat) != VISION_SERVICE_OK
+                || feat.size() != static_cast<size_t>(kFeatureDim)) {
+                cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+                cv::imshow("Emotion", vis);
+                if ((cv::waitKey(1) & 0xFF) == 'q') break;
+                continue;
+            }
+            feat_buffer.push_back(std::move(feat));
+            while (feat_buffer.size() > static_cast<size_t>(kSeqLen)) {
+                feat_buffer.pop_front();
+            }
+
+            cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+            std::ostringstream oss;
+            if (feat_buffer.size() < static_cast<size_t>(kSeqLen)) {
+                oss << "buffering " << feat_buffer.size() << "/" << kSeqLen;
+            } else {
+                std::vector<float> flat;
+                flat.reserve(static_cast<size_t>(kSeqLen) * kFeatureDim);
+                for (const auto& f : feat_buffer) {
+                    flat.insert(flat.end(), f.begin(), f.end());
+                }
+                std::vector<float> probs;
+                if (lstm_service->InferSequence(flat.data(), 0, 0, &probs) == VISION_SERVICE_OK
+                    && !probs.empty()) {
+                    const int cls = static_cast<int>(
+                        std::max_element(probs.begin(), probs.end()) - probs.begin());
+                    const float score = probs[static_cast<size_t>(cls)];
+                    const std::string name =
+                        (cls >= 0 && cls < static_cast<int>(emotion_labels.size()))
+                            ? emotion_labels[static_cast<size_t>(cls)] : "unknown";
+                    oss << name << ": " << std::fixed << std::setprecision(2) << score;
+                } else {
+                    oss << "lstm error";
+                }
+            }
+            cv::putText(vis, oss.str(), cv::Point(x1, std::max(y1 - 10, 20)),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+
             cv::imshow("Emotion", vis);
             if ((cv::waitKey(1) & 0xFF) == 'q') {
                 break;

@@ -1,10 +1,10 @@
 #!/bin/sh
-# Download model(s) for emotion example. Saved to ~/.cache/models/vision/resnet/
+# Download model(s) for emotion example. Saved to ~/.cache/models/vision/emotion/
 # Run with: sh download_models.sh
 
 set -e
 CACHE_BASE="${HOME:-/tmp}/.cache/models/vision"
-MODEL_DIR="$CACHE_BASE/resnet"
+MODEL_DIR="$CACHE_BASE/emotion"
 mkdir -p "$MODEL_DIR"
 
 download() {
@@ -22,6 +22,5 @@ download() {
   fi
 }
 
-# 情绪模型存放在 vision/resnet 目录
-download "https://archive.spacemit.com/spacemit-ai/model_zoo/vision/resnet/emotion_resnet50_final.q.onnx" "emotion_resnet50_final.q.onnx"
+download "https://archive.spacemit.com/spacemit-ai/model_zoo/vision/emotion/emotion_resnet50_final.q.onnx" "emotion_resnet50_final.q.onnx"
 echo "Done. Models in $MODEL_DIR"

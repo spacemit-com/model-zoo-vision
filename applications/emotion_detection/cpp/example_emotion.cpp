@@ -270,6 +270,9 @@ int main(int argc, char* argv[]) {
             "neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"};
     }
 
+    // Faces smaller than this (min of bbox width/height, px) skip emotion recognition.
+    const int min_face_size = app_cfg["min_face_size"] ? app_cfg["min_face_size"].as<int>() : 0;
+
     int frame_count = 0;
     auto run_face_emotion_on_image = [&](const cv::Mat& image, cv::Mat* out_image, bool log_if_empty = false) {
         std::vector<VisionServiceResult> face_results;
@@ -291,6 +294,12 @@ int main(int argc, char* argv[]) {
             const int x2 = static_cast<int>(std::min(static_cast<float>(image.cols), r.x2));
             const int y2 = static_cast<int>(std::min(static_cast<float>(image.rows), r.y2));
             if (x2 <= x1 || y2 <= y1) {
+                continue;
+            }
+
+            // Skip too-small faces: emotion is unreliable. Draw a thin gray box.
+            if (std::min(x2 - x1, y2 - y1) < min_face_size) {
+                cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(128, 128, 128), 1);
                 continue;
             }
 
@@ -344,81 +353,109 @@ int main(int argc, char* argv[]) {
             ++frame_count;
             cv::Mat vis = frame.clone();
 
-            std::vector<VisionServiceResult> face_results;
-            const VisionServiceStatus ret = face_service->InferImage(frame, &face_results);
-            if (ret != VISION_SERVICE_OK || face_results.empty()) {
-                feat_buffer.clear();  // drop window on lost track
-                if (frame_count <= 5 || frame_count % 30 == 0) {
-                    std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
+            // Per-frame work in a lambda so any early-out still falls through to the
+            // unified imshow / waitKey / save handling at the loop tail.
+            [&]() {
+                std::vector<VisionServiceResult> face_results;
+                const VisionServiceStatus ret = face_service->InferImage(frame, &face_results);
+                if (ret != VISION_SERVICE_OK || face_results.empty()) {
+                    feat_buffer.clear();  // drop window on lost track
+                    if (frame_count <= 5 || frame_count % 30 == 0) {
+                        std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
+                    }
+                    return;
                 }
-                cv::imshow("Emotion", vis);
-                if ((cv::waitKey(1) & 0xFF) == 'q') {
-                    break;
-                }
-                continue;
-            }
 
-            // Highest-confidence face only (single-subject dynamic emotion).
-            const VisionServiceResult* best = &face_results[0];
-            for (const auto& r : face_results) {
-                if (r.score > best->score) {
-                    best = &r;
+                // Filter by size first, then pick the highest-confidence eligible face.
+                // This avoids a distant high-score small face out-scoring a near large
+                // one and causing the whole frame to be skipped.
+                const VisionServiceResult* best = nullptr;
+                bool saw_small = false;
+                for (const auto& r : face_results) {
+                    const int rx1 = static_cast<int>(std::max(0.f, r.x1));
+                    const int ry1 = static_cast<int>(std::max(0.f, r.y1));
+                    const int rx2 = static_cast<int>(std::min(static_cast<float>(frame.cols), r.x2));
+                    const int ry2 = static_cast<int>(std::min(static_cast<float>(frame.rows), r.y2));
+                    if (rx2 <= rx1 || ry2 <= ry1) {
+                        continue;
+                    }
+                    if (std::min(rx2 - rx1, ry2 - ry1) < min_face_size) {
+                        saw_small = true;
+                        cv::rectangle(vis, cv::Point(rx1, ry1), cv::Point(rx2, ry2),
+                            cv::Scalar(128, 128, 128), 1);
+                        continue;
+                    }
+                    if (best == nullptr || r.score > best->score) {
+                        best = &r;
+                    }
                 }
-            }
-            const int x1 = static_cast<int>(std::max(0.f, best->x1));
-            const int y1 = static_cast<int>(std::max(0.f, best->y1));
-            const int x2 = static_cast<int>(std::min(static_cast<float>(frame.cols), best->x2));
-            const int y2 = static_cast<int>(std::min(static_cast<float>(frame.rows), best->y2));
-            if (x2 <= x1 || y2 <= y1) {
-                cv::imshow("Emotion", vis);
-                if ((cv::waitKey(1) & 0xFF) == 'q') break;
-                continue;
-            }
 
-            const cv::Mat face_roi = frame(cv::Rect(x1, y1, x2 - x1, y2 - y1));
-            std::vector<float> feat;
-            if (feature_service->InferEmbedding(face_roi, &feat) != VISION_SERVICE_OK
-                || feat.size() != static_cast<size_t>(kFeatureDim)) {
+                if (best == nullptr) {
+                    // No eligible face (none, or all too small): drop the window.
+                    feat_buffer.clear();
+                    if (saw_small) {
+                        cv::putText(vis, "face too small", cv::Point(10, 30),
+                                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(128, 128, 128), 1);
+                    }
+                    return;
+                }
+
+                const int x1 = static_cast<int>(std::max(0.f, best->x1));
+                const int y1 = static_cast<int>(std::max(0.f, best->y1));
+                const int x2 = static_cast<int>(std::min(static_cast<float>(frame.cols), best->x2));
+                const int y2 = static_cast<int>(std::min(static_cast<float>(frame.rows), best->y2));
+
+                const cv::Mat face_roi = frame(cv::Rect(x1, y1, x2 - x1, y2 - y1));
+                std::vector<float> feat;
+                if (feature_service->InferEmbedding(face_roi, &feat) != VISION_SERVICE_OK
+                    || feat.size() != static_cast<size_t>(kFeatureDim)) {
+                    cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
+                    return;
+                }
+                feat_buffer.push_back(std::move(feat));
+                while (feat_buffer.size() > static_cast<size_t>(kSeqLen)) {
+                    feat_buffer.pop_front();
+                }
+
                 cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
-                cv::imshow("Emotion", vis);
-                if ((cv::waitKey(1) & 0xFF) == 'q') break;
-                continue;
-            }
-            feat_buffer.push_back(std::move(feat));
-            while (feat_buffer.size() > static_cast<size_t>(kSeqLen)) {
-                feat_buffer.pop_front();
-            }
-
-            cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
-            std::ostringstream oss;
-            if (feat_buffer.size() < static_cast<size_t>(kSeqLen)) {
-                oss << "buffering " << feat_buffer.size() << "/" << kSeqLen;
-            } else {
-                std::vector<float> flat;
-                flat.reserve(static_cast<size_t>(kSeqLen) * kFeatureDim);
-                for (const auto& f : feat_buffer) {
-                    flat.insert(flat.end(), f.begin(), f.end());
-                }
-                std::vector<float> probs;
-                if (lstm_service->InferSequence(flat.data(), 0, 0, &probs) == VISION_SERVICE_OK
-                    && !probs.empty()) {
-                    const int cls = static_cast<int>(
-                        std::max_element(probs.begin(), probs.end()) - probs.begin());
-                    const float score = probs[static_cast<size_t>(cls)];
-                    const std::string name =
-                        (cls >= 0 && cls < static_cast<int>(emotion_labels.size()))
-                            ? emotion_labels[static_cast<size_t>(cls)] : "unknown";
-                    oss << name << ": " << std::fixed << std::setprecision(2) << score;
+                std::ostringstream oss;
+                if (feat_buffer.size() < static_cast<size_t>(kSeqLen)) {
+                    oss << "buffering " << feat_buffer.size() << "/" << kSeqLen;
                 } else {
-                    oss << "lstm error";
+                    std::vector<float> flat;
+                    flat.reserve(static_cast<size_t>(kSeqLen) * kFeatureDim);
+                    for (const auto& f : feat_buffer) {
+                        flat.insert(flat.end(), f.begin(), f.end());
+                    }
+                    std::vector<float> probs;
+                    if (lstm_service->InferSequence(flat.data(), 0, 0, &probs) == VISION_SERVICE_OK
+                        && !probs.empty()) {
+                        const int cls = static_cast<int>(
+                            std::max_element(probs.begin(), probs.end()) - probs.begin());
+                        const float score = probs[static_cast<size_t>(cls)];
+                        const std::string name =
+                            (cls >= 0 && cls < static_cast<int>(emotion_labels.size()))
+                                ? emotion_labels[static_cast<size_t>(cls)] : "unknown";
+                        oss << name << ": " << std::fixed << std::setprecision(2) << score;
+                    } else {
+                        oss << "lstm error";
+                    }
                 }
-            }
-            cv::putText(vis, oss.str(), cv::Point(x1, std::max(y1 - 10, 20)),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+                cv::putText(vis, oss.str(), cv::Point(x1, std::max(y1 - 10, 20)),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+            }();
 
+            // Unified display / key handling for every branch above.
             cv::imshow("Emotion", vis);
-            if ((cv::waitKey(1) & 0xFF) == 'q') {
+            const int key = cv::waitKey(1) & 0xFF;
+            if (key == 'q') {
                 break;
+            }
+            if (key == 's') {
+                const std::string out = "emotion_camera_" + std::to_string(frame_count) + ".jpg";
+                if (cv::imwrite(out, vis)) {
+                    std::cout << "Saved: " << out << std::endl;
+                }
             }
         }
         cap.release();

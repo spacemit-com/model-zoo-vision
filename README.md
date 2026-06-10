@@ -69,8 +69,11 @@ bianbu@k3:~/.cache/models/vision# tree
 ├── ocsort
 │   ├── ocsort_yoloxs_sim.fp32.onnx
 │   └── yolov8n_no_dfl.q.onnx
+├── emotion
+│   ├── emotion_lstm_affwild2_final.q.onnx
+│   ├── emotion_resnet50_features.dynq.onnx
+│   └── emotion_resnet50_final.q.onnx
 ├── resnet
-│   ├── emotion_resnet50_final.q.onnx
 │   └── resnet50.q.onnx
 ├── stgcn
 │   └── stgcn.fp32.onnx

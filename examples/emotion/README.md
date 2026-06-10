@@ -5,7 +5,7 @@
 ## 1. 模型与权重
 
 - **模型类型**：情绪识别（基于 ResNet 等的人脸情绪分类）
-- **默认模型文件**：`~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx`（与 `config/emotion.yaml` 中 `model_path` 一致）
+- **默认模型文件**：`~/.cache/models/vision/emotion/emotion_resnet50_final.q.onnx`（与 `config/emotion.yaml` 中 `model_path` 一致）
 - **下载**：在本示例目录下执行  
   `bash scripts/download_models.sh`  
   会将模型下载到上述缓存路径。
@@ -24,7 +24,7 @@ bash scripts/download_assets.sh
 
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
-| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx` |
+| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/emotion/emotion_resnet50_final.q.onnx` |
 | `test_image` | 默认测试图片路径（建议为人脸图） | `~/.cache/assets/image/003_face0.png` |
 | `label_file_path` | 情绪类别标签文件 | `assets/labels/emotion.txt` |
 | `image_size` | 输入尺寸 [高, 宽] | `[224, 224]` |
@@ -68,6 +68,6 @@ python emotion.py --config ../config/emotion.yaml --image /path/to/face.png --ou
 
 ## 5. 故障排查
 
-- **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx`。
+- **模型未找到**：确认已执行 `bash examples/emotion/scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/emotion/emotion_resnet50_final.q.onnx`。
 - **测试图片未找到**：默认图片在 `~/.cache/assets/image/` 下。在 cv 根目录执行 `bash scripts/download_assets.sh` 可下载资源。
 - **输入建议**：若使用整张照片，建议先用人脸检测裁出人脸再送入；或使用已裁剪的 224×224 人脸图。

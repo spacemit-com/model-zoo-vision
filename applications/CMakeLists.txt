@@ -52,7 +52,7 @@ endfunction()
 # Applications (per-app cpp under applications/<name>/cpp/)
 # (target_name cpp_file deploy_dir [deploy_dir ...] [EXTRA_INCLUDES path ...])
 # -----------------------------------------------------------------------------
-add_application(example_emotion emotion_detection/cpp/example_emotion.cpp yolov5_face emotion)
+add_application(example_emotion emotion_detection/cpp/example_emotion.cpp yolov5_face emotion emotion_lstm)
 add_application(example_fall_detection fall_detection/cpp/example_fall_detection.cpp yolov8_pose)
 add_application(example_intrusion_identification intrusion_detection/cpp/example_intrusion_identification.cpp bytetrack
     EXTRA_INCLUDES ${CMAKE_SOURCE_DIR}/../../rvv_libs/eigen-rvv/eigen)

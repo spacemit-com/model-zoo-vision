@@ -1,0 +1,10 @@
+# LSTM classifier for dynamic emotion recognition (camera mode).
+# Stateless: input is a (1, 10, 512) feature sequence, output is 7-class probs.
+# The 10-frame feature window is maintained by the application layer.
+model_path: ~/.cache/models/vision/emotion/emotion_lstm_affwild2_final.q.onnx
+class: deploy.emotion_lstm.EmotionLstm
+default_params:
+  label_file_path: assets/labels/emotion.txt
+  num_threads: 2
+  providers:
+    - SpaceMITExecutionProvider

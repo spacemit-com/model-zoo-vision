@@ -1,6 +1,6 @@
 # Copied from examples/emotion/config/emotion.yaml; sync when upstream schema changes.
 # Differs in: model_path
-model_path: ~/.cache/models/vision/resnet/emotion_resnet50_final.q.onnx
+model_path: ~/.cache/models/vision/emotion/emotion_resnet50_final.q.onnx
 test_image: ~/.cache/assets/image/001_emotion.jpg
 label_file_path: assets/labels/emotion.txt
 image_size: [224, 224]

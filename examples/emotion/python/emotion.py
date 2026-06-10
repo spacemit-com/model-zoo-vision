@@ -109,7 +109,10 @@ def main():
 
         # Use default labels if not loaded
         if not labels:
-            labels = ["neutral", "happy", "sad", "angry", "fear", "disgust", "surprise"]
+            labels = [
+                "neutral", "happiness", "sadness", "surprise",
+                "fear", "disgust", "anger",
+            ]
 
         print("运行情绪识别...")
         results = recognizer.infer(image)

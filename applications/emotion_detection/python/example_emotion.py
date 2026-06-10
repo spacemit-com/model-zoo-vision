@@ -5,251 +5,225 @@
 """
 Emotion Recognition Example
 
-This example demonstrates how to use the emotion recognition model to detect faces
-and recognize emotions in images.
-从 config/emotion_detection.yaml 读取应用配置（引用 face_detector.yaml / emotion.yaml）。
-默认测试图由 emotion.yaml 的 test_image 提供。
+image 模式: YOLOv5-Face 检测 + ResNet50 静态情绪分类（单帧）
+camera 模式: YOLOv5-Face 检测 + ResNet50特征 + LSTM 动态情绪识别（10帧滑窗）
+
+用法:
+  python example_emotion.py --image test.jpg
+  python example_emotion.py --use-camera
+  python example_emotion.py --use-camera --camera-id 1
 """
 
 import sys
 from pathlib import Path
 
-# 将 cv/src 加入路径（脚本在 applications/emotion_detection/python/，parents[3]=cv）
 _cv_src = Path(__file__).resolve().parents[3] / "src"
 if str(_cv_src) not in sys.path:
     sys.path.insert(0, str(_cv_src))
 
 import argparse  # noqa: E402
+from collections import deque  # noqa: E402
 import yaml  # noqa: E402
 import cv2  # noqa: E402
+import numpy as np  # noqa: E402
 
 from core import create_model  # noqa: E402
-from common import draw_detections  # noqa: E402
+from common import draw_detections, load_labels  # noqa: E402
 
-# Emotion labels
-EMOTION_LABELS = {
-    0: "neutral",
-    1: "happy",
-    2: "sad",
-    3: "angry",
-    4: "fear",
-    5: "disgust",
-    6: "surprise"
-}
-
-def _load_app_config(config_path: Path) -> dict:
-    if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    return cfg or {}
+_DEFAULT_EMOTION_LABELS = [
+    "neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger",
+]
 
 
-def _resolve_path(path_str: str, project_root: Path) -> Path:
+def _load_emotion_labels(root: Path, cfg: dict) -> list:
+    path = cfg.get("label_file_path")
+    if path:
+        try:
+            return load_labels(str(_resolve(str(path), root)))
+        except Exception as e:
+            print(f"警告: 无法加载标签文件 {path}: {e}")
+    return list(_DEFAULT_EMOTION_LABELS)
+
+
+def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _resolve(path_str: str, root: Path) -> Path:
     p = Path(path_str).expanduser()
-    return p if p.is_absolute() else (project_root / p).resolve()
+    return p if p.is_absolute() else (root / p).resolve()
 
 
 def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Emotion Recognition Example',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-使用示例:
-  python example_emotion.py --image test.jpg
-  python example_emotion.py  # 使用 emotion.yaml 中的 test_image
-        """
-    )
-    parser.add_argument(
-        '--config',
-        type=str,
-        default=None,
-        help='应用配置 yaml (默认: applications/emotion_detection/config/emotion_detection.yaml)'
-    )
-    parser.add_argument(
-        '--image',
-        type=str,
-        default=None,
-        help='输入图片路径 (如果未提供，将从 yaml 配置中的 test_image 读取)'
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default=None,
-        help='输出图片路径 (默认: output_emotion.jpg)'
-    )
+    parser = argparse.ArgumentParser(description="Emotion Recognition Example")
+    parser.add_argument("--config", default=None, help="应用配置 yaml")
+    parser.add_argument("--image", default=None, help="输入图片路径（image 模式）")
+    parser.add_argument("--output", default="output_emotion.jpg", help="输出图片路径")
+    parser.add_argument("--use-camera", action="store_true", help="使用摄像头（camera 模式）")
+    parser.add_argument("--camera-id", type=int, default=None, help="摄像头设备 ID")
     return parser.parse_args()
 
 
-def main():
-    """Main function."""
-    args = parse_args()
-    project_root = Path(__file__).resolve().parents[3]  # applications/emotion_detection/python/ -> cv
-    default_app = project_root / "applications" / "emotion_detection" / "config" / "emotion_detection.yaml"
-    app_path = Path(args.config) if args.config else default_app
-    if not app_path.is_absolute():
-        app_path = (project_root / app_path).resolve()
-    try:
-        app_config = _load_app_config(app_path)
-    except Exception as e:
-        print(f"✗ 加载应用配置失败: {e}")
-        return
-    config_dir = app_path.parent
-    face_yaml = _resolve_path(str(config_dir / app_config["face_model"]), project_root)
-    emotion_yaml = _resolve_path(str(config_dir / app_config["emotion_model"]), project_root)
+def _load_model(app_config: dict, key: str, config_dir: Path, root: Path):
+    """按 app_config[key] 指向的子 yaml 加载单个模型。"""
+    cfg_path = _resolve(str(config_dir / app_config[key]), root)
+    cfg = _load_yaml(cfg_path)
+    overrides = {}
+    if cfg.get("model_path"):
+        overrides["model_path"] = str(_resolve(str(cfg["model_path"]), root))
+    return create_model(model_name=cfg_path.stem, config_dir=cfg_path.parent, **overrides)
 
-    try:
-        face_model_config = _load_app_config(Path(face_yaml))
-        emotion_model_config = _load_app_config(Path(emotion_yaml))
-    except Exception as e:
-        print(f"✗ 加载模型配置失败: {e}")
-        return
 
+def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, config_dir: Path,
+              emotion_labels: list):
     if args.image is None:
-        test_image_path = emotion_model_config.get("test_image")
-        if test_image_path:
-            args.image = str(_resolve_path(str(test_image_path), project_root))
-            print(f"从配置读取图片路径: {args.image}")
-        else:
+        cfg_path = _resolve(str(config_dir / app_config["emotion_model"]), root)
+        cfg = _load_yaml(cfg_path)
+        test_img = cfg.get("test_image")
+        if not test_img:
             print("错误: 未提供 --image，且 emotion.yaml 中无 test_image")
             return
+        args.image = str(_resolve(str(test_img), root))
+        print(f"从配置读取图片: {args.image}")
 
-    # 检查图片文件是否存在
-    if not Path(args.image).exists():
-        print(f"错误: 图片文件不存在: {args.image}")
-        return
-
-    # 设置输出路径：命令行 > 应用配置 output_path > 默认
-    if args.output is None:
-        args.output = "output_emotion.jpg"
-
-    emotion_config_path = str(emotion_yaml)
-    face_detector_config_path = str(face_yaml)
-    emotion_config_dir_abs = Path(emotion_config_path).parent
-    face_detector_config_dir_abs = Path(face_detector_config_path).parent
-    emotion_model_name = Path(emotion_config_path).stem
-    face_detector_model_name = Path(face_detector_config_path).stem
-
-    print("=" * 60)
-    print("Emotion Recognition Example")
-    print("=" * 60)
-    print(f"情绪模型配置: {emotion_config_path}")
-    print(f"人脸模型配置: {face_detector_config_path}")
-    print(f"图片: {args.image}")
-    if emotion_model_config.get("image_size"):
-        print(f"Emotion 输入尺寸: {emotion_model_config['image_size']}，人脸检测: [640, 640] (固定)")
-    print("=" * 60)
-
-    face_override_params = {}
-    if face_model_config.get("model_path"):
-        face_override_params["model_path"] = str(
-            _resolve_path(str(face_model_config["model_path"]), project_root))
-
-    if not face_detector_config_dir_abs.is_dir():
-        print(f"✗ 人脸检测配置目录不存在: {face_detector_config_dir_abs}")
-        return
-    print(f"\n从 {face_detector_config_path} 加载人脸检测器...")
-    try:
-        face_detector = create_model(
-            model_name=face_detector_model_name,
-            config_dir=face_detector_config_dir_abs,
-            **face_override_params,
-        )
-        print("✓ 人脸检测器加载成功!")
-        print(f"  模型类: {type(face_detector).__name__}")
-    except Exception as e:
-        print(f"✗ 人脸检测器加载失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-
-    emotion_override_params = {}
-    if emotion_model_config.get("model_path"):
-        emotion_override_params["emotion_model_path"] = str(
-            _resolve_path(str(emotion_model_config["model_path"]), project_root))
-    if not emotion_config_dir_abs.is_dir():
-        print(f"✗ 情绪模型配置目录不存在: {emotion_config_dir_abs}")
-        return
-    print(f"\n从 {emotion_config_path} 加载 Emotion 模型...")
-    try:
-        recognizer = create_model(
-            model_name=emotion_model_name,
-            config_dir=emotion_config_dir_abs,
-            **emotion_override_params,
-        )
-        print("✓ Emotion 模型加载成功!")
-        print(f"  模型类: {type(recognizer).__name__}")
-        if hasattr(recognizer, 'input_shape'):
-            print(f"  输入尺寸: {recognizer.input_shape}")
-    except Exception as e:
-        print(f"✗ Emotion 模型加载失败: {e}")
-        print(f"\n提示: 请确保 {emotion_config_path} "
-              "存在并包含 class、emotion_model_path、default_params")
-        import traceback
-        traceback.print_exc()
-        return
-
-    # 加载图片
-    print(f"\n加载图片: {args.image}")
     image = cv2.imread(args.image)
     if image is None:
         print(f"错误: 无法加载图片: {args.image}")
         return
-    print(f"图片尺寸: {image.shape}")
 
-    # 先做人脸检测，再做情绪分类（EmotionRecognizer.infer 只吃检测后的 face_images）
-    print("\n运行人脸检测...")
-    try:
-        face_detections, face_images = face_detector.infer(image)
-        print(f"检测到 {len(face_detections)} 个人脸")
-    except Exception as e:
-        print(f"✗ 人脸检测失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return
+    face_detections, face_images = face_detector.infer(image)
+    print(f"检测到 {len(face_detections)} 个人脸")
 
-    print("\n运行情绪识别...")
-    emotion_results = recognizer.infer(face_images)
+    emotion_results = emotion_model.infer(face_images)
 
-    # 将 bbox/confidence 贴回输出，形成统一 detections
     detections = []
     for i, emo in enumerate(emotion_results):
-        det = {
+        detections.append({
             "bbox": face_detections[i]["bbox"],
             "confidence": face_detections[i]["confidence"],
             "emotion": int(emo["emotion"]),
-        }
-        detections.append(det)
+        })
+        idx = int(emo["emotion"])
+        label = emotion_labels[idx] if 0 <= idx < len(emotion_labels) else str(idx)
+        print(f"  人脸 {i+1}: {label} (置信度 {face_detections[i]['confidence']:.3f})")
 
-    # 显示结果
-    if detections:
-        print(f"\n检测到 {len(detections)} 个人脸及其情绪:")
-        for i, detection in enumerate(detections, 1):
-            emotion_id = int(detection['emotion'])  # core返回的是整数索引
-            emotion_name = EMOTION_LABELS.get(emotion_id, f"emotion_{emotion_id}")
-            confidence = detection['confidence']
-            bbox = detection['bbox']
-            print(f"  {i}. {emotion_name} (置信度: {confidence:.3f}) 位置: {bbox}")
-    else:
-        print("\n未检测到人脸")
-
-    # 绘制结果
-    print("\n绘制结果...")
-    # draw_detections期望labels参数，它会将整数索引转换为名称
     result_image = draw_detections(
         image,
-        [detection['bbox'] for detection in detections],
-        [int(detection['emotion']) for detection in detections],  # 确保是整数索引
-        [detection['confidence'] for detection in detections],
-        labels=EMOTION_LABELS
+        [d["bbox"] for d in detections],
+        [d["emotion"] for d in detections],
+        [d["confidence"] for d in detections],
+        labels=emotion_labels,
     )
-
-    # 保存输出
     cv2.imwrite(args.output, result_image)
-    print(f"结果已保存到: {args.output}")
-    print("\n✓ 完成!")
+    print(f"结果已保存: {args.output}")
 
 
-if __name__ == '__main__':
+def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int):
+    SEQ_LEN = 10
+    feat_buffer = deque(maxlen=SEQ_LEN)
+
+    cap = cv2.VideoCapture(camera_id)
+    if not cap.isOpened():
+        print(f"✗ 无法打开摄像头 {camera_id}")
+        return
+
+    print(f"摄像头已打开 (id={camera_id})，按 'q' 退出，'s' 保存当前帧")
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            continue
+
+        frame_idx += 1
+        vis = frame.copy()
+
+        try:
+            detections, face_images = face_detector.infer(frame)
+            # 取置信度最高的一张人脸
+            best = max(
+                ((d, fi) for d, fi in zip(detections, face_images) if fi.size > 0),
+                key=lambda x: x[0]["confidence"],
+                default=None,
+            )
+            if best is None:
+                # 无人脸：清空滑窗，避免跨人脸/跨中断拼接出错误序列
+                feat_buffer.clear()
+            else:
+                det, face_img = best
+                # backbone 提取 512 维特征，应用层维护 10 帧滑窗
+                feats = backbone.infer(face_img)[0]["features"]
+                feat_buffer.append(feats)
+
+                x1, y1, x2, y2 = map(int, det["bbox"])
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                if len(feat_buffer) < SEQ_LEN:
+                    text = f"face {det['confidence']:.2f} (buffering {len(feat_buffer)}/{SEQ_LEN})"
+                    color = (0, 255, 255)
+                else:
+                    seq = np.stack(list(feat_buffer), axis=0)  # (10, 512)
+                    result = emotion_lstm.infer(seq)
+                    label = result["emotion_label"]
+                    conf = float(result["emotion_probs"].max())
+                    text = f"{label} {conf:.2f} | face {det['confidence']:.2f}"
+                    color = (0, 255, 0)
+                cv2.putText(vis, text, (x1, max(y1 - 8, 20)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        except Exception as e:
+            print(f"✗ 帧 {frame_idx} 推理失败: {e}")
+
+        cv2.imshow("Dynamic Emotion Detection", vis)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            break
+        if key == ord("s"):
+            out = f"emotion_camera_{frame_idx}.jpg"
+            cv2.imwrite(out, vis)
+            print(f"已保存: {out}")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+def main():
+    args = parse_args()
+    root = Path(__file__).resolve().parents[3]
+    default_app = root / "applications" / "emotion_detection" / "config" / "emotion_detection.yaml"
+    app_path = Path(args.config) if args.config else default_app
+    if not app_path.is_absolute():
+        app_path = (root / app_path).resolve()
+
+    app_config = _load_yaml(app_path)
+    config_dir = app_path.parent
+    camera_id = args.camera_id if args.camera_id is not None else int(app_config.get("camera_id", 0))
+
+    print("=" * 60)
+    print("Emotion Recognition Example")
+    print("模式:", "camera (动态 LSTM)" if args.use_camera else "image (静态 ResNet50)")
+    print("=" * 60)
+
+    face_detector = _load_model(app_config, "face_model", config_dir, root)
+    print(f"✓ 人脸检测器: {type(face_detector).__name__}")
+
+    emotion_cfg_path = _resolve(str(config_dir / app_config["emotion_model"]), root)
+    emotion_labels = _load_emotion_labels(root, _load_yaml(emotion_cfg_path))
+
+    if args.use_camera:
+        backbone = _load_model(app_config, "feature_model", config_dir, root)
+        print(f"✓ 特征提取 backbone: {type(backbone).__name__}")
+        emotion_lstm = _load_model(app_config, "lstm_model", config_dir, root)
+        print(f"✓ 动态情绪 LSTM: {type(emotion_lstm).__name__}")
+        run_camera(args, face_detector, backbone, emotion_lstm, camera_id)
+    else:
+        emotion_model = _load_model(app_config, "emotion_model", config_dir, root)
+        print(f"✓ 静态情绪模型: {type(emotion_model).__name__}")
+        run_image(args, face_detector, emotion_model, root, app_config, config_dir, emotion_labels)
+
+    print("✓ 完成!")
+
+
+if __name__ == "__main__":
     main()

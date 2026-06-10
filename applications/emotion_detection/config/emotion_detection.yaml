@@ -8,3 +8,7 @@ feature_model: emotion_features.yaml
 lstm_model: emotion_lstm.yaml
 
 camera_id: 0
+
+# Faces smaller than this (min of bbox width/height, in pixels) are detected
+# but skipped for emotion recognition — small faces give unreliable emotion.
+min_face_size: 64

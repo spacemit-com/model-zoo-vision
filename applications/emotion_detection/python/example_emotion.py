@@ -57,6 +57,11 @@ def _resolve(path_str: str, root: Path) -> Path:
     return p if p.is_absolute() else (root / p).resolve()
 
 
+def _bbox_min_side(bbox) -> float:
+    x1, y1, x2, y2 = bbox[:4]
+    return min(abs(x2 - x1), abs(y2 - y1))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Emotion Recognition Example")
     parser.add_argument("--config", default=None, help="应用配置 yaml")
@@ -78,7 +83,7 @@ def _load_model(app_config: dict, key: str, config_dir: Path, root: Path):
 
 
 def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, config_dir: Path,
-              emotion_labels: list):
+              emotion_labels: list, min_face_size: int = 0):
     if args.image is None:
         cfg_path = _resolve(str(config_dir / app_config["emotion_model"]), root)
         cfg = _load_yaml(cfg_path)
@@ -97,18 +102,31 @@ def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, 
     face_detections, face_images = face_detector.infer(image)
     print(f"检测到 {len(face_detections)} 个人脸")
 
-    emotion_results = emotion_model.infer(face_images)
+    # 过滤掉太小的人脸（不做表情识别，仅画灰框）
+    kept = [(d, fi) for d, fi in zip(face_detections, face_images)
+            if fi.size > 0 and _bbox_min_side(d["bbox"]) >= min_face_size]
+    skipped = [d for d, fi in zip(face_detections, face_images)
+               if fi.size > 0 and _bbox_min_side(d["bbox"]) < min_face_size]
+    if skipped:
+        print(f"  跳过 {len(skipped)} 个过小人脸 (< {min_face_size}px)")
+
+    emotion_results = emotion_model.infer([fi for _, fi in kept]) if kept else []
 
     detections = []
-    for i, emo in enumerate(emotion_results):
+    for (face_det, _), emo in zip(kept, emotion_results):
         detections.append({
-            "bbox": face_detections[i]["bbox"],
-            "confidence": face_detections[i]["confidence"],
+            "bbox": face_det["bbox"],
+            "confidence": face_det["confidence"],
             "emotion": int(emo["emotion"]),
         })
         idx = int(emo["emotion"])
         label = emotion_labels[idx] if 0 <= idx < len(emotion_labels) else str(idx)
-        print(f"  人脸 {i+1}: {label} (置信度 {face_detections[i]['confidence']:.3f})")
+        print(f"  {label} (置信度 {face_det['confidence']:.3f})")
+
+    # 灰框标注被跳过的小脸
+    for d in skipped:
+        bx = list(map(int, d["bbox"]))
+        cv2.rectangle(image, (bx[0], bx[1]), (bx[2], bx[3]), (128, 128, 128), 1)
 
     result_image = draw_detections(
         image,
@@ -121,7 +139,8 @@ def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, 
     print(f"结果已保存: {args.output}")
 
 
-def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int):
+def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int,
+               min_face_size: int = 0):
     SEQ_LEN = 10
     feat_buffer = deque(maxlen=SEQ_LEN)
 
@@ -143,22 +162,29 @@ def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int):
 
         try:
             detections, face_images = face_detector.infer(frame)
-            # 取置信度最高的一张人脸
-            best = max(
-                ((d, fi) for d, fi in zip(detections, face_images) if fi.size > 0),
-                key=lambda x: x[0]["confidence"],
-                default=None,
-            )
+            # 先按尺寸过滤，再在合格人脸里取置信度最高的一张：
+            # 避免远处高分小脸抢占、导致漏识别近处大脸。
+            eligible = [
+                (d, fi) for d, fi in zip(detections, face_images)
+                if fi.size > 0 and _bbox_min_side(d["bbox"]) >= min_face_size
+            ]
+            best = max(eligible, key=lambda x: x[0]["confidence"], default=None)
+
             if best is None:
-                # 无人脸：清空滑窗，避免跨人脸/跨中断拼接出错误序列
+                # 无合格人脸（无脸或全部过小）：清空滑窗，避免拼接出错误序列。
                 feat_buffer.clear()
+                # 若画面里有脸但都太小，画灰框提示
+                for d, fi in zip(detections, face_images):
+                    if fi.size > 0 and _bbox_min_side(d["bbox"]) < min_face_size:
+                        bx = list(map(int, d["bbox"]))
+                        cv2.rectangle(vis, (bx[0], bx[1]), (bx[2], bx[3]), (128, 128, 128), 1)
             else:
                 det, face_img = best
+                x1, y1, x2, y2 = map(int, det["bbox"])
                 # backbone 提取 512 维特征，应用层维护 10 帧滑窗
                 feats = backbone.infer(face_img)[0]["features"]
                 feat_buffer.append(feats)
 
-                x1, y1, x2, y2 = map(int, det["bbox"])
                 cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 if len(feat_buffer) < SEQ_LEN:
                     text = f"face {det['confidence']:.2f} (buffering {len(feat_buffer)}/{SEQ_LEN})"
@@ -175,6 +201,7 @@ def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int):
         except Exception as e:
             print(f"✗ 帧 {frame_idx} 推理失败: {e}")
 
+        # 循环末尾统一处理显示与按键，保证任何分支下 q/s 都生效
         cv2.imshow("Dynamic Emotion Detection", vis)
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
@@ -199,6 +226,7 @@ def main():
     app_config = _load_yaml(app_path)
     config_dir = app_path.parent
     camera_id = args.camera_id if args.camera_id is not None else int(app_config.get("camera_id", 0))
+    min_face_size = int(app_config.get("min_face_size", 0))
 
     print("=" * 60)
     print("Emotion Recognition Example")
@@ -216,11 +244,12 @@ def main():
         print(f"✓ 特征提取 backbone: {type(backbone).__name__}")
         emotion_lstm = _load_model(app_config, "lstm_model", config_dir, root)
         print(f"✓ 动态情绪 LSTM: {type(emotion_lstm).__name__}")
-        run_camera(args, face_detector, backbone, emotion_lstm, camera_id)
+        run_camera(args, face_detector, backbone, emotion_lstm, camera_id, min_face_size)
     else:
         emotion_model = _load_model(app_config, "emotion_model", config_dir, root)
         print(f"✓ 静态情绪模型: {type(emotion_model).__name__}")
-        run_image(args, face_detector, emotion_model, root, app_config, config_dir, emotion_labels)
+        run_image(args, face_detector, emotion_model, root, app_config, config_dir,
+                  emotion_labels, min_face_size)
 
     print("✓ 完成!")
 

@@ -70,8 +70,19 @@ class ResNetClassifier(BaseModel):
             providers=providers
         )
 
-        self.input_name = self.session.get_inputs()[0].name
-        self.input_shape = self.session.get_inputs()[0].shape[2:4]
+        input_meta = self.session.get_inputs()[0]
+        self.input_name = input_meta.name
+        input_shape = input_meta.shape
+        self.input_shape = input_shape[2:4]
+        batch_dim = input_shape[0] if len(input_shape) > 0 else 1
+        if isinstance(batch_dim, int) and batch_dim > 0:
+            self.batch_size = batch_dim
+        else:
+            # Dynamic/unknown batch dim (e.g. "batch_size" or None): default to 1.
+            # A single-image NCHW tensor is valid for dynamic-batch models, so this
+            # is safe; we note it so a genuinely fixed batch>1 export isn't masked.
+            print(f"警告: ResNet 模型 batch 维为动态/未知 ({batch_dim!r})，按 batch=1 处理")
+            self.batch_size = 1
 
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
@@ -85,6 +96,8 @@ class ResNetClassifier(BaseModel):
             center_crop=self.center_crop,
             interpolation=self.interpolation,
         )
+        if self.batch_size > 1:
+            img_batch = np.tile(img_batch, (self.batch_size, 1, 1, 1))
 
         return img_batch
 
@@ -96,12 +109,15 @@ class ResNetClassifier(BaseModel):
 
     def postprocess(self, outputs, **kwargs) -> np.ndarray:
         """Postprocess outputs."""
-        return np.squeeze(outputs)
+        out = np.squeeze(outputs)
+        if out.ndim == 2:
+            out = out[0]
+        return out
 
     def predict_top_k(self, image: np.ndarray, labels: List[str],
                      k: int = 5) -> List[tuple]:
         """Predict top-K classes (softmax probabilities)."""
-        outputs = np.squeeze(self.infer(image)).astype(np.float64)
+        outputs = self.postprocess(self.infer(image)).astype(np.float64)
         outputs = outputs - np.max(outputs)
         exp_scores = np.exp(outputs)
         probs = exp_scores / np.sum(exp_scores)

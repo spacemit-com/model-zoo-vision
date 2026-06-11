@@ -9,6 +9,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -145,6 +146,26 @@ cv::Mat ResNetClassifier::preprocess(const cv::Mat& image) {
         center_crop_,
         interpolation_);
 
+    const int batch_size = (!input_shape_.empty() && input_shape_[0] > 0)
+        ? static_cast<int>(input_shape_[0]) : 1;
+    if (batch_size > 1) {
+        // Replicate the single-image blob across the batch dimension.
+        // preprocess_classification returns a 4D NCHW blob (N=1); keep the
+        // batched result 4D {N, C, H, W} so its shape is self-describing and
+        // matches what run_session feeds to ONNX Runtime.
+        const int channels = static_cast<int>(input_shape_[1]);
+        const size_t per_image = blob.total();  // C*H*W for N=1
+        const int dims[4] = {batch_size, channels, inputHeight, inputWidth};
+        cv::Mat batched(4, dims, CV_32F);
+        float* dst = batched.ptr<float>();
+        const float* src = blob.ptr<float>();
+        for (int b = 0; b < batch_size; ++b) {
+            std::memcpy(dst + static_cast<size_t>(b) * per_image, src,
+                per_image * sizeof(float));
+        }
+        return batched;
+    }
+
     return blob;
 }
 
@@ -215,6 +236,7 @@ vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vecto
         num_classes *= dims[i];
     }
 
+    // Single-image demo: use logits from the first batch slot only.
     std::vector<float> class_scores(output_data, output_data + num_classes);
     return vision_common::build_classification_top_k(std::move(class_scores), 5);
 }

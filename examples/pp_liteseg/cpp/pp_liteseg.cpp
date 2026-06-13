@@ -71,14 +71,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::vector<VisionServiceResult> results;
-    VisionServiceStatus ret = service->InferImage(img, &results);
+    VisionServiceResponse response;
+    VisionServiceStatus ret = service->Infer(img, &response);
     if (ret != VISION_SERVICE_OK) {
         std::cerr << "Error: " << service->LastError() << std::endl;
         return 1;
     }
 
-    if (results.empty()) {
+    if (response.results.empty()) {
         std::cout << "No foreground classes (or empty segmentation); nothing to draw." << std::endl;
         return 0;
     }
@@ -89,13 +89,13 @@ int main(int argc, char* argv[]) {
     }
 
     cv::Mat vis;
-    VisionServiceStatus dr = service->Draw(img, &vis);
+    VisionServiceStatus dr = service->Draw(img, response, &vis);
     if (dr != VISION_SERVICE_OK) {
         std::cerr << "Error: Draw failed: " << service->LastError() << std::endl;
         return 1;
     }
 
     cv::imwrite(output_path, vis);
-    std::cout << "Saved: " << output_path << " (" << results.size() << " mask layer(s))" << std::endl;
+    std::cout << "Saved: " << output_path << " (" << response.results.size() << " mask layer(s))" << std::endl;
     return 0;
 }

@@ -3,34 +3,196 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Public API / stable ABI: this header and the vision library are the customer-facing
- * contract. Internal refactors (see docs/design_roadmap.md) do not change this API.
+ * contract. Internal refactors do not change this API.
+ *
+ * Result data structures are defined ONCE here (namespace vision) and reused
+ * internally; there is no separate "service result" struct or conversion layer.
  */
 
 #ifndef VISION_SERVICE_H
 #define VISION_SERVICE_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
-struct VisionServiceKeypoint {
-    float x;
-    float y;
-    float visibility;
+namespace vision {
+
+// ============================================================================
+// Result data types (plain data / POD-like; helper logic lives in src/).
+// ============================================================================
+
+struct BoundingBox {
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+    float x2 = 0.0f;
+    float y2 = 0.0f;
 };
 
-struct VisionServiceResult {
-    float x1;
-    float y1;
-    float x2;
-    float y2;
-    float score;
-    int label;
-    int track_id;
-    std::vector<VisionServiceKeypoint> keypoints;  // empty if not a pose result
-    cv::Mat mask;                                    // empty if not a segmentation result
+struct KeyPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+    float visibility = 0.0f;  // 0.0-1.0 confidence
+};
+
+// Object detection (YOLOv5/8/11/12, face, gesture, fire...).
+struct Detection {
+    BoundingBox bbox;
+    float score = 0.0f;
+    int label = -1;
+};
+
+// Image classification (ResNet, MobileNet, Emotion...).
+struct Classification {
+    int label = -1;
+    float score = 0.0f;
+    std::vector<float> class_scores;  // all class probabilities (may be empty)
+};
+
+// Pose estimation (YOLOv8-pose).
+struct Pose {
+    BoundingBox bbox;
+    float score = 0.0f;
+    int label = -1;
+    std::vector<KeyPoint> keypoints;
+};
+
+// Instance/semantic segmentation (YOLOv8-seg, PP-LiteSeg).
+struct Segmentation {
+    BoundingBox bbox;
+    float score = 0.0f;
+    int label = -1;
+    std::shared_ptr<cv::Mat> mask;  // binary mask, may be null
+};
+
+// Face/object embedding (ArcFace).
+struct Embedding {
+    std::vector<float> embedding;
+    float score = 1.0f;
+};
+
+// Object tracking (ByteTrack, OC-SORT).
+struct Tracking {
+    BoundingBox bbox;
+    float score = 0.0f;
+    int label = -1;
+    int track_id = -1;
+
+    enum class State : uint8_t { Tentative = 0, Confirmed = 1, Lost = 2 };
+    State state = State::Confirmed;
+};
+
+// Sequence action recognition (STGCN, Emotion-LSTM).
+struct Action {
+    int label = -1;
+    float score = 0.0f;
+    std::vector<float> class_scores;
+};
+
+// ============================================================================
+// Unified result variant
+// ============================================================================
+
+using Result = std::variant<
+    Detection,
+    Classification,
+    Pose,
+    Segmentation,
+    Embedding,
+    Tracking,
+    Action>;
+
+using ResultList = std::vector<Result>;
+
+// ============================================================================
+// Result accessors (convenience helpers over the Result variant)
+//
+// For concrete-type access use std::get_if / std::holds_alternative directly,
+// e.g. std::get_if<vision::Detection>(&r). The helpers below cover the common
+// case of reading shared fields (bbox/score/label/track_id) without first
+// knowing the task type.
+// ============================================================================
+
+// Score is present on every result type.
+inline float get_score(const Result& r) {
+    return std::visit([](const auto& v) -> float { return v.score; }, r);
+}
+
+// Bounding box for box-bearing results; empty box otherwise.
+inline BoundingBox get_bbox(const Result& r) {
+    return std::visit([](const auto& v) -> BoundingBox {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, Detection> || std::is_same_v<T, Pose> ||
+            std::is_same_v<T, Segmentation> || std::is_same_v<T, Tracking>) {
+            return v.bbox;
+        } else {
+            return BoundingBox{};
+        }
+    }, r);
+}
+
+// Class label for label-bearing results; -1 otherwise (e.g. Embedding).
+inline int get_label(const Result& r) {
+    return std::visit([](const auto& v) -> int {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, Embedding>) {
+            return -1;
+        } else {
+            return v.label;
+        }
+    }, r);
+}
+
+// Track id for Tracking results; -1 otherwise.
+inline int get_track_id(const Result& r) {
+    if (const Tracking* t = std::get_if<Tracking>(&r)) {
+        return t->track_id;
+    }
+    return -1;
+}
+
+}  // namespace vision
+
+// ============================================================================
+// Inference request / response
+// ============================================================================
+
+// Inference-time parameters. A field <= 0 (or <0 for ints) means "use the
+// model default from config".
+struct VisionServiceInferParams {
+    float conf_threshold = -1.0f;
+    float iou_threshold = -1.0f;
+    int top_k = -1;
+    float kp_threshold = -1.0f;
+    float mask_threshold = -1.0f;
+    int max_det = -1;
+};
+
+// Unified inference input. Image models fill `image`; sequence models
+// (e.g. STGCN) fill the skeleton point buffer + frame size.
+struct VisionServiceRequest {
+    cv::Mat image;                        // image-based models
+
+    const float* sequence_pts = nullptr;  // sequence models: skeleton points
+    int sequence_count = 0;               // length of sequence_pts; if > 0 it is
+                                          // validated against the model's expected
+                                          // size to prevent out-of-bounds reads
+    int sequence_width = 0;               // source frame width
+    int sequence_height = 0;              // source frame height
+
+    VisionServiceInferParams params;
+};
+
+// Unified inference response.
+struct VisionServiceResponse {
+    vision::ResultList results;
+    bool ok = true;
+    std::string error_message;
 };
 
 struct VisionServiceTiming {
@@ -73,14 +235,12 @@ enum VisionServiceStatus {
  * Thread Safety Rules:
  * - Create() is thread-safe (can be called from multiple threads)
  * - All other methods are NOT thread-safe for the same instance
- * - Do NOT call InferImage/InferEmbedding/Draw concurrently on the same instance
+ * - Do NOT call Infer/Draw concurrently on the same instance
  *
  * Correct Multi-threading Usage:
  * - Option 1: Create separate VisionService instances for each thread (RECOMMENDED)
  * - Option 2: Use a thread pool with one VisionService per worker thread
  * - Option 3: Protect with mutex (NOT recommended, serializes inference)
- *
- * See docs/THREAD_SAFETY.md for detailed examples and code samples.
  */
 class VisionService {
 public:
@@ -99,40 +259,35 @@ public:
     static const std::string& LastCreateError();
 
     /**
-     * @brief Run inference on image file
-     * @param conf_threshold Detection confidence threshold (<= 0 uses model default from config)
-     * @param iou_threshold  NMS IoU threshold (<= 0 uses model default from config)
+     * @brief Run inference. The single entry point for all model types.
+     *
+     * The model's task type is inferred from its config; results are returned
+     * as task-specific variants in `response->results`. For image models set
+     * `request.image`; for sequence models set `request.sequence_pts` etc.
+     *
      * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
      */
-    VisionServiceStatus InferImage(const std::string& image_path,
-                                    std::vector<VisionServiceResult>* out_results,
-                                    float conf_threshold = -1.0f,
-                                    float iou_threshold = -1.0f);
+    VisionServiceStatus Infer(
+        const VisionServiceRequest& request,
+        VisionServiceResponse* response);
 
     /**
-     * @brief Run inference on cv::Mat image
-     * @param conf_threshold Detection confidence threshold (<= 0 uses model default from config)
-     * @param iou_threshold  NMS IoU threshold (<= 0 uses model default from config)
-     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     * @brief Convenience overload: load an image file then run inference.
+     * @thread_safety NOT thread-safe.
      */
-    VisionServiceStatus InferImage(const cv::Mat& image,
-                                    std::vector<VisionServiceResult>* out_results,
-                                    float conf_threshold = -1.0f,
-                                    float iou_threshold = -1.0f);
+    VisionServiceStatus Infer(
+        const std::string& image_path,
+        VisionServiceResponse* response,
+        const VisionServiceInferParams& params = {});
 
     /**
-     * @brief Extract embedding from image file
-     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
+     * @brief Convenience overload: run inference on a cv::Mat image.
+     * @thread_safety NOT thread-safe.
      */
-    VisionServiceStatus InferEmbedding(const std::string& image_path,
-                                        std::vector<float>* out_embedding);
-
-    /**
-     * @brief Extract embedding from cv::Mat image
-     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
-     */
-    VisionServiceStatus InferEmbedding(const cv::Mat& image,
-                                        std::vector<float>* out_embedding);
+    VisionServiceStatus Infer(
+        const cv::Mat& image,
+        VisionServiceResponse* response,
+        const VisionServiceInferParams& params = {});
 
     /**
      * @brief Compute cosine similarity between two embeddings
@@ -142,30 +297,17 @@ public:
                                     const std::vector<float>& embedding_b);
 
     /**
-     * @brief Sequence action recognition (e.g. STGCN): 30-frame skeleton -> class probabilities
+     * @brief Draw inference results on an image.
+     *
+     * Stateless: the results to draw are passed explicitly, so this is
+     * re-entrant and not coupled to the last Infer() call.
+     *
      * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
      */
-    VisionServiceStatus InferSequence(const float* pts, int image_width, int image_height,
-                                        std::vector<float>* out_scores);
-
-    /**
-     * @brief Get class names for sequence model
-     * @thread_safety Thread-safe after model is loaded
-     */
-    std::vector<std::string> GetSequenceClassNames();
-
-    /**
-     * @brief Get fall-down class index for STGCN (typically 6)
-     * @thread_safety Thread-safe after model is loaded
-     */
-    int GetFallDownClassIndex();
-
-    /**
-     * @brief Draw inference results on image
-     * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
-     * @note Must call InferImage() first to have results to draw.
-     */
-    VisionServiceStatus Draw(const cv::Mat& image, cv::Mat* out_image);
+    VisionServiceStatus Draw(
+        const cv::Mat& image,
+        const VisionServiceResponse& response,
+        cv::Mat* out_image);
 
     /**
      * @brief Check if current model supports drawing
@@ -198,10 +340,19 @@ public:
     std::string GetDefaultImage();
 
     /**
-     * @brief Get config value by key
+     * @brief Get config value by key (also used to read model-specific values,
+     *        e.g. a sequence model's fall-down class index, from its yaml).
      * @thread_safety Thread-safe after construction
      */
     std::string GetConfigPathValue(const std::string& config_key);
+
+    /**
+     * @brief Get the class-name table loaded from the model's config
+     *        (label_file_path). Empty if the config declares no labels.
+     *        Index into it with a result's `label` to get a human-readable name.
+     * @thread_safety Thread-safe after construction.
+     */
+    std::vector<std::string> GetClassNames() const;
 
     /**
      * @brief Get last error message

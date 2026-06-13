@@ -274,9 +274,20 @@ def main():
         stgcn_infer_step = 0
         pred_class_hist = []   # 最近 smooth_window 次预测类别，用于平滑判跌倒
         last_probs = np.zeros(len(getattr(action_model, 'class_names', [])), dtype=np.float32)
-        fall_down_class_index = action_model.fall_down_class_index
-        last_stgcn_result = {'is_fall': False, 'action_name': '—', 'fall_prob': 0.0}
+        # fall_down_index is an application policy -> read from this app's own
+        # config (fall_detection.yaml), aligned with the C++ app. Class names
+        # remain a model property (action_model.class_names).
         class_names = getattr(action_model, 'class_names', None) or []
+        fall_down_class_index = int(app_config.get("fall_down_index", -1))
+        if fall_down_class_index < 0:
+            raise ValueError("fall_detection.yaml must define a valid fall_down_index")
+        # Upper-bound check (mirror of the C++ app): a too-large index would
+        # never fire a fall instead of crashing -- catch the misconfig early.
+        if class_names and fall_down_class_index >= len(class_names):
+            raise ValueError(
+                f"fall_down_index ({fall_down_class_index}) is out of range for "
+                f"the STGCN class count ({len(class_names)})")
+        last_stgcn_result = {'is_fall': False, 'action_name': '—', 'fall_prob': 0.0}
         class_str = ", ".join(class_names) if class_names else "(未知)"
         print(f"✓ STGCN 动作识别已加载（config: {stgcn_model_name}.yaml，"
               f"{action_model.sequence_length} 帧），每 {stgcn_wait_frames} 帧推理一次，"

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -143,8 +144,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::vector<VisionServiceResult> results;
-    std::vector<float> embedding;
+    VisionServiceResponse response;
     enum class BenchMode {
         kImageInfer,
         kEmbeddingInfer
@@ -152,32 +152,24 @@ int main(int argc, char** argv) {
     BenchMode mode = BenchMode::kImageInfer;
 
     {
-        VisionServiceStatus probe = service->InferImage(image, &results);
+        VisionServiceStatus probe = service->Infer(image, &response);
         if (probe != VISION_SERVICE_OK) {
-            probe = service->InferEmbedding(image, &embedding);
-            if (probe != VISION_SERVICE_OK) {
-                std::cerr << "Error: neither InferImage nor InferEmbedding is supported for this config. "
-                    << "Last error: " << service->LastError() << std::endl;
-                return 1;
-            }
+            std::cerr << "Error: Infer is not supported for this config. "
+                << "Last error: " << service->LastError() << std::endl;
+            return 1;
+        }
+        // Embedding models surface a single Embedding result; treat those
+        // separately for timing display.
+        if (!response.results.empty() && std::holds_alternative<vision::Embedding>(response.results[0])) {
             mode = BenchMode::kEmbeddingInfer;
         }
     }
 
     for (int i = 0; i < args.warmup; ++i) {
-        VisionServiceStatus st = VISION_SERVICE_OK;
-        if (mode == BenchMode::kImageInfer) {
-            st = service->InferImage(image, &results);
-            if (st != VISION_SERVICE_OK) {
-                std::cerr << "Error: warmup InferImage failed: " << service->LastError() << std::endl;
-                return 1;
-            }
-        } else {
-            st = service->InferEmbedding(image, &embedding);
-            if (st != VISION_SERVICE_OK) {
-                std::cerr << "Error: warmup InferEmbedding failed: " << service->LastError() << std::endl;
-                return 1;
-            }
+        VisionServiceStatus st = service->Infer(image, &response);
+        if (st != VISION_SERVICE_OK) {
+            std::cerr << "Error: warmup Infer failed: " << service->LastError() << std::endl;
+            return 1;
         }
     }
 
@@ -197,11 +189,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < args.runs; ++i) {
         VisionServiceStatus st = VISION_SERVICE_OK;
         const auto t0 = std::chrono::steady_clock::now();
-        if (mode == BenchMode::kImageInfer) {
-            st = service->InferImage(image, &results);
-        } else {
-            st = service->InferEmbedding(image, &embedding);
-        }
+        st = service->Infer(image, &response);
         const auto t1 = std::chrono::steady_clock::now();
         if (st != VISION_SERVICE_OK) {
             std::cerr << "Error: infer failed: " << service->LastError() << std::endl;
@@ -221,12 +209,12 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        bool skip_draw = results.empty() || !draw_supported;
+        bool skip_draw = response.results.empty() || !draw_supported;
         if (skip_draw) {
             ++draw_skipped_runs;
         } else {
             const auto d0 = std::chrono::steady_clock::now();
-            st = service->Draw(image, &drawn);
+            st = service->Draw(image, response, &drawn);
             const auto d1 = std::chrono::steady_clock::now();
 
             if (st != VISION_SERVICE_OK) {
@@ -278,8 +266,21 @@ int main(int argc, char** argv) {
         if (image2.empty()) {
             std::cerr << "Warning: could not read image2 for similarity: " << args.image_path2 << std::endl;
         } else {
+            // `response` already holds image1's embedding from the last run.
+            std::vector<float> embedding;
+            if (!response.results.empty()) {
+                if (const vision::Embedding* e = std::get_if<vision::Embedding>(&response.results[0])) {
+                    embedding = e->embedding;
+                }
+            }
+            VisionServiceResponse response2;
+            VisionServiceStatus st2 = service->Infer(image2, &response2);
             std::vector<float> embedding2;
-            VisionServiceStatus st2 = service->InferEmbedding(image2, &embedding2);
+            if (st2 == VISION_SERVICE_OK && !response2.results.empty()) {
+                if (const vision::Embedding* e2 = std::get_if<vision::Embedding>(&response2.results[0])) {
+                    embedding2 = e2->embedding;
+                }
+            }
             if (st2 == VISION_SERVICE_OK && !embedding.empty() && !embedding2.empty()) {
                 const float sim = VisionService::EmbeddingSimilarity(embedding, embedding2);
                 std::cout << "Image2: " << args.image_path2 << "\n"

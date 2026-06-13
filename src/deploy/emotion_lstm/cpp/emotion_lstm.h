@@ -30,7 +30,7 @@ namespace vision_deploy {
  * EmotionRecognizer in feature mode.
  *
  * Reuses the kInferSequence intent / SequenceInput / ActionResult path
- * (same as STGCN), so VisionService::InferSequence drives it.
+ * (same as STGCN), so VisionService::Infer with a sequence request drives it.
  */
 class EmotionLstm : public vision_core::BaseModel {
 public:

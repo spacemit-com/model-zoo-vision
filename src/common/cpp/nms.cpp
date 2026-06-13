@@ -33,7 +33,7 @@ float calculate_iou(const cv::Rect2f& box1, const cv::Rect2f& box2) {
 }
 
 float calculate_iou(const BoundingBox& bbox1, const BoundingBox& bbox2) {
-    return bbox1.iou(bbox2);
+    return iou(bbox1, bbox2);
 }
 
 std::vector<int> nms(

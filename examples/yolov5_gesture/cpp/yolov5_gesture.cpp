@@ -131,8 +131,8 @@ int main(int argc, char* argv[]) {
         double fps = 0.0;
         while (cap.read(frame)) {
             frame_count++;
-            std::vector<VisionServiceResult> results;
-            VisionServiceStatus ret = service->InferImage(frame, &results);
+            VisionServiceResponse response;
+            VisionServiceStatus ret = service->Infer(frame, &response);
             if (ret != VISION_SERVICE_OK) {
                 std::cerr << "Error: " << service->LastError() << std::endl;
                 cap.release();
@@ -140,10 +140,10 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             cv::Mat vis;
-            if (!results.empty()) {
+            if (!response.results.empty()) {
                 if (frame_count <= 5 || frame_count % 30 == 0)
-                    std::cout << "Frame " << frame_count << ": " << results.size() << " gesture(s)" << std::endl;
-                auto draw_status = service->Draw(frame, &vis);
+                    std::cout << "Frame " << frame_count << ": " << response.results.size() << " gesture(s)" << std::endl;
+                auto draw_status = service->Draw(frame, response, &vis);
                 if (draw_status != VISION_SERVICE_OK) {
                     std::cerr << "Draw error: " << service->LastError() << std::endl;
                     vis = frame.clone();
@@ -191,24 +191,26 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::vector<VisionServiceResult> results;
-        VisionServiceStatus ret = service->InferImage(img, &results);
+        VisionServiceResponse response;
+        VisionServiceStatus ret = service->Infer(img, &response);
         if (ret != VISION_SERVICE_OK) {
             std::cerr << "Error: " << service->LastError() << std::endl;
             return 1;
         }
 
-        if (!results.empty()) {
-            std::cout << "Detected " << results.size() << " gesture(s):" << std::endl;
-            for (const auto& r : results) {
-                std::string class_name = (labels.size() > static_cast<size_t>(r.label) && r.label >= 0)
-                                        ? labels[static_cast<size_t>(r.label)] : "Class " + std::to_string(r.label);
-                std::cout << "  " << class_name << " (class " << r.label << ") score="
-                            << std::fixed << std::setprecision(3) << r.score
-                            << " box=[" << r.x1 << "," << r.y1 << "," << r.x2 << "," << r.y2 << "]" << std::endl;
+        if (!response.results.empty()) {
+            std::cout << "Detected " << response.results.size() << " gesture(s):" << std::endl;
+            for (const auto& r : response.results) {
+                const int label = vision::get_label(r);
+                const vision::BoundingBox box = vision::get_bbox(r);
+                std::string class_name = (labels.size() > static_cast<size_t>(label) && label >= 0)
+                                        ? labels[static_cast<size_t>(label)] : "Class " + std::to_string(label);
+                std::cout << "  " << class_name << " (class " << label << ") score="
+                            << std::fixed << std::setprecision(3) << vision::get_score(r)
+                            << " box=[" << box.x1 << "," << box.y1 << "," << box.x2 << "," << box.y2 << "]" << std::endl;
             }
             cv::Mat vis;
-            auto draw_status = service->Draw(img, &vis);
+            auto draw_status = service->Draw(img, response, &vis);
             if (draw_status == VISION_SERVICE_OK) {
                 cv::imwrite(output_path, vis);
             } else {

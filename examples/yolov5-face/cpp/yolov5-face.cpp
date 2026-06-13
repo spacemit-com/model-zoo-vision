@@ -91,8 +91,8 @@ int main(int argc, char* argv[]) {
         double fps = 0.0;
         while (cap.read(frame)) {
             frame_count++;
-            std::vector<VisionServiceResult> results;
-            VisionServiceStatus ret = service->InferImage(frame, &results);
+            VisionServiceResponse response;
+            VisionServiceStatus ret = service->Infer(frame, &response);
             if (ret != VISION_SERVICE_OK) {
                 std::cerr << "Error: " << service->LastError() << std::endl;
                 cap.release();
@@ -100,10 +100,10 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             cv::Mat vis;
-            if (!results.empty()) {
+            if (!response.results.empty()) {
                 if (frame_count <= 5 || frame_count % 30 == 0)
-                    std::cout << "Frame " << frame_count << ": " << results.size() << " face(s)" << std::endl;
-                auto draw_status = service->Draw(frame, &vis);
+                    std::cout << "Frame " << frame_count << ": " << response.results.size() << " face(s)" << std::endl;
+                auto draw_status = service->Draw(frame, response, &vis);
                 if (draw_status != VISION_SERVICE_OK) {
                     std::cerr << "Draw error: " << service->LastError() << std::endl;
                     vis = frame.clone();
@@ -150,22 +150,23 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: Could not load image: " << image_path << std::endl;
         return 1;
     }
-    std::vector<VisionServiceResult> results;
-    VisionServiceStatus ret = service->InferImage(img, &results);
+    VisionServiceResponse response;
+    VisionServiceStatus ret = service->Infer(img, &response);
     if (ret != VISION_SERVICE_OK) {
         std::cerr << "Error: " << service->LastError() << std::endl;
         return 1;
     }
 
-    if (!results.empty()) {
-        std::cout << "Detected " << results.size() << " face(s):" << std::endl;
-        for (size_t i = 0; i < results.size(); ++i) {
-            const auto& r = results[i];
-            std::cout << "  face " << (i + 1) << " score=" << std::fixed << std::setprecision(3) << r.score
-                        << " box=[" << r.x1 << "," << r.y1 << "," << r.x2 << "," << r.y2 << "]" << std::endl;
+    if (!response.results.empty()) {
+        std::cout << "Detected " << response.results.size() << " face(s):" << std::endl;
+        for (size_t i = 0; i < response.results.size(); ++i) {
+            const auto& r = response.results[i];
+            const vision::BoundingBox box = vision::get_bbox(r);
+            std::cout << "  face " << (i + 1) << " score=" << std::fixed << std::setprecision(3) << vision::get_score(r)
+                        << " box=[" << box.x1 << "," << box.y1 << "," << box.x2 << "," << box.y2 << "]" << std::endl;
         }
         cv::Mat vis;
-        service->Draw(img, &vis);
+        service->Draw(img, response, &vis);
         cv::imwrite(output_path, vis);
         std::cout << "Result saved to: " << output_path << std::endl;
     } else {

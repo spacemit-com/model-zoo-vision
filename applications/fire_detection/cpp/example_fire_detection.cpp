@@ -197,14 +197,14 @@ int main(int argc, char** argv) {
     }
 
     auto run_detect_and_draw = [&](const cv::Mat& image, cv::Mat* out_vis) {
-        std::vector<VisionServiceResult> results;
-        if (service->InferImage(image, &results) != VISION_SERVICE_OK) {
+        VisionServiceResponse response;
+        if (service->Infer(image, &response) != VISION_SERVICE_OK) {
             *out_vis = image.clone();
             return;
         }
-        if (!results.empty() && service->Draw(image, out_vis) != VISION_SERVICE_OK) {
+        if (!response.results.empty() && service->Draw(image, response, out_vis) != VISION_SERVICE_OK) {
             *out_vis = image.clone();
-        } else if (results.empty()) {
+        } else if (response.results.empty()) {
             *out_vis = image.clone();
         }
     };

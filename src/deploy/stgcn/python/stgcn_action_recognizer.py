@@ -5,8 +5,8 @@
 """
 STGCN / TSSTG Action Recognition Implementation
 
-基于 TSSTG 的 30 帧骨架动作识别（ONNX），用于跌倒等动作分类。
-输入为骨架点序列 (t, 13, 3)，输出 7 类概率（含 Fall Down）。
+基于 TSSTG 的 30 帧骨架动作识别（ONNX）。
+输入为骨架点序列 (t, 13, 3)，输出 7 类动作概率（类名见 CLASS_NAMES / label 文件）。
 """
 
 import numpy as np
@@ -25,7 +25,6 @@ CLASS_NAMES = [
     'Standing', 'Walking', 'Sitting', 'Lying Down',
     'Stand up', 'Sit down', 'Fall Down',
 ]
-FALL_DOWN_CLASS_INDEX = 6
 
 
 def _normalize_points_with_size(pts_xy: np.ndarray, width: float, height: float) -> np.ndarray:
@@ -79,7 +78,6 @@ class StgcnActionRecognizer:
         self.class_names = list(CLASS_NAMES)
         self.sequence_length = SEQUENCE_LENGTH
         self.num_keypoints = NUM_KEYPOINTS
-        self.fall_down_class_index = FALL_DOWN_CLASS_INDEX
 
         if not lazy_load:
             self._load_model(**kwargs)

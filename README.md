@@ -259,12 +259,21 @@ auto service = VisionService::Create(config_path, model_path_override, false);
 if (!service) { /* 使用 VisionService::LastCreateError() */ return; }
 
 cv::Mat image = cv::imread(image_path);
-std::vector<VisionServiceResult> results;
-if (service->InferImage(image, &results) != VISION_SERVICE_OK) { /* 使用 service->LastError() */ return; }
+VisionServiceResponse response;
+if (service->Infer(image, &response) != VISION_SERVICE_OK) { /* 使用 service->LastError() */ return; }
+
+// 遍历结果（variant，按任务分型）
+for (const auto& r : response.results) {
+    const vision::BoundingBox box = vision::get_bbox(r);
+    int label = vision::get_label(r);
+    float score = vision::get_score(r);
+    // 需要强类型时：if (auto* d = std::get_if<vision::Detection>(&r)) { ... }
+    (void)box; (void)label; (void)score;
+}
 
 cv::Mat vis;
-if (!results.empty())
-    service->Draw(image, &vis);
+if (!response.results.empty())
+    service->Draw(image, response, &vis);  // 显式传入 response
 else
     vis = image;
 // 使用 vis 显示或保存

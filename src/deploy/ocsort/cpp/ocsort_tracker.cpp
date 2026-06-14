@@ -244,7 +244,7 @@ vision_common::TrackingResultList OCSortTracker::convert_tracks_to_results(
             int best_match_idx = -1;
 
             for (size_t i = 0; i < detections.size(); ++i) {
-                float iou = result.bbox.iou(detections[i].bbox);
+                float iou = vision_common::iou(result.bbox, detections[i].bbox);
                 if (iou > max_iou && iou > 0.5f) {
                     max_iou = iou;
                     best_match_idx = static_cast<int>(i);

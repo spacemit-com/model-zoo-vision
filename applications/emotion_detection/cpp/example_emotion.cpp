@@ -13,6 +13,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <filesystem>  // NOLINT(build/c++17)
@@ -24,6 +25,54 @@
 
 namespace {
 namespace fs = std::filesystem;
+
+// Run an embedding model and pull out the raw feature vector.
+inline VisionServiceStatus InferEmbeddingVec(
+    VisionService* service, const cv::Mat& image,
+    std::vector<float>* out) {
+    out->clear();
+    VisionServiceResponse response;
+    const VisionServiceStatus ret = service->Infer(image, &response);
+    if (ret != VISION_SERVICE_OK) {
+        return ret;
+    }
+    if (response.results.empty()) {
+        return VISION_SERVICE_INFER_FAILED;
+    }
+    const vision::Embedding* emb = std::get_if<vision::Embedding>(&response.results[0]);
+    if (emb == nullptr) {
+        return VISION_SERVICE_INFER_FAILED;
+    }
+    *out = emb->embedding;
+    return VISION_SERVICE_OK;
+}
+
+// Run a sequence model (LSTM) and pull out the per-class scores.
+inline VisionServiceStatus InferSequenceVec(VisionService* service, const float* pts, int count,
+                                            std::vector<float>* out) {
+    out->clear();
+    VisionServiceResponse response;
+    VisionServiceRequest request;
+    request.sequence_pts = pts;
+    request.sequence_count = count;
+    // sequence_width/height intentionally left 0: the emotion LSTM consumes
+    // abstract feature vectors (no pixel coordinates), so it does not use them
+    // for normalization. (Contrast with STGCN, which normalizes skeleton pixel
+    // coords by frame width/height.)
+    const VisionServiceStatus ret = service->Infer(request, &response);
+    if (ret != VISION_SERVICE_OK) {
+        return ret;
+    }
+    if (response.results.empty()) {
+        return VISION_SERVICE_INFER_FAILED;
+    }
+    const vision::Action* action = std::get_if<vision::Action>(&response.results[0]);
+    if (action == nullptr) {
+        return VISION_SERVICE_INFER_FAILED;
+    }
+    *out = action->class_scores;
+    return VISION_SERVICE_OK;
+}
 
 constexpr const char* kDefaultAppConfig =
     "applications/emotion_detection/config/emotion_detection.yaml";
@@ -275,24 +324,25 @@ int main(int argc, char* argv[]) {
 
     int frame_count = 0;
     auto run_face_emotion_on_image = [&](const cv::Mat& image, cv::Mat* out_image, bool log_if_empty = false) {
-        std::vector<VisionServiceResult> face_results;
-        const VisionServiceStatus ret = face_service->InferImage(image, &face_results);
-        if (ret != VISION_SERVICE_OK || face_results.empty()) {
+        VisionServiceResponse face_response;
+        const VisionServiceStatus ret = face_service->Infer(image, &face_response);
+        if (ret != VISION_SERVICE_OK || face_response.results.empty()) {
             if (out_image) {
                 *out_image = image.clone();
             }
-            if (log_if_empty && face_results.empty()
+            if (log_if_empty && face_response.results.empty()
                 && (frame_count <= 5 || frame_count % 30 == 0)) {
                 std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
             }
             return;
         }
         cv::Mat vis = image.clone();
-        for (const auto& r : face_results) {
-            const int x1 = static_cast<int>(std::max(0.f, r.x1));
-            const int y1 = static_cast<int>(std::max(0.f, r.y1));
-            const int x2 = static_cast<int>(std::min(static_cast<float>(image.cols), r.x2));
-            const int y2 = static_cast<int>(std::min(static_cast<float>(image.rows), r.y2));
+        for (const auto& r : face_response.results) {
+            const vision::BoundingBox fb = vision::get_bbox(r);
+            const int x1 = static_cast<int>(std::max(0.f, fb.x1));
+            const int y1 = static_cast<int>(std::max(0.f, fb.y1));
+            const int x2 = static_cast<int>(std::min(static_cast<float>(image.cols), fb.x2));
+            const int y2 = static_cast<int>(std::min(static_cast<float>(image.rows), fb.y2));
             if (x2 <= x1 || y2 <= y1) {
                 continue;
             }
@@ -308,14 +358,14 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
-            std::vector<VisionServiceResult> emo_results;
-            if (emotion_service->InferImage(face_roi, &emo_results) != VISION_SERVICE_OK
-                || emo_results.empty()) {
+            VisionServiceResponse emo_response;
+            if (emotion_service->Infer(face_roi, &emo_response) != VISION_SERVICE_OK
+                || emo_response.results.empty()) {
                 cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
                 continue;
             }
-            const int emotion_class = emo_results[0].label;
-            const float emotion_score = emo_results[0].score;
+            const int emotion_class = vision::get_label(emo_response.results[0]);
+            const float emotion_score = vision::get_score(emo_response.results[0]);
             const std::string emotion_name =
                 (emotion_class >= 0 && emotion_class < static_cast<int>(emotion_labels.size()))
                     ? emotion_labels[static_cast<size_t>(emotion_class)]
@@ -356,9 +406,9 @@ int main(int argc, char* argv[]) {
             // Per-frame work in a lambda so any early-out still falls through to the
             // unified imshow / waitKey / save handling at the loop tail.
             [&]() {
-                std::vector<VisionServiceResult> face_results;
-                const VisionServiceStatus ret = face_service->InferImage(frame, &face_results);
-                if (ret != VISION_SERVICE_OK || face_results.empty()) {
+                VisionServiceResponse face_response;
+                const VisionServiceStatus ret = face_service->Infer(frame, &face_response);
+                if (ret != VISION_SERVICE_OK || face_response.results.empty()) {
                     feat_buffer.clear();  // drop window on lost track
                     if (frame_count <= 5 || frame_count % 30 == 0) {
                         std::cout << "Frame " << frame_count << ": no face detected" << std::endl;
@@ -369,13 +419,14 @@ int main(int argc, char* argv[]) {
                 // Filter by size first, then pick the highest-confidence eligible face.
                 // This avoids a distant high-score small face out-scoring a near large
                 // one and causing the whole frame to be skipped.
-                const VisionServiceResult* best = nullptr;
+                const vision::Result* best = nullptr;
                 bool saw_small = false;
-                for (const auto& r : face_results) {
-                    const int rx1 = static_cast<int>(std::max(0.f, r.x1));
-                    const int ry1 = static_cast<int>(std::max(0.f, r.y1));
-                    const int rx2 = static_cast<int>(std::min(static_cast<float>(frame.cols), r.x2));
-                    const int ry2 = static_cast<int>(std::min(static_cast<float>(frame.rows), r.y2));
+                for (const auto& r : face_response.results) {
+                    const vision::BoundingBox rb = vision::get_bbox(r);
+                    const int rx1 = static_cast<int>(std::max(0.f, rb.x1));
+                    const int ry1 = static_cast<int>(std::max(0.f, rb.y1));
+                    const int rx2 = static_cast<int>(std::min(static_cast<float>(frame.cols), rb.x2));
+                    const int ry2 = static_cast<int>(std::min(static_cast<float>(frame.rows), rb.y2));
                     if (rx2 <= rx1 || ry2 <= ry1) {
                         continue;
                     }
@@ -385,7 +436,7 @@ int main(int argc, char* argv[]) {
                             cv::Scalar(128, 128, 128), 1);
                         continue;
                     }
-                    if (best == nullptr || r.score > best->score) {
+                    if (best == nullptr || vision::get_score(r) > vision::get_score(*best)) {
                         best = &r;
                     }
                 }
@@ -400,14 +451,15 @@ int main(int argc, char* argv[]) {
                     return;
                 }
 
-                const int x1 = static_cast<int>(std::max(0.f, best->x1));
-                const int y1 = static_cast<int>(std::max(0.f, best->y1));
-                const int x2 = static_cast<int>(std::min(static_cast<float>(frame.cols), best->x2));
-                const int y2 = static_cast<int>(std::min(static_cast<float>(frame.rows), best->y2));
+                const vision::BoundingBox bb = vision::get_bbox(*best);
+                const int x1 = static_cast<int>(std::max(0.f, bb.x1));
+                const int y1 = static_cast<int>(std::max(0.f, bb.y1));
+                const int x2 = static_cast<int>(std::min(static_cast<float>(frame.cols), bb.x2));
+                const int y2 = static_cast<int>(std::min(static_cast<float>(frame.rows), bb.y2));
 
                 const cv::Mat face_roi = frame(cv::Rect(x1, y1, x2 - x1, y2 - y1));
                 std::vector<float> feat;
-                if (feature_service->InferEmbedding(face_roi, &feat) != VISION_SERVICE_OK
+                if (InferEmbeddingVec(feature_service.get(), face_roi, &feat) != VISION_SERVICE_OK
                     || feat.size() != static_cast<size_t>(kFeatureDim)) {
                     cv::rectangle(vis, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(0, 255, 0), 2);
                     return;
@@ -428,7 +480,8 @@ int main(int argc, char* argv[]) {
                         flat.insert(flat.end(), f.begin(), f.end());
                     }
                     std::vector<float> probs;
-                    if (lstm_service->InferSequence(flat.data(), 0, 0, &probs) == VISION_SERVICE_OK
+                    if (InferSequenceVec(lstm_service.get(), flat.data(),
+                            static_cast<int>(flat.size()), &probs) == VISION_SERVICE_OK
                         && !probs.empty()) {
                         const int cls = static_cast<int>(
                             std::max_element(probs.begin(), probs.end()) - probs.begin());

@@ -24,13 +24,12 @@ namespace vision_deploy {
  *
  * Same logic as Python deploy: 30-frame skeleton sequence -> 7-class action probabilities.
  * Input: pts (T=30, V=13, C=3) in pixel coordinates; image_size for normalization.
- * Output: 7 class probs, index 6 = Fall Down.
+ * Output: 7 class probabilities; class names come from the model's label file.
  */
 class StgcnActionRecognizer : public vision_core::BaseModel, public vision_core::ISequenceActionModel {
 public:
     static constexpr int kSequenceLength = 30;
     static constexpr int kNumKeypoints = 13;
-    static constexpr int kFallDownClassIndex = 6;
     static constexpr int kNumClasses = 7;
 
     StgcnActionRecognizer(const std::string& model_path,
@@ -47,7 +46,7 @@ public:
      * @param pts Flat array of size kSequenceLength * kNumKeypoints * 3, layout [t][v][c] (x, y, score) in pixel coords
      * @param image_width  Image width for normalizing coordinates
      * @param image_height Image height for normalizing coordinates
-     * @return ActionResult with class probabilities (index 6 = Fall Down)
+     * @return ActionResult with class probabilities (one per action class)
      */
     vision_common::ActionResult predict(const float* pts,
                                         int image_width,
@@ -74,7 +73,6 @@ public:
                                         int image_height);
 
     std::vector<std::string> get_class_names() const override { return class_names_; }
-    int get_fall_down_class_index() const override { return kFallDownClassIndex; }
     std::string get_class_name(int pred_class) const;
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);

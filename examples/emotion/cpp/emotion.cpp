@@ -121,20 +121,20 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: Could not load image: " << image_path << std::endl;
         return 1;
     }
-    std::vector<VisionServiceResult> results;
-    VisionServiceStatus ret = service->InferImage(img, &results);
+    VisionServiceResponse response;
+    VisionServiceStatus ret = service->Infer(img, &response);
     if (ret != VISION_SERVICE_OK) {
         std::cerr << "Error: " << service->LastError() << std::endl;
         return 1;
     }
 
-    if (results.empty()) {
+    if (response.results.empty()) {
         std::cout << "No emotion result." << std::endl;
         return 0;
     }
 
-    int emotion_class = results[0].label;
-    float emotion_score = results[0].score;
+    int emotion_class = vision::get_label(response.results[0]);
+    float emotion_score = vision::get_score(response.results[0]);
     std::string emotion_name = (emotion_class >= 0 && static_cast<size_t>(emotion_class) < labels.size())
                                 ? labels[static_cast<size_t>(emotion_class)] : "unknown";
 

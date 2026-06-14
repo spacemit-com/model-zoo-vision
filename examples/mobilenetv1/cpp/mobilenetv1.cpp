@@ -121,23 +121,23 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: Could not load image: " << image_path << std::endl;
         return 1;
     }
-    std::vector<VisionServiceResult> results;
-    VisionServiceStatus ret = service->InferImage(img, &results);
+    VisionServiceResponse response;
+    VisionServiceStatus ret = service->Infer(img, &response);
     if (ret != VISION_SERVICE_OK) {
         std::cerr << "Error: " << service->LastError() << std::endl;
         return 1;
     }
 
-    if (!results.empty()) {
+    if (!response.results.empty()) {
         std::cout << "Top-5 classification results:" << std::endl;
-        const size_t max_results = std::min<size_t>(results.size(), 5);
+        const size_t max_results = std::min<size_t>(response.results.size(), 5);
         for (size_t i = 0; i < max_results; i++) {
-            int label_id = results[i].label;
+            int label_id = vision::get_label(response.results[i]);
             std::string name = (label_id >= 0 && static_cast<size_t>(label_id) < labels.size())
                                 ? labels[static_cast<size_t>(label_id)] : ("Class " + std::to_string(label_id));
             std::cout << "  " << (i + 1) << ". " << name
                         << " (confidence: " << std::fixed << std::setprecision(4)
-                        << results[i].score << ")" << std::endl;
+                        << vision::get_score(response.results[i]) << ")" << std::endl;
         }
     } else {
         std::cout << "No classification results" << std::endl;

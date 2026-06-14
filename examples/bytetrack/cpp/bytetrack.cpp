@@ -99,8 +99,8 @@ int main(int argc, char* argv[]) {
     double current_fps = 0.0;
     while (cap.read(frame)) {
         frame_count++;
-        std::vector<VisionServiceResult> results;
-        VisionServiceStatus ret = service->InferImage(frame, &results);
+        VisionServiceResponse response;
+        VisionServiceStatus ret = service->Infer(frame, &response);
         if (ret != VISION_SERVICE_OK) {
             std::cerr << "Error: " << service->LastError() << std::endl;
             cap.release();
@@ -108,8 +108,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         cv::Mat vis;
-        if (!results.empty()) {
-            auto draw_status = service->Draw(frame, &vis);
+        if (!response.results.empty()) {
+            auto draw_status = service->Draw(frame, response, &vis);
             if (draw_status != VISION_SERVICE_OK) {
                 vis = frame.clone();
             }

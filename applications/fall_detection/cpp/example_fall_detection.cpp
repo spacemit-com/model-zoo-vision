@@ -31,6 +31,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "vision_service.h"
@@ -64,7 +65,7 @@ struct FallInfo {
 };
 
 /** Build one frame of 13 keypoints (x,y,vis) for STGCN from C API keypoints (at least 17). */
-std::vector<float> keypoints_to_stgcn_frame(const VisionServiceKeypoint* kpts, int count,
+std::vector<float> keypoints_to_stgcn_frame(const vision::KeyPoint* kpts, int count,
                                             int image_width, int image_height) {
     (void)image_width;
     (void)image_height;
@@ -435,9 +436,27 @@ int main(int argc, char** argv) {
             }
             throw std::runtime_error(msg);
         }
-        const int fall_down_class_index = stgcn_service->GetFallDownClassIndex();
+        // Class names are a model property -> read via the standard
+        // GetClassNames() (backed by stgcn.yaml's label_file_path).
+        // fall_down_index is an application policy -> read from this app's
+        // own config (fall_detection.yaml), not from the model.
+        const std::vector<std::string> stgcn_class_names = stgcn_service->GetClassNames();
+        const int fall_down_class_index =
+            app_cfg["fall_down_index"] ? app_cfg["fall_down_index"].as<int>() : -1;
         if (fall_down_class_index < 0) {
-            throw std::runtime_error("STGCN model does not support fall-down class index");
+            throw std::runtime_error(
+                "fall_detection.yaml must define a valid fall_down_index");
+        }
+        // Upper-bound check: a too-large index would not crash (the inference
+        // loop guards class_scores.size()), but it would silently never fire a
+        // fall. Catch the misconfiguration at startup instead. Only checkable
+        // when class names are known (label_file_path configured).
+        if (!stgcn_class_names.empty() &&
+            fall_down_class_index >= static_cast<int>(stgcn_class_names.size())) {
+            throw std::runtime_error(
+                "fall_down_index (" + std::to_string(fall_down_class_index) +
+                ") is out of range for the STGCN class count (" +
+                std::to_string(stgcn_class_names.size()) + ")");
         }
 
         const int stgcn_wait_frames = app_cfg["stgcn_wait_frames"]
@@ -495,8 +514,8 @@ int main(int argc, char** argv) {
         cv::Mat vis = frame.clone();
         int fall_count = 0;
 
-        std::vector<VisionServiceResult> pose_results;
-        int ret = pose_service->InferImage(frame, &pose_results);
+        VisionServiceResponse pose_response;
+        int ret = pose_service->Infer(frame, &pose_response);
         if (ret != VISION_SERVICE_OK) {
             std::cerr << "Error: " << pose_service->LastError() << std::endl;
             cap.release();
@@ -504,14 +523,18 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        if (!pose_results.empty()) {
+        if (!pose_response.results.empty()) {
             int best_idx = 0;
-            for (size_t i = 1; i < pose_results.size(); ++i) {
-                if (pose_results[i].score > pose_results[best_idx].score) best_idx = i;
+            for (size_t i = 1; i < pose_response.results.size(); ++i) {
+                if (vision::get_score(pose_response.results[i]) >
+                    vision::get_score(pose_response.results[best_idx])) {
+                    best_idx = i;
+                }
             }
-            const VisionServiceResult& cr = pose_results[best_idx];
-
-            const std::vector<VisionServiceKeypoint>& kpts = cr.keypoints;
+            const vision::Pose* cr = std::get_if<vision::Pose>(&pose_response.results[best_idx]);
+            // Pose models always produce Pose results; guard defensively.
+            const std::vector<vision::KeyPoint> kpts =
+                (cr != nullptr) ? cr->keypoints : std::vector<vision::KeyPoint>{};
             if (kpts.size() >= 17) {
                 std::vector<float> frame_pts = keypoints_to_stgcn_frame(
                     kpts.data(), static_cast<int>(kpts.size()), frame.cols, frame.rows);
@@ -524,16 +547,26 @@ int main(int argc, char** argv) {
                     if (stgcn_infer_step % std::max(1, stgcn_wait_frames) == 0) {
                         std::vector<float> pts = keypoint_buffer_to_pts(keypoint_buffer);
                         std::vector<float> probs;
-                        if (stgcn_service->InferSequence(pts.data(), frame.cols, frame.rows, &probs)
-                                == VISION_SERVICE_OK
-                                && probs.size() >= static_cast<size_t>(fall_down_class_index + 1)) {
+                        VisionServiceRequest seq_req;
+                        seq_req.sequence_pts = pts.data();
+                        seq_req.sequence_count = static_cast<int>(pts.size());
+                        seq_req.sequence_width = frame.cols;
+                        seq_req.sequence_height = frame.rows;
+                        VisionServiceResponse seq_resp;
+                        const vision::Action* act = nullptr;
+                        if (stgcn_service->Infer(seq_req, &seq_resp) == VISION_SERVICE_OK
+                                && !seq_resp.results.empty()
+                                && (act = std::get_if<vision::Action>(&seq_resp.results[0])) != nullptr
+                                && act->class_scores.size()
+                                    >= static_cast<size_t>(fall_down_class_index + 1)) {
+                            const std::vector<float>& probs_ref = act->class_scores;
                             int pred_class = static_cast<int>(
-                                std::max_element(probs.begin(), probs.end()) - probs.begin());
+                                std::max_element(probs_ref.begin(), probs_ref.end()) - probs_ref.begin());
                             pred_class_hist.push_back(pred_class);
                             if (pred_class_hist.size() > static_cast<size_t>(std::max(stgcn_smooth_window, 1))) {
                                 pred_class_hist.erase(pred_class_hist.begin());
                             }
-                            float fall_prob = probs[static_cast<size_t>(fall_down_class_index)];
+                            float fall_prob = probs_ref[static_cast<size_t>(fall_down_class_index)];
                             bool is_fall_smooth = false;
                             if (!pred_class_hist.empty()) {
                                 int fall_count_hist = 0;
@@ -544,10 +577,9 @@ int main(int argc, char** argv) {
                             } else {
                                 is_fall_smooth = (pred_class == fall_down_class_index);
                             }
-                            std::vector<std::string> class_names = stgcn_service->GetSequenceClassNames();
                             last_stgcn_result.action_name =
-                                (pred_class >= 0 && pred_class < static_cast<int>(class_names.size()))
-                                    ? class_names[static_cast<size_t>(pred_class)] : "—";
+                                (pred_class >= 0 && pred_class < static_cast<int>(stgcn_class_names.size()))
+                                    ? stgcn_class_names[static_cast<size_t>(pred_class)] : "—";
                             last_stgcn_result.is_fall = is_fall_smooth;
                             last_stgcn_result.fall_prob = fall_prob;
                         }
@@ -556,16 +588,8 @@ int main(int argc, char** argv) {
             }
 
             PoseResult best;
-            best.bbox = vision_common::BoundingBox{cr.x1, cr.y1, cr.x2, cr.y2};
-            best.score = cr.score;
-            best.label = cr.label;
-            if (!kpts.empty()) {
-                best.keypoints.resize(kpts.size());
-                for (size_t i = 0; i < kpts.size(); ++i) {
-                    best.keypoints[i].x = kpts[i].x;
-                    best.keypoints[i].y = kpts[i].y;
-                    best.keypoints[i].visibility = kpts[i].visibility;
-                }
+            if (cr != nullptr) {
+                best = *cr;  // vision::Pose carries bbox, score, label, keypoints
             }
             draw_one_pose_with_action(vis, best, kp_threshold, last_stgcn_result);
             if (last_stgcn_result.is_fall) fall_count = 1;

@@ -78,7 +78,7 @@ bool parse_args(int argc, char** argv, Args* args) {
 void write_artifact(const Args& args,
                     size_t detection_count,
                     float max_score,
-                    const VisionServiceResult* first) {
+                    const vision::Result* first) {
     if (args.output_path.empty()) {
         return;
     }
@@ -92,9 +92,10 @@ void write_artifact(const Args& args,
     out << "detection_count=" << detection_count << "\n";
     out << "max_score=" << max_score << "\n";
     if (first != nullptr) {
-        out << "first_bbox=" << first->x1 << "," << first->y1 << ","
-            << first->x2 << "," << first->y2 << "\n";
-        out << "first_label=" << first->label << "\n";
+        const vision::BoundingBox box = vision::get_bbox(*first);
+        out << "first_bbox=" << box.x1 << "," << box.y1 << ","
+            << box.x2 << "," << box.y2 << "\n";
+        out << "first_label=" << vision::get_label(*first) << "\n";
     }
 }
 
@@ -123,11 +124,13 @@ int main(int argc, char** argv) {
         check(err.empty(), msg);
     }
 
-    std::vector<VisionServiceResult> results;
-    std::cout << "InferImage: " << args.image_path
+    VisionServiceResponse response;
+    std::cout << "Infer: " << args.image_path
             << " conf_threshold=" << conf_threshold << std::endl;
+    VisionServiceInferParams params;
+    params.conf_threshold = conf_threshold;
     VisionServiceStatus status =
-        service->InferImage(args.image_path, &results, conf_threshold);
+        service->Infer(args.image_path, &response, params);
     {
         const std::string msg = std::string("expected VISION_SERVICE_OK, got ") +
                                 std::to_string(status) + ", LastError=" + service->LastError();
@@ -136,7 +139,7 @@ int main(int argc, char** argv) {
     {
         const std::string msg = std::string("expected detection count > 0, got 0 (image=") +
                                 args.image_path + ")";
-        check(!results.empty(), msg);
+        check(!response.results.empty(), msg);
     }
 
     cv::Mat image = cv::imread(args.image_path);
@@ -145,49 +148,52 @@ int main(int argc, char** argv) {
     const int rows = image.rows;
 
     float max_score = 0.0f;
-    for (size_t i = 0; i < results.size(); ++i) {
-        const auto& r = results[i];
-        if (r.score > max_score) {
-            max_score = r.score;
+    for (size_t i = 0; i < response.results.size(); ++i) {
+        const auto& r = response.results[i];
+        const vision::BoundingBox box = vision::get_bbox(r);
+        const float score = vision::get_score(r);
+        const int label = vision::get_label(r);
+        if (score > max_score) {
+            max_score = score;
         }
         {
             const std::string msg = std::string("label out of COCO range [0,79]: label=") +
-                                    std::to_string(r.label) + " index=" + std::to_string(i);
-            check(r.label >= 0 && r.label <= 79, msg);
+                                    std::to_string(label) + " index=" + std::to_string(i);
+            check(label >= 0 && label <= 79, msg);
         }
         {
             const std::string msg = std::string("score out of [conf,1]: score=") +
-                                    std::to_string(r.score) + " conf=" +
+                                    std::to_string(score) + " conf=" +
                                     std::to_string(conf_threshold) + " index=" +
                                     std::to_string(i);
-            check(r.score >= conf_threshold && r.score <= 1.0f, msg);
+            check(score >= conf_threshold && score <= 1.0f, msg);
         }
         {
             const std::string msg = std::string("invalid bbox dimensions at index ") +
                                     std::to_string(i);
-            check(r.x2 > r.x1 && r.y2 > r.y1, msg);
+            check(box.x2 > box.x1 && box.y2 > box.y1, msg);
         }
         {
-            std::string bbox = std::to_string(r.x1);
+            std::string bbox = std::to_string(box.x1);
             bbox += ",";
-            bbox += std::to_string(r.y1);
+            bbox += std::to_string(box.y1);
             bbox += ",";
-            bbox += std::to_string(r.x2);
+            bbox += std::to_string(box.x2);
             bbox += ",";
-            bbox += std::to_string(r.y2);
+            bbox += std::to_string(box.y2);
             const std::string img_size = std::to_string(cols) + "x" + std::to_string(rows);
             const std::string msg = std::string("bbox out of image bounds at index ") +
                                     std::to_string(i) + " bbox=(" + bbox + ") image=(" +
                                     img_size + ")";
-            const bool in_bounds = r.x1 >= 0.0f && r.y1 >= 0.0f &&
-                r.x2 <= static_cast<float>(cols) && r.y2 <= static_cast<float>(rows);
+            const bool in_bounds = box.x1 >= 0.0f && box.y1 >= 0.0f &&
+                box.x2 <= static_cast<float>(cols) && box.y2 <= static_cast<float>(rows);
             check(in_bounds, msg);
         }
     }
 
     std::cout << "Invalid input branches on live service" << std::endl;
-    std::vector<VisionServiceResult> empty_results;
-    status = service->InferImage(cv::Mat(), &empty_results);
+    VisionServiceResponse empty_response;
+    status = service->Infer(cv::Mat(), &empty_response);
     {
         const std::string msg = std::string("empty Mat expected INVALID_ARGUMENT, got ") +
                                 std::to_string(status);
@@ -195,7 +201,7 @@ int main(int argc, char** argv) {
     }
 
     cv::Mat gray(rows, cols, CV_8UC1, cv::Scalar(0));
-    status = service->InferImage(gray, &empty_results);
+    status = service->Infer(gray, &empty_response);
     {
         const std::string msg = std::string("1-channel Mat expected INVALID_ARGUMENT, got ") +
                                 std::to_string(status);
@@ -225,13 +231,13 @@ int main(int argc, char** argv) {
         check(std::abs(sim_ac - 0.0f) < 1e-5f, msg);
     }
 
-    const VisionServiceResult* first = results.empty() ? nullptr : &results[0];
-    write_artifact(args, results.size(), max_score, first);
+    const vision::Result* first = response.results.empty() ? nullptr : &response.results[0];
+    write_artifact(args, response.results.size(), max_score, first);
 
     if (g_failures > 0) {
         std::cerr << g_failures << " assertion(s) failed" << std::endl;
         return 1;
     }
-    std::cout << "PASS: detections=" << results.size() << " max_score=" << max_score << std::endl;
+    std::cout << "PASS: detections=" << response.results.size() << " max_score=" << max_score << std::endl;
     return 0;
 }

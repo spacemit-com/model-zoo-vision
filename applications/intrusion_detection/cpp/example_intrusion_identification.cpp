@@ -406,8 +406,8 @@ int main(int argc, char** argv) {
             double current_fps = (dt > 1e-6) ? 1.0 / dt : 0.0;
             t_prev = t_now;
 
-            std::vector<VisionServiceResult> results;
-            int ret = service->InferImage(frame, &results);
+            VisionServiceResponse response;
+            int ret = service->Infer(frame, &response);
             if (ret != VISION_SERVICE_OK) {
                 std::cerr << "Error: " << service->LastError() << std::endl;
                 cap.release();
@@ -418,17 +418,18 @@ int main(int argc, char** argv) {
         cv::Mat vis = draw_roi_overlay(frame, roi_pts, 0.22);
         std::set<int> inside_ids;
 
-        for (const auto& r : results) {
-            const int track_id = r.track_id;
-            const int class_id = r.label;
+        for (const auto& r : response.results) {
+            const int track_id = vision::get_track_id(r);
+            const int class_id = vision::get_label(r);
             if (!is_person_label(class_id, labels)) {
                 continue;
             }
 
-            int x1 = std::clamp(static_cast<int>(r.x1), 0, frame_w - 1);
-            int y1 = std::clamp(static_cast<int>(r.y1), 0, frame_h - 1);
-            int x2 = std::clamp(static_cast<int>(r.x2), 0, frame_w - 1);
-            int y2 = std::clamp(static_cast<int>(r.y2), 0, frame_h - 1);
+            const vision::BoundingBox box = vision::get_bbox(r);
+            int x1 = std::clamp(static_cast<int>(box.x1), 0, frame_w - 1);
+            int y1 = std::clamp(static_cast<int>(box.y1), 0, frame_h - 1);
+            int x2 = std::clamp(static_cast<int>(box.x2), 0, frame_w - 1);
+            int y2 = std::clamp(static_cast<int>(box.y2), 0, frame_h - 1);
 
             cv::Point foot((x1 + x2) / 2, y2);
             bool intrusion = point_in_roi(foot, roi_pts);
@@ -446,7 +447,7 @@ int main(int argc, char** argv) {
             }
 
             std::ostringstream oss;
-            oss << base_name << " ID:" << track_id << " " << std::fixed << std::setprecision(2) << r.score;
+            oss << base_name << " ID:" << track_id << " " << std::fixed << std::setprecision(2) << vision::get_score(r);
             if (intrusion) oss << " INTRUSION";
             std::string text = oss.str();
 
@@ -461,7 +462,7 @@ int main(int argc, char** argv) {
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 2);
         }
 
-            if (results.empty() && use_camera && (frame_idx <= 5 || frame_idx % 30 == 0)) {
+            if (response.results.empty() && use_camera && (frame_idx <= 5 || frame_idx % 30 == 0)) {
                 std::cout << "Frame " << frame_idx << ": no tracks" << std::endl;
             }
 

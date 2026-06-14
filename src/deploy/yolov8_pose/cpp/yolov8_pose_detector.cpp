@@ -243,7 +243,7 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
 
 float YOLOv8PoseDetector::calculate_iou(const vision_common::PoseResult& det1, const vision_common::PoseResult& det2) {
     // Use BoundingBox iou method
-    return det1.bbox.iou(det2.bbox);
+    return vision_common::iou(det1.bbox, det2.bbox);
 }
 
 vision_common::PoseResultList YOLOv8PoseDetector::nms(

@@ -7,6 +7,7 @@
 #include <iomanip>     // NOLINT(build/include_order)
 #include <memory>      // NOLINT(build/include_order)
 #include <string>      // NOLINT(build/include_order)
+#include <variant>     // NOLINT(build/include_order)
 #include <vector>      // NOLINT(build/include_order)
 
 #include "vision_service.h"  // NOLINT(build/include_order)
@@ -67,8 +68,25 @@ int main(int argc, char* argv[]) {
     std::vector<float> emb1;
     std::vector<float> emb2;
 
-    int r1 = service->InferEmbedding(image1_path, &emb1);
-    int r2 = service->InferEmbedding(image2_path, &emb2);
+    auto extract_embedding = [&](const std::string& path, std::vector<float>* out) -> int {
+        VisionServiceResponse response;
+        int ret = service->Infer(path, &response);
+        if (ret != VISION_SERVICE_OK) {
+            return ret;
+        }
+        if (response.results.empty()) {
+            return VISION_SERVICE_INFER_FAILED;
+        }
+        const vision::Embedding* emb = std::get_if<vision::Embedding>(&response.results[0]);
+        if (emb == nullptr) {
+            return VISION_SERVICE_INFER_FAILED;
+        }
+        *out = emb->embedding;
+        return VISION_SERVICE_OK;
+    };
+
+    int r1 = extract_embedding(image1_path, &emb1);
+    int r2 = extract_embedding(image2_path, &emb2);
 
     if (r1 != VISION_SERVICE_OK || r2 != VISION_SERVICE_OK) {
         std::cerr << "Error: " << service->LastError() << std::endl;

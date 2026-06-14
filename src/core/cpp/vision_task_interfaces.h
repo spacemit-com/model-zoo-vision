@@ -150,7 +150,7 @@ public:
      */
     static float calculate_similarity(const vision_common::EmbeddingResult& embedding_a,
         const vision_common::EmbeddingResult& embedding_b) {
-        return embedding_a.similarity(embedding_b);
+        return vision_common::similarity(embedding_a, embedding_b);
     }
 };
 
@@ -180,12 +180,6 @@ public:
      * @return List of action class names (e.g., ["standing", "walking", "falling"])
      */
     virtual std::vector<std::string> get_class_names() const { return {}; }
-
-    /**
-     * @brief Get fall-down class index (for STGCN)
-     * @return Class index for fall-down action, or -1 if not applicable
-     */
-    virtual int get_fall_down_class_index() const { return -1; }
 };
 
 }  // namespace vision_core

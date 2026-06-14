@@ -161,8 +161,8 @@ std::vector<Object> ByteTrackTracker::convert_results_to_objects(
         Object obj;
         obj.rect.x = result.bbox.x1;
         obj.rect.y = result.bbox.y1;
-        obj.rect.width = result.bbox.width();
-        obj.rect.height = result.bbox.height();
+        obj.rect.width = vision_common::width(result.bbox);
+        obj.rect.height = vision_common::height(result.bbox);
         obj.label = result.label;
         obj.prob = result.score;
         objects.push_back(obj);
@@ -197,7 +197,7 @@ vision_common::TrackingResultList ByteTrackTracker::convert_stracks_to_results(
         int best_match_idx = -1;
 
         for (size_t i = 0; i < detections.size(); i++) {
-            float iou = result.bbox.iou(detections[i].bbox);
+            float iou = vision_common::iou(result.bbox, detections[i].bbox);
 
             if (iou > max_iou && iou > 0.5f) {  // Threshold to ensure good match
                 max_iou = iou;

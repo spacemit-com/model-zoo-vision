@@ -9,26 +9,27 @@ Fall Detection Example (跌倒检测示例)
 仅通过 STGCN 判断动作/跌倒，无角度规则。
 """
 
-import sys
 from pathlib import Path
 from collections import deque
 
-# 将 cv/src 加入路径（脚本在 applications/fall_detection/python/，parents[3]=cv）
-_cv_src = Path(__file__).resolve().parents[3] / "src"
-if str(_cv_src) not in sys.path:
-    sys.path.insert(0, str(_cv_src))
+import argparse
+import yaml
+import cv2
+import numpy as np
 
-import argparse  # noqa: E402
-import yaml  # noqa: E402
-import cv2  # noqa: E402
-import numpy as np  # noqa: E402
-
-from core import create_model  # noqa: E402
-from common import draw_keypoints  # noqa: E402
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 # STGCN/TSSTG：30 帧、13 关键点（COCO 子集），用于 --use-stgcn 时
 COCO17_TO_TSTSGO13 = [0, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4]
 STGCN_SEQUENCE_LENGTH = 30
+
+# COCO17 骨架连线（关键点索引对），用于手动绘制 skeleton
+COCO17_SKELETON = [
+    (5, 7), (7, 9), (6, 8), (8, 10),       # arms
+    (11, 13), (13, 15), (12, 14), (14, 16),  # legs
+    (5, 6), (11, 12), (5, 11), (6, 12),    # torso
+    (0, 1), (0, 2), (1, 3), (2, 4),        # head
+]
 
 # COCO Pose 关键点索引
 # 0: nose, 1: left_eye, 2: right_eye, 3: left_ear, 4: right_ear
@@ -96,13 +97,40 @@ def keypoint_buffer_to_tsstg_pts(keypoint_buffer, image_size):
     return pts
 
 
+def _draw_skeleton(image, bbox, keypoints, box_color, kp_color, kp_threshold):
+    """手动用 cv2 绘制人体框 + 关键点 + 骨架连线。
+    keypoints: list of (x, y, visibility)，像素坐标。"""
+    x1, y1, x2, y2 = map(int, bbox[:4])
+    cv2.rectangle(image, (x1, y1), (x2, y2), box_color, 2)
+
+    pts = []
+    for kp in keypoints:
+        kx, ky, kv = float(kp[0]), float(kp[1]), float(kp[2])
+        pts.append((int(kx), int(ky), kv))
+
+    # 骨架连线
+    for a, b in COCO17_SKELETON:
+        if a < len(pts) and b < len(pts):
+            xa, ya, va = pts[a]
+            xb, yb, vb = pts[b]
+            if va >= kp_threshold and vb >= kp_threshold:
+                cv2.line(image, (xa, ya), (xb, yb), kp_color, 2)
+
+    # 关键点圆点
+    for (kx, ky, kv) in pts:
+        if kv >= kp_threshold:
+            cv2.circle(image, (kx, ky), 3, kp_color, -1)
+    return image
+
+
 def draw_fall_detection(image, detections, kp_threshold=0.3, action_results=None):
     """
     在图像上绘制动作/跌倒检测结果（仅 STGCN 多类别结果）。
 
     Args:
         image: 输入图像
-        detections: 检测结果列表
+        detections: 检测结果列表，每项为 {'box'/'bbox': [x1,y1,x2,y2],
+                    'keypoints': [(x,y,vis), ...]}
         kp_threshold: 关键点可见度阈值
         action_results: 每人的动作结果 [{'action_name': str, 'is_fall': bool, 'fall_prob': float}, ...]；
                         未提供或对应索引无结果时显示 "—"
@@ -131,12 +159,11 @@ def draw_fall_detection(image, detections, kp_threshold=0.3, action_results=None
 
         box_color = (0, 0, 255) if is_fall else (0, 255, 0)
         kp_color = (0, 0, 255) if is_fall else (255, 0, 0)
-        det_dict = {'box': bbox, 'keypoints': keypoints}
-        result = draw_keypoints(
-            result, [det_dict],
+        result = _draw_skeleton(
+            result, bbox, keypoints,
             box_color=box_color,
             kp_color=kp_color,
-            confidence_threshold=kp_threshold,
+            kp_threshold=kp_threshold,
         )
 
         x1, y1, x2, y2 = map(int, bbox)
@@ -233,51 +260,28 @@ def main():
     print("按 'q' 键退出")
     print("=" * 60)
 
-    pose_model_name = Path(pose_config_path).stem
     pose_config_dir_abs = Path(pose_config_path).parent
     if not pose_config_dir_abs.is_dir():
         print(f"✗ 姿态配置目录不存在: {pose_config_dir_abs}")
         return
-    override_params = {}
 
     print(f"\n从 {pose_config_path} 加载姿态模型...")
-    try:
-        detector = create_model(
-            model_name=pose_model_name,
-            config_dir=pose_config_dir_abs,
-            **override_params
-        )
-        print("✓ 姿态模型加载成功!")
-        print(f"  模型类: {type(detector).__name__}")
-        if hasattr(detector, 'input_shape'):
-            print(f"  输入尺寸: {detector.input_shape}")
-    except Exception as e:
-        print(f"✗ 姿态模型加载失败: {e}")
-        print(f"\n提示: 请确保 {pose_config_path} 存在并包含 "
-              "class、model_path、default_params")
-        import traceback
-        traceback.print_exc()
-        return
+    pose_svc = VisionServiceNative.create(str(pose_config_path))
+    print("✓ 姿态模型加载成功!")
 
     stgcn_config_path = str(_resolve_path(
         str(app_config_dir / app_config["stgcn_model"]), project_root))
     stgcn_model_name = Path(stgcn_config_path).stem
-    stgcn_config_dir_abs = Path(stgcn_config_path).parent
-    stgcn_override = {}
     try:
-        action_model = create_model(
-            model_name=stgcn_model_name,
-            config_dir=stgcn_config_dir_abs,
-            **stgcn_override
-        )
-        keypoint_buffer = deque(maxlen=action_model.sequence_length)
+        stgcn_svc = VisionServiceNative.create(str(stgcn_config_path))
+        keypoint_buffer = deque(maxlen=STGCN_SEQUENCE_LENGTH)
         stgcn_infer_step = 0
         pred_class_hist = []   # 最近 smooth_window 次预测类别，用于平滑判跌倒
-        last_probs = np.zeros(len(getattr(action_model, 'class_names', [])), dtype=np.float32)
+        class_names = list(stgcn_svc.get_class_names() or [])
+        last_probs = np.zeros(len(class_names), dtype=np.float32)
         # fall_down_index is an application policy -> read from this app's own
         # config (fall_detection.yaml), aligned with the C++ app. Class names
-        # remain a model property (action_model.class_names).
-        class_names = getattr(action_model, 'class_names', None) or []
+        # remain a model property (stgcn_svc.get_class_names()).
         fall_down_class_index = int(app_config.get("fall_down_index", -1))
         if fall_down_class_index < 0:
             raise ValueError("fall_detection.yaml must define a valid fall_down_index")
@@ -290,7 +294,7 @@ def main():
         last_stgcn_result = {'is_fall': False, 'action_name': '—', 'fall_prob': 0.0}
         class_str = ", ".join(class_names) if class_names else "(未知)"
         print(f"✓ STGCN 动作识别已加载（config: {stgcn_model_name}.yaml，"
-              f"{action_model.sequence_length} 帧），每 {stgcn_wait_frames} 帧推理一次，"
+              f"{STGCN_SEQUENCE_LENGTH} 帧），每 {stgcn_wait_frames} 帧推理一次，"
               f"平滑窗口 {smooth_window}")
         print(f"  动作类别: {class_str}")
     except Exception as e:
@@ -340,9 +344,25 @@ def main():
             result = frame
             fall_count = 0
             try:
-                detections = detector.infer(frame)
-                if detections is not None and len(detections) > 0:
-                    formatted_detections = list(detections)
+                status, results = pose_svc.infer_image(frame)
+                if status != VisionServiceStatus.OK:
+                    print(f"✗ 推理失败: {pose_svc.last_error()}")
+                    result = frame
+                    cv2.imshow('Fall Detection', result)
+                    if (cv2.waitKey(delay_ms) & 0xFF) == ord('q'):
+                        break
+                    continue
+                # 将原生结果转换为本脚本使用的 dict 形式
+                formatted_detections = []
+                for r in results:
+                    kp_list = [(float(kp.x), float(kp.y), float(kp.visibility))
+                               for kp in r.keypoints]
+                    formatted_detections.append({
+                        'box': [float(r.x1), float(r.y1), float(r.x2), float(r.y2)],
+                        'keypoints': kp_list,
+                        'score': float(r.score),
+                    })
+                if formatted_detections:
                     h, w = frame.shape[:2]
 
                     # STGCN：对第一人维护 30 帧 buffer，满则推理并更新 last_stgcn_result
@@ -352,12 +372,15 @@ def main():
                     if len(kps) >= 17 and len(box) >= 4:
                         kps_norm = normalize_keypoints_for_stgcn(kps, w, h, bbox=box)
                         keypoint_buffer.append(kps_norm)
-                        if len(keypoint_buffer) == action_model.sequence_length:
+                        if len(keypoint_buffer) == STGCN_SEQUENCE_LENGTH:
                             stgcn_infer_step += 1
                             if stgcn_infer_step % max(1, stgcn_wait_frames) == 0:
                                 try:
                                     pts = keypoint_buffer_to_tsstg_pts(list(keypoint_buffer), (w, h))
-                                    probs = action_model.predict(pts, (w, h))
+                                    pts_1d = np.ascontiguousarray(pts.ravel(), dtype=np.float32)
+                                    st_seq, probs = stgcn_svc.infer_sequence(pts_1d, w, h)
+                                    if st_seq != VisionServiceStatus.OK:
+                                        raise RuntimeError(stgcn_svc.last_error())
                                     probs = np.asarray(probs)
                                     if probs.ndim >= 2:
                                         probs = probs[0]
@@ -376,9 +399,13 @@ def main():
                                         float(last_probs[fall_down_class_index])
                                         if last_probs.size > fall_down_class_index else 0.0
                                     )
+                                    action_name = (
+                                        class_names[pred_class]
+                                        if 0 <= pred_class < len(class_names) else str(pred_class)
+                                    )
                                     last_stgcn_result = {
                                         'is_fall': is_fall_smooth,
-                                        'action_name': action_model.get_class_name(pred_class),
+                                        'action_name': action_name,
                                         'fall_prob': fall_prob,
                                     }
                                 except Exception:

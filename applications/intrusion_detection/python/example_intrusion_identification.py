@@ -22,22 +22,21 @@ ROI 说明:
   这 3 个点视为连续顶点，脚本会自动推算第 4 点，生成封闭四边形(平行四边形)区域
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# 将 cv/src 加入路径（脚本在 applications/intrusion_detection/python/，parents[3]=cv）
-_cv_src = Path(__file__).resolve().parents[3] / "src"
-if str(_cv_src) not in sys.path:
-    sys.path.insert(0, str(_cv_src))
+import argparse
+import yaml
+import cv2
+import numpy as np
 
-import argparse  # noqa: E402
-import yaml  # noqa: E402
-import cv2  # noqa: E402
-import numpy as np  # noqa: E402
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-from core import create_model  # noqa: E402
-from common import load_labels  # noqa: E402
+
+def load_labels(label_file: str) -> List[str]:
+    """从标签文件读取类别名（每行一个）。"""
+    with open(label_file, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 Point = Tuple[int, int]
@@ -312,7 +311,6 @@ def main():
     tracker_config_path = str(_resolve_path(
         str(config_dir / app_config["tracker_model"]), extra_bases=[project_root]))
     tracker_config_dir_abs = Path(tracker_config_path).parent
-    tracker_model_name = Path(tracker_config_path).stem
     if not tracker_config_dir_abs.is_dir():
         print(f"✗ 追踪模型配置目录不存在: {tracker_config_dir_abs}")
         return
@@ -343,14 +341,21 @@ def main():
             print(f"视频路径解析: {args.video} -> {resolved}")
         args.video = str(resolved)
 
-    override_params: Dict = {}
-    if tracker_model_config.get("model_path"):
-        override_params["model_path"] = str(_resolve_path(
+    # --model-path CLI takes priority; fall back to yaml model_path
+    if args.model_path:
+        model_path_override = str(_resolve_path(args.model_path, extra_bases=[project_root]))
+    elif tracker_model_config.get("model_path"):
+        model_path_override = str(_resolve_path(
             str(tracker_model_config["model_path"]), extra_bases=[project_root]))
+    else:
+        model_path_override = ""
 
     print(f"\n从 {tracker_config_path} 加载 ByteTrack 模型中...")
-    tracker = create_model(model_name=tracker_model_name, config_dir=tracker_config_dir_abs, **override_params)
-    print(f"✓ 模型加载成功: {type(tracker).__name__}")
+    svc = VisionServiceNative.create(
+        str(tracker_config_path),
+        model_path_override=model_path_override,
+    )
+    print("✓ 模型加载成功")
 
     # Open input source
     if args.use_camera:
@@ -406,7 +411,14 @@ def main():
             frame_idx += 1
 
             # Track
-            results = tracker.track(frame)
+            status, results = svc.infer_image(
+                frame,
+                conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+            )
+            if status != VisionServiceStatus.OK:
+                print(f"✗ 推理失败: {svc.last_error()}")
+                break
 
             # Prepare visualization
             vis = frame.copy()
@@ -415,12 +427,10 @@ def main():
             # Draw tracking boxes + intrusion (only person)
             inside_ids = set()
             for r in results:
-                tlbr = r.get("tlbr", None)
-                track_id = int(r.get("track_id", -1))
-                score = float(r.get("score", 0.0))
-                class_id = int(r.get("class_id", 0))
-                if tlbr is None or len(tlbr) != 4:
-                    continue
+                tlbr = (r.x1, r.y1, r.x2, r.y2)
+                track_id = int(r.track_id)
+                score = float(r.score)
+                class_id = int(r.label)
 
                 # Only handle person; ignore other classes (no box, no counting)
                 if not _is_person(class_id, labels):

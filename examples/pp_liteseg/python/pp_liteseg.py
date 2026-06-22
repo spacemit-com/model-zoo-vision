@@ -8,16 +8,13 @@ PP-LiteSeg semantic segmentation example using CV Model Factory.
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 import yaml
 
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
@@ -60,17 +57,13 @@ def main():
     try:
         default_config = Path(__file__).parent.parent / "config" / "pp_liteseg.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent
         model_name = config_path.stem
 
-        factory = ModelFactory()
         print(f"创建 {model_name} 分割器...")
-        override_params = {}
-        if args.model_path:
-            p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(p if p.is_absolute() else (project_root / p).resolve())
-        segmentor = factory.create_model(model_name, config_dir=config_dir, **override_params)
+        segmentor = VisionServiceNative.create(
+            str(config_path), model_path_override=args.model_path or ""
+        )
 
         config = {}
         if config_path.exists():
@@ -91,13 +84,26 @@ def main():
             raise FileNotFoundError(f"无法加载图像: {image_path}")
 
         print("运行语义分割...")
-        pred_mask = segmentor.infer(image)
+        status, results = segmentor.infer_image(image)
+        if status != VisionServiceStatus.OK:
+            raise RuntimeError(segmentor.last_error())
 
-        num_classes = int(config.get("default_params", {}).get("num_classes", 19))
-        colors = build_color_map(num_classes)
-        color_mask = color_encode(pred_mask, colors)
-        color_mask_bgr = cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR)
-        result_image = cv2.addWeighted(image, 1.0 - args.alpha, color_mask_bgr, args.alpha, 0)
+        # Draw results using C++ side drawing API when available
+        if segmentor.supports_draw():
+            st, out = segmentor.draw(image)
+            if st != VisionServiceStatus.OK:
+                raise RuntimeError(segmentor.last_error())
+            result_image = out
+        else:
+            # Fallback: color-encode the predicted mask (r.mask, numpy HxW) ourselves
+            pred_mask = results[0].mask if results else None
+            if pred_mask is None:
+                raise RuntimeError("分割结果为空，未获得掩码")
+            num_classes = int(config.get("default_params", {}).get("num_classes", 19))
+            colors = build_color_map(num_classes)
+            color_mask = color_encode(pred_mask, colors)
+            color_mask_bgr = cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR)
+            result_image = cv2.addWeighted(image, 1.0 - args.alpha, color_mask_bgr, args.alpha, 0)
 
         cv2.imwrite(args.output, result_image)
         print(f"结果已保存到: {args.output}")

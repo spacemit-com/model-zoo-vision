@@ -42,10 +42,18 @@ applications/*/models/
 # Model dirs in src/deploy that have no example (ignore to avoid untracked deploy-only models)
 .cursorignore
 docs/design_roadmap.md
+docs/_rewrite_spec.md
 .cursor/
-bindings/
 ai_gateway.md
 vision_openapi/
 mpp/
 applications/rtsp_detection/
 applications/rtsp_tracking/
+
+# --- Python wheel 工程（src/python）构建产物 ---
+# 扩展与 libvision.so 由构建时拷入包目录，不入库（*.so 已被全局忽略）。
+src/python/build/
+src/python/.cmake-build/
+src/python/dist/
+src/python/spacemit_vision/*.so
+src/python/spacemit_vision.egg-info/

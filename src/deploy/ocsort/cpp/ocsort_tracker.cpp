@@ -91,7 +91,10 @@ OCSortTracker::OCSortTracker(const std::string& model_path,
 }
 
 void OCSortTracker::load_model() {
-    // Load detection model
+    if (model_loaded_) {
+        return;
+    }
+    // Load detection model (idempotent if detector was eager-loaded in ctor).
     detector_->load_model();
 
     // Initialize OC-SORT tracker after detector is loaded

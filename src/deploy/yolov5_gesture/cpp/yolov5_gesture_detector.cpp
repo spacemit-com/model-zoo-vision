@@ -60,6 +60,9 @@ YOLOv5GestureDetector::YOLOv5GestureDetector(const std::string& model_path,
 }
 
 void YOLOv5GestureDetector::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }

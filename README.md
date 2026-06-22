@@ -8,7 +8,7 @@
 | -------- | -------------------------------------------------------------------- |
 | 模型类型 | 检测、分类、分割、跟踪、人脸、姿态等，一套接口接入                   |
 | 后端     | ONNX Runtime（含 SpaceMIT 等定制运行时）                             |
-| 接口     | C++（`vision_service.h` 类接口，`cv::Mat` 入参）、Python（ModelFactory / 各模型类） |
+| 接口     | C++（`vision_service.h` 类接口，`cv::Mat` 入参）、Python（`spacemit_vision` wheel：`VisionServiceNative`） |
 | 可扩展   | 抽象基类与公共工具（预处理、NMS、绘图等）便于接入新模型             |
 
 ## 2. 验证模型
@@ -19,7 +19,7 @@
 
 - **编译环境**：CMake 3.10+，C++17；Python 3.12+（可选）。
 - **C++ 依赖**：OpenCV 4（与本工程 `CMakeLists.txt` 中 `find_package` 一致，含 core、imgproc、imgcodecs、highgui、dnn）、Eigen3、spacemit-ort、yaml-cpp。路径可通过 `OpenCV_DIR`、`SPACEMIT_DIR` 等在 CMake 中设置。
-- **Python 依赖**：NumPy、OpenCV 4.12+、ONNX Runtime、Pillow、scipy、pydantic、spacemit-ort。
+- **Python 依赖**（跑示例 / 使用 wheel）：NumPy、OpenCV；打 wheel 时需 `pybind11`、`build`（见下方命令）。
 
 ```bash
 # 系统依赖示例（Linux）
@@ -30,17 +30,21 @@ sudo apt-get install -y python3-spacemit-ort opencv-spacemit libeigen3-dev space
 
 **Python 安装（推荐先用于跑通示例）：**
 
-- **本仓库独立克隆**：在仓库根目录（含 `setup.py` 的目录）执行：
-  ```bash
-  pip install -e .
-  ```
-- **SpacemiT SDK 工程内**：若 Vision 组件位于 `components/model_zoo/vision`，则在该目录执行：
-  ```bash
-  cd components/model_zoo/vision
-  pip install -e . --break-system-packages \
-    -i https://mirrors.aliyun.com/pypi/simple/ \
-    --extra-index-url https://git.spacemit.com/api/v4/projects/33/packages/pypi/simple
-  ```
+Python 接口由 `spacemit_vision` wheel 提供（C++ `VisionService` 绑定）。
+`BUILD_PYTHON_BINDINGS` / `BUILD_PYTHON_WHEEL` 默认均为 ON，一条构建命令即可编译并打出 wheel
+（需在目标解释器上安装 `pybind11`，如开发板 python3.14）：
+
+```bash
+# 1) 一步到位：编译 C++ 核心 + Python 扩展 + 打包 wheel
+python3 -m pip install -U pybind11 build setuptools wheel
+cmake -S . -B build && cmake --build build -j        # whl 产出在 src/python/dist/
+
+# 2) 安装并自检
+python3 -m pip install --force-reinstall src/python/dist/*.whl
+python3 -c "from spacemit_vision import VisionServiceNative; print('ok')"
+```
+
+如需仅编扩展不打包：`-DBUILD_PYTHON_WHEEL=OFF`；纯 C++：`-DBUILD_PYTHON_BINDINGS=OFF`。
 
 ### 2.2. 下载模型
 
@@ -156,6 +160,9 @@ mm
 
 **Python 示例（以 YOLOv8 为例）：**
 
+> 运行 Python 示例前需先安装 `spacemit_vision` wheel（见 [2.1](#21-安装依赖)）；
+> 示例通过 `from spacemit_vision import VisionServiceNative` 调用 C++ 推理接口。
+
 ```bash
 cd components/model_zoo/vision/examples/yolov8/python
 python yolov8.py --config ../config/yolov8.yaml
@@ -174,6 +181,8 @@ yolov8 config/yolov8.yaml --image /path/to/image.jpg
 在 Vision 组件目录下完成编译后，运行下列示例。
 
 **Python 示例（以 YOLOv8 为例）：**
+
+> 同样需先安装 `spacemit_vision` wheel（见 [2.1](#21-安装依赖)）。
 
 ```bash
 cd examples/yolov8/python
@@ -243,11 +252,13 @@ target_link_libraries(your_app PRIVATE
 | `SPACEMIT_DIR` | SpaceMIT 运行时/头文件根目录 |
 | `BUILD_EXAMPLES` | 是否构建示例（默认 ON） |
 | `BUILD_TESTS` | 是否构建测试与 `vision_infer_benchmark`（默认 ON） |
+| `BUILD_PYTHON_BINDINGS` | 是否编译 Python 扩展 `_vision_service_cpp`（默认 ON；无 pybind11 时跳过） |
+| `BUILD_PYTHON_WHEEL` | 默认构建时是否打包 `spacemit_vision` wheel（默认 ON；依赖 `BUILD_PYTHON_BINDINGS` 与 `python -m build`） |
 
 ### 3.2. API 使用与 CMake 集成
 
 - **C++**：`#include "vision_service.h"`，包含路径指向本组件 `include/`（或安装后的 `include`）；链接 `vision` 及上表所列依赖库。接口为类 `VisionService`，创建与推理、绘制均使用 `cv::Mat`，无需 raw buffer 转换。
-- **Python**：通过 **ModelFactory** 从 yaml 创建模型，或直接实例化各模型类并传入 `model_path`、`conf_threshold` 等；各示例的 yaml 与参数见对应子目录 README。
+- **Python**：安装 `spacemit_vision` wheel 后，`from spacemit_vision import VisionServiceNative`，用 `VisionServiceNative.create(config_yaml)` 创建服务，再调 `infer_image` / `infer_embedding` / `infer_sequence` / `draw`；参数见各示例子目录 README。
 
 **C++ 调用示例（图像推理 + 绘制）：**
 
@@ -279,22 +290,45 @@ else
 // 使用 vis 显示或保存
 ```
 
+**Python 调用示例（图像推理 + 绘制）：**
+
+```python
+import cv2
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
+
+svc = VisionServiceNative.create("examples/yolov8/config/yolov8.yaml")
+img = cv2.imread("test.jpg")
+
+status, results = svc.infer_image(img)            # conf/iou 可选，<=0 用 yaml 默认
+if status != VisionServiceStatus.OK:
+    raise RuntimeError(svc.last_error())
+
+for r in results:                                  # 按任务分型读取字段
+    print(r.label, r.score, (r.x1, r.y1, r.x2, r.y2))
+    # 姿态: r.keypoints(.x/.y/.visibility)；分割: r.mask；分类: r.class_scores
+
+if svc.supports_draw():
+    st, vis = svc.draw(img)                        # 复用最近一次推理结果
+    if st == VisionServiceStatus.OK:
+        cv2.imwrite("result.jpg", vis)
+```
+
 **CMake 集成示例**：将本组件作为子目录添加后，对目标执行 `target_link_libraries(your_app PRIVATE vision ${OpenCV_LIBS} onnxruntime spacemit_ep yaml-cpp)`，并 `target_include_directories(your_app PRIVATE path/to/vision/include)`。
 
 ## 4. 常见问题
 
-1. **Python 导入报错 `No module named 'core'` 等**  
-   请在组件根目录执行 `pip install -e .`，或设置 `PYTHONPATH` 包含 `src`。
+1. **Python 导入报错 `No module named 'spacemit_vision'`**  
+   请按 [2.1](#21-安装依赖) 编译并安装 wheel：`cmake --build build -j` 后 `pip install src/python/dist/*.whl`。
 
 2. **模型文件未找到**  
    运行 `examples/<model>/scripts/download_models.sh` 将模型下载到 `~/.cache/models/vision/<type>/`，详见 2.2。
 
 3. **依赖版本**  
-   Python 以 `setup.py` 中 `install_requires` 为准；C++ 以 CMake 要求及 CI 环境为准；大版本升级若有 ABI/API 变更会在版本与发布中说明。
+   Python 以 `src/python/setup.py` 中 `install_requires` 为准；C++ 以 CMake 要求及 CI 环境为准；大版本升级若有 ABI/API 变更会在版本与发布中说明。
 
 ## 5. 版本与发布
 
-版本以本目录 `CMakeLists.txt` / `setup.py` 为准。
+版本以本目录 `CMakeLists.txt` / `src/python/setup.py` 为准。
 
 | 版本   | 说明 |
 | ------ | ---- |

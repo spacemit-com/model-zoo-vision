@@ -59,6 +59,9 @@ StgcnActionRecognizer::StgcnActionRecognizer(const std::string& model_path,
 }
 
 void StgcnActionRecognizer::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }

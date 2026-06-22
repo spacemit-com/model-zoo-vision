@@ -76,7 +76,10 @@ ByteTrackTracker::ByteTrackTracker(const std::string& model_path,
 }
 
 void ByteTrackTracker::load_model() {
-    // Load detection model
+    if (model_loaded_) {
+        return;
+    }
+    // Load detection model (idempotent if detector was eager-loaded in ctor).
     detector_->load_model();
 
     // Initialize tracker after detector is loaded

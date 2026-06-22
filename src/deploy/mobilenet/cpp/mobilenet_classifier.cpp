@@ -116,6 +116,9 @@ MobileNetV1Classifier::MobileNetV1Classifier(
 }
 
 void MobileNetV1Classifier::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }

@@ -14,25 +14,30 @@ camera 模式: YOLOv5-Face 检测 + ResNet50特征 + LSTM 动态情绪识别（1
   python example_emotion.py --use-camera --camera-id 1
 """
 
-import sys
+import argparse
+from collections import deque
 from pathlib import Path
 
-_cv_src = Path(__file__).resolve().parents[3] / "src"
-if str(_cv_src) not in sys.path:
-    sys.path.insert(0, str(_cv_src))
+import cv2
+import numpy as np
+import yaml
 
-import argparse  # noqa: E402
-from collections import deque  # noqa: E402
-import yaml  # noqa: E402
-import cv2  # noqa: E402
-import numpy as np  # noqa: E402
-
-from core import create_model  # noqa: E402
-from common import draw_detections, load_labels  # noqa: E402
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 _DEFAULT_EMOTION_LABELS = [
     "neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger",
 ]
+
+
+def load_labels(path: str) -> list:
+    """Read one class name per non-empty line."""
+    names = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                names.append(line)
+    return names
 
 
 def _load_emotion_labels(root: Path, cfg: dict) -> list:
@@ -72,14 +77,23 @@ def parse_args():
     return parser.parse_args()
 
 
-def _load_model(app_config: dict, key: str, config_dir: Path, root: Path):
-    """按 app_config[key] 指向的子 yaml 加载单个模型。"""
+def _create_service(app_config: dict, key: str, config_dir: Path, root: Path):
+    """按 app_config[key] 指向的子 yaml 创建一个 VisionServiceNative 实例。"""
     cfg_path = _resolve(str(config_dir / app_config[key]), root)
     cfg = _load_yaml(cfg_path)
-    overrides = {}
+    model_override = ""
     if cfg.get("model_path"):
-        overrides["model_path"] = str(_resolve(str(cfg["model_path"]), root))
-    return create_model(model_name=cfg_path.stem, config_dir=cfg_path.parent, **overrides)
+        model_override = str(_resolve(str(cfg["model_path"]), root))
+    svc = VisionServiceNative.create(str(cfg_path), model_path_override=model_override)
+    return svc
+
+
+def _draw_face_box(image, bbox, text, color):
+    x1, y1, x2, y2 = map(int, bbox[:4])
+    cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+    if text:
+        cv2.putText(image, text, (x1, max(y1 - 8, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
 
 def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, config_dir: Path,
@@ -99,48 +113,65 @@ def run_image(args, face_detector, emotion_model, root: Path, app_config: dict, 
         print(f"错误: 无法加载图片: {args.image}")
         return
 
-    face_detections, face_images = face_detector.infer(image)
-    print(f"检测到 {len(face_detections)} 个人脸")
+    # 人脸检测：返回带 bbox 的结果，由应用层裁剪人脸再做表情分类
+    status, faces = face_detector.infer_image(image)
+    if status != VisionServiceStatus.OK:
+        print(f"✗ 人脸检测失败: {face_detector.last_error()}")
+        return
+    print(f"检测到 {len(faces)} 个人脸")
 
-    # 过滤掉太小的人脸（不做表情识别，仅画灰框）
-    kept = [(d, fi) for d, fi in zip(face_detections, face_images)
-            if fi.size > 0 and _bbox_min_side(d["bbox"]) >= min_face_size]
-    skipped = [d for d, fi in zip(face_detections, face_images)
-               if fi.size > 0 and _bbox_min_side(d["bbox"]) < min_face_size]
-    if skipped:
-        print(f"  跳过 {len(skipped)} 个过小人脸 (< {min_face_size}px)")
+    h, w = image.shape[:2]
+    for r in faces:
+        bbox = (r.x1, r.y1, r.x2, r.y2)
+        conf = float(r.score)
+        min_side = _bbox_min_side(bbox)
+        if min_side < min_face_size:
+            # 过小人脸：仅画灰框，不做表情识别
+            x1, y1, x2, y2 = map(int, bbox)
+            cv2.rectangle(image, (x1, y1), (x2, y2), (128, 128, 128), 1)
+            continue
 
-    emotion_results = emotion_model.infer([fi for _, fi in kept]) if kept else []
+        x1 = max(0, int(r.x1))
+        y1 = max(0, int(r.y1))
+        x2 = min(w, int(r.x2))
+        y2 = min(h, int(r.y2))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        face_crop = np.ascontiguousarray(image[y1:y2, x1:x2], dtype=np.uint8)
 
-    detections = []
-    for (face_det, _), emo in zip(kept, emotion_results):
-        detections.append({
-            "bbox": face_det["bbox"],
-            "confidence": face_det["confidence"],
-            "emotion": int(emo["emotion"]),
-        })
-        idx = int(emo["emotion"])
+        # 表情分类：取 class_scores 的 argmax
+        st_e, emo_results = emotion_model.infer_image(face_crop)
+        if st_e != VisionServiceStatus.OK or not emo_results:
+            _draw_face_box(image, bbox, f"face {conf:.2f}", (0, 255, 255))
+            continue
+        scores = list(emo_results[0].class_scores)
+        if not scores:
+            _draw_face_box(image, bbox, f"face {conf:.2f}", (0, 255, 255))
+            continue
+        idx = int(np.argmax(scores))
         label = emotion_labels[idx] if 0 <= idx < len(emotion_labels) else str(idx)
-        print(f"  {label} (置信度 {face_det['confidence']:.3f})")
+        print(f"  {label} (置信度 {conf:.3f})")
+        _draw_face_box(image, bbox, f"{label} {conf:.2f}", (0, 255, 0))
 
-    # 灰框标注被跳过的小脸
-    for d in skipped:
-        bx = list(map(int, d["bbox"]))
-        cv2.rectangle(image, (bx[0], bx[1]), (bx[2], bx[3]), (128, 128, 128), 1)
-
-    result_image = draw_detections(
-        image,
-        [d["bbox"] for d in detections],
-        [d["emotion"] for d in detections],
-        [d["confidence"] for d in detections],
-        labels=emotion_labels,
-    )
-    cv2.imwrite(args.output, result_image)
+    cv2.imwrite(args.output, image)
     print(f"结果已保存: {args.output}")
 
 
-def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int,
+def run_camera(args, face_detector, backbone, emotion_lstm, emotion_labels, camera_id: int,
                min_face_size: int = 0):
+    """Dynamic (LSTM) emotion recognition over a camera stream.
+
+    Pipeline (orchestrated in Python against the wheel API):
+      frame -> YOLOv5-Face detect -> crop best face
+            -> ResNet50 backbone (feature_mode) 512-d embedding   [backbone.infer_embedding]
+            -> 10-frame feature window
+            -> LSTM over the flat (1,10,512) feature sequence      [emotion_lstm.infer_sequence]
+
+    The backbone service is created from emotion_features.yaml (EmotionRecognizer with
+    feature_mode=true, emits an Embedding result). The LSTM service is created from
+    emotion_lstm.yaml; its expected_sequence_size is 10*512, and the C++ sequence path
+    passes the flat float buffer straight to the model, so we feed the raveled window.
+    """
     SEQ_LEN = 10
     feat_buffer = deque(maxlen=SEQ_LEN)
 
@@ -159,45 +190,72 @@ def run_camera(args, face_detector, backbone, emotion_lstm, camera_id: int,
 
         frame_idx += 1
         vis = frame.copy()
+        h, w = frame.shape[:2]
 
         try:
-            detections, face_images = face_detector.infer(frame)
+            status, faces = face_detector.infer_image(frame)
+            if status != VisionServiceStatus.OK:
+                print(f"✗ 帧 {frame_idx} 人脸检测失败: {face_detector.last_error()}")
+                faces = []
+
             # 先按尺寸过滤，再在合格人脸里取置信度最高的一张：
             # 避免远处高分小脸抢占、导致漏识别近处大脸。
             eligible = [
-                (d, fi) for d, fi in zip(detections, face_images)
-                if fi.size > 0 and _bbox_min_side(d["bbox"]) >= min_face_size
+                r for r in faces
+                if _bbox_min_side((r.x1, r.y1, r.x2, r.y2)) >= min_face_size
             ]
-            best = max(eligible, key=lambda x: x[0]["confidence"], default=None)
+            best = max(eligible, key=lambda r: float(r.score), default=None)
 
             if best is None:
                 # 无合格人脸（无脸或全部过小）：清空滑窗，避免拼接出错误序列。
                 feat_buffer.clear()
-                # 若画面里有脸但都太小，画灰框提示
-                for d, fi in zip(detections, face_images):
-                    if fi.size > 0 and _bbox_min_side(d["bbox"]) < min_face_size:
-                        bx = list(map(int, d["bbox"]))
+                for r in faces:
+                    if _bbox_min_side((r.x1, r.y1, r.x2, r.y2)) < min_face_size:
+                        bx = list(map(int, (r.x1, r.y1, r.x2, r.y2)))
                         cv2.rectangle(vis, (bx[0], bx[1]), (bx[2], bx[3]), (128, 128, 128), 1)
             else:
-                det, face_img = best
-                x1, y1, x2, y2 = map(int, det["bbox"])
-                # backbone 提取 512 维特征，应用层维护 10 帧滑窗
-                feats = backbone.infer(face_img)[0]["features"]
-                feat_buffer.append(feats)
+                conf = float(best.score)
+                x1 = max(0, int(best.x1))
+                y1 = max(0, int(best.y1))
+                x2 = min(w, int(best.x2))
+                y2 = min(h, int(best.y2))
+                if x2 <= x1 or y2 <= y1:
+                    feat_buffer.clear()
+                    cv2.imshow("Dynamic Emotion Detection", vis)
+                    if (cv2.waitKey(1) & 0xFF) == ord("q"):
+                        break
+                    continue
+                face_crop = np.ascontiguousarray(frame[y1:y2, x1:x2], dtype=np.uint8)
 
-                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                if len(feat_buffer) < SEQ_LEN:
-                    text = f"face {det['confidence']:.2f} (buffering {len(feat_buffer)}/{SEQ_LEN})"
-                    color = (0, 255, 255)
+                # backbone 提取 512 维特征，应用层维护 10 帧滑窗
+                st_f, feats = backbone.infer_embedding(face_crop)
+                if st_f != VisionServiceStatus.OK or not feats:
+                    feat_buffer.clear()
+                    text = f"face {conf:.2f} (feature failed)"
+                    color = (0, 0, 255)
                 else:
-                    seq = np.stack(list(feat_buffer), axis=0)  # (10, 512)
-                    result = emotion_lstm.infer(seq)
-                    label = result["emotion_label"]
-                    conf = float(result["emotion_probs"].max())
-                    text = f"{label} {conf:.2f} | face {det['confidence']:.2f}"
-                    color = (0, 255, 0)
-                cv2.putText(vis, text, (x1, max(y1 - 8, 20)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+                    feat_buffer.append(np.asarray(feats, dtype=np.float32))
+                    cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    if len(feat_buffer) < SEQ_LEN:
+                        text = f"face {conf:.2f} (buffering {len(feat_buffer)}/{SEQ_LEN})"
+                        color = (0, 255, 255)
+                    else:
+                        seq = np.ascontiguousarray(
+                            np.stack(list(feat_buffer), axis=0).ravel(), dtype=np.float32
+                        )  # (10*512,) flat
+                        st_l, scores = emotion_lstm.infer_sequence(seq, w, h)
+                        if st_l != VisionServiceStatus.OK or not scores:
+                            text = f"face {conf:.2f} (lstm failed)"
+                            color = (0, 0, 255)
+                        else:
+                            scores = np.asarray(scores, dtype=np.float32)
+                            idx = int(np.argmax(scores))
+                            names = emotion_lstm.get_class_names() or emotion_labels
+                            label = names[idx] if 0 <= idx < len(names) else str(idx)
+                            text = f"{label} {float(scores[idx]):.2f} | face {conf:.2f}"
+                            color = (0, 255, 0)
+                    cv2.putText(vis, text, (x1, max(y1 - 8, 20)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
         except Exception as e:
             print(f"✗ 帧 {frame_idx} 推理失败: {e}")
 
@@ -233,21 +291,23 @@ def main():
     print("模式:", "camera (动态 LSTM)" if args.use_camera else "image (静态 ResNet50)")
     print("=" * 60)
 
-    face_detector = _load_model(app_config, "face_model", config_dir, root)
-    print(f"✓ 人脸检测器: {type(face_detector).__name__}")
+    face_detector = _create_service(app_config, "face_model", config_dir, root)
+    print("✓ 人脸检测器已创建")
 
     emotion_cfg_path = _resolve(str(config_dir / app_config["emotion_model"]), root)
     emotion_labels = _load_emotion_labels(root, _load_yaml(emotion_cfg_path))
 
     if args.use_camera:
-        backbone = _load_model(app_config, "feature_model", config_dir, root)
-        print(f"✓ 特征提取 backbone: {type(backbone).__name__}")
-        emotion_lstm = _load_model(app_config, "lstm_model", config_dir, root)
-        print(f"✓ 动态情绪 LSTM: {type(emotion_lstm).__name__}")
-        run_camera(args, face_detector, backbone, emotion_lstm, camera_id, min_face_size)
+        # 动态 LSTM 模式：backbone(特征) + LSTM(特征序列)，均通过 wheel 接口编排。
+        backbone = _create_service(app_config, "feature_model", config_dir, root)
+        print("✓ 特征提取 backbone 已创建")
+        emotion_lstm = _create_service(app_config, "lstm_model", config_dir, root)
+        print("✓ 动态情绪 LSTM 已创建")
+        run_camera(args, face_detector, backbone, emotion_lstm, emotion_labels,
+                   camera_id, min_face_size)
     else:
-        emotion_model = _load_model(app_config, "emotion_model", config_dir, root)
-        print(f"✓ 静态情绪模型: {type(emotion_model).__name__}")
+        emotion_model = _create_service(app_config, "emotion_model", config_dir, root)
+        print("✓ 静态情绪模型已创建")
         run_image(args, face_detector, emotion_model, root, app_config, config_dir,
                   emotion_labels, min_face_size)
 

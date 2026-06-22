@@ -12,19 +12,17 @@ Fire Detection Example (火焰检测示例)
 import sys
 from pathlib import Path
 
-# 将 cv/src 加入路径（脚本在 applications/fire_detection/python/，parents[3]=cv）
-_cv_src = Path(__file__).resolve().parents[3] / "src"
-if str(_cv_src) not in sys.path:
-    sys.path.insert(0, str(_cv_src))
+import argparse
+import yaml
+import cv2
 
-import argparse  # noqa: E402
-import yaml  # noqa: E402
-import cv2  # noqa: E402
-import numpy as np  # noqa: E402
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-from core import create_model  # noqa: E402
-from common import load_labels  # noqa: E402
-from common import draw_detections  # noqa: E402
+
+def load_labels(label_file: str):
+    """从标签文件读取类别名（每行一个），用于控制台打印。"""
+    with open(label_file, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 def parse_args():
@@ -112,7 +110,6 @@ def main():
 
     detector_model_path = model_config.get("model_path", "")
     detector_config_dir_abs = Path(detector_config_path).parent
-    detector_model_name = Path(detector_config_path).stem
     if not detector_config_dir_abs.is_dir():
         print(f"✗ 检测器配置目录不存在: {detector_config_dir_abs}")
         return 1
@@ -157,26 +154,34 @@ def main():
         print(f"图片: {args.image}")
         print("=" * 60)
         print(f"\n从 {detector_config_path} 加载 YOLOv8 检测器...")
-        detector = create_model(
-            model_name=detector_model_name,
-            config_dir=detector_config_dir_abs,
-            **override_params,
+        svc = VisionServiceNative.create(
+            str(detector_config_path),
+            model_path_override=override_params.get("model_path", ""),
         )
         print("✓ 检测器加载成功")
         image = cv2.imread(args.image)
         if image is None:
             print(f"错误: 无法读取图片 {args.image}")
             return 1
-        detections = detector.infer(image)
+        status, detections = svc.infer_image(image)
+        if status != VisionServiceStatus.OK:
+            print(f"✗ 推理失败: {svc.last_error()}")
+            return 1
         if detections:
-            boxes = np.array([d["bbox"] for d in detections])
-            classes = np.array([d["class_id"] for d in detections])
-            scores = np.array([d["confidence"] for d in detections])
-            result = draw_detections(image, boxes, classes, scores, labels)
+            for r in detections:
+                name = (labels[r.label] if labels and 0 <= r.label < len(labels)
+                        else f"Class {r.label}")
+                print(f"  {name}: {r.score:.2f} "
+                      f"[{r.x1:.0f},{r.y1:.0f},{r.x2:.0f},{r.y2:.0f}]")
             print(f"检测到 {len(detections)} 个目标")
         else:
-            result = image
             print("未检测到目标")
+        if svc.supports_draw():
+            st, result = svc.draw(image)
+            if st != VisionServiceStatus.OK:
+                result = image
+        else:
+            result = image
         cv2.imwrite(args.output, result)
         print(f"结果已保存: {args.output}")
         return 0
@@ -205,10 +210,9 @@ def main():
     print("按 'q' 退出")
     print("=" * 60)
     print(f"\n从 {detector_config_path} 加载 YOLOv8 检测器...")
-    detector = create_model(
-        model_name=detector_model_name,
-        config_dir=detector_config_dir_abs,
-        **override_params,
+    svc = VisionServiceNative.create(
+        str(detector_config_path),
+        model_path_override=override_params.get("model_path", ""),
     )
     print("✓ 检测器加载成功")
     frame_count = 0
@@ -220,12 +224,17 @@ def main():
                     print("视频结束")
                 break
             frame_count += 1
-            detections = detector.infer(frame)
+            status, detections = svc.infer_image(frame)
+            if status != VisionServiceStatus.OK:
+                print(f"✗ 推理失败: {svc.last_error()}")
+                break
             if detections:
-                boxes = np.array([d["bbox"] for d in detections])
-                classes = np.array([d["class_id"] for d in detections])
-                scores = np.array([d["confidence"] for d in detections])
-                display = draw_detections(frame, boxes, classes, scores, labels)
+                if svc.supports_draw():
+                    st, display = svc.draw(frame)
+                    if st != VisionServiceStatus.OK:
+                        display = frame.copy()
+                else:
+                    display = frame.copy()
             else:
                 display = frame.copy()
                 if args.use_camera and (frame_count <= 5 or frame_count % 30 == 0):

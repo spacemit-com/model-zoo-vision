@@ -4,29 +4,36 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Emotion recognition example using CV Model Factory.
+Emotion recognition example using spacemit_vision.
 
 运行方式：通过 --config 指定 yaml 路径
-→ ModelFactory.create_model(model_name, config_dir=config_dir) 创建模型
+→ VisionServiceNative.create(config_path) 创建模型
 → 从 yaml 读 test_image、label_file_path 等参数做推理。
 """
 
-import sys
 import argparse
 from pathlib import Path
 import cv2
 import numpy as np
 import yaml
 
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
-from common import load_labels
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
     p = Path(path_value).expanduser()
     return p if p.is_absolute() else (project_root / p).resolve()
+
+
+def load_labels(label_file: str) -> list:
+    """读取标签文件：每行一个类别名。"""
+    labels = []
+    with open(label_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                labels.append(line)
+    return labels
 
 
 def parse_args():
@@ -63,20 +70,18 @@ def main():
     try:
         default_config = Path(__file__).parent.parent / "config" / "emotion.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent
         model_name = config_path.stem
 
-        factory = ModelFactory()
         print(f"创建 {model_name} 情绪识别器...")
-        override_params = {}
+        model_path_override = ""
         if args.model_path:
             p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
+            model_path_override = str(
                 p if p.is_absolute() else (project_root / p).resolve()
             )
-        recognizer = factory.create_model(
-            model_name, config_dir=config_dir, **override_params
+        recognizer = VisionServiceNative.create(
+            str(config_path), model_path_override=model_path_override
         )
 
         # Load config from specified yaml
@@ -115,28 +120,21 @@ def main():
             ]
 
         print("运行情绪识别...")
-        results = recognizer.infer(image)
+        status, results = recognizer.infer_image(image)
+        if status != VisionServiceStatus.OK:
+            raise RuntimeError(recognizer.last_error())
 
         if not results:
             print("未得到情绪识别结果。")
             return 0
 
-        r = results[0]
+        scores = list(results[0].class_scores)
+        if not scores:
+            print("情绪识别结果的类别分数为空。")
+            return 0
 
-        # Parse result - prioritize the most common formats
-        if "emotion" in r:
-            emotion_class = int(r["emotion"])
-            emotion_score = r.get("confidence", 1.0)
-        elif "class_scores" in r:
-            scores = np.array(r["class_scores"])
-            emotion_class = int(np.argmax(scores))
-            emotion_score = float(scores[emotion_class])
-        elif "class_id" in r:
-            emotion_class = int(r["class_id"])
-            emotion_score = float(r.get("confidence", r.get("score", 1.0)))
-        else:
-            print("未知结果格式:", r)
-            return 1
+        emotion_class = int(np.argmax(scores))
+        emotion_score = float(scores[emotion_class])
 
         emotion_name = (
             labels[emotion_class]

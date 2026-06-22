@@ -14,13 +14,9 @@ import argparse
 from pathlib import Path
 import time
 import cv2
-import numpy as np
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
-from common.python.drawing import draw_detections
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
@@ -46,31 +42,18 @@ def main():
     args = parse_args()
     default_config = Path(__file__).parent.parent / "config" / "yolov5-face.yaml"
     config_path = Path(args.config) if args.config else default_config
-    config_dir = config_path.parent
     project_root = Path(__file__).parent.parent.parent.parent
     model_name = config_path.stem
 
-    try:
-        factory = ModelFactory()
-        print(f"创建 {model_name} 检测器...")
-        override_params = {}
-        if args.model_path:
-            p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
-                p if p.is_absolute() else (project_root / p).resolve()
-            )
-        if args.conf_threshold is not None:
-            override_params["conf_thres"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_thres"] = args.iou_threshold
-        detector = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params,
-        )
+    conf = args.conf_threshold if args.conf_threshold is not None else -1.0
+    iou = args.iou_threshold if args.iou_threshold is not None else -1.0
 
-        # 人脸检测只有一类
-        labels = ["face"]
+    try:
+        print(f"创建 {model_name} 检测器...")
+        svc = VisionServiceNative.create(
+            str(config_path),
+            model_path_override=args.model_path or "",
+        )
 
         if args.use_camera:
             cap = cv2.VideoCapture(args.camera_id)
@@ -85,23 +68,15 @@ def main():
                 if not ret:
                     break
                 frame_count += 1
-                detections, _ = detector.infer(frame)
-                boxes = []
-                classes = []
-                scores = []
-                for d in detections:
-                    x1, y1, x2, y2 = map(int, d["bbox"])
-                    boxes.append([x1, y1, x2, y2])
-                    classes.append(0)
-                    scores.append(d["confidence"])
-                if boxes:
-                    result_frame = draw_detections(
-                        frame,
-                        np.array(boxes),
-                        np.array(classes),
-                        np.array(scores),
-                        labels,
-                    )
+                status, detections = svc.infer_image(frame, conf=conf, iou=iou)
+                if status != VisionServiceStatus.OK:
+                    raise RuntimeError(svc.last_error())
+                if detections:
+                    if svc.supports_draw():
+                        st, out = svc.draw(frame)
+                        result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                    else:
+                        result_frame = frame.copy()
                     if frame_count <= 5 or frame_count % 30 == 0:
                         print(f"帧 {frame_count}: 检测到 {len(detections)} 张人脸")
                 else:
@@ -145,27 +120,24 @@ def main():
             return 1
 
         print(f"运行人脸检测: {image_path}")
-        detections, _ = detector.infer(image)
+        status, detections = svc.infer_image(image, conf=conf, iou=iou)
+        if status != VisionServiceStatus.OK:
+            raise RuntimeError(svc.last_error())
         print(f"检测到 {len(detections)} 张人脸")
 
-        boxes = []
-        classes = []
-        scores = []
-        for i, d in enumerate(detections):
-            x1, y1, x2, y2 = map(int, d["bbox"])
-            conf = d["confidence"]
-            print(f"  人脸 {i+1}: 置信度 {conf:.3f} 框 [{x1},{y1},{x2},{y2}]")
-            boxes.append([x1, y1, x2, y2])
-            classes.append(0)
-            scores.append(conf)
+        for i, r in enumerate(detections):
+            x1, y1, x2, y2 = int(r.x1), int(r.y1), int(r.x2), int(r.y2)
+            kp_info = ""
+            if r.keypoints:
+                kp_info = f" 关键点 {len(r.keypoints)} 个"
+            print(f"  人脸 {i+1}: 置信度 {r.score:.3f} 框 [{x1},{y1},{x2},{y2}]{kp_info}")
 
-        result_image = draw_detections(
-            image,
-            np.array(boxes) if boxes else np.zeros((0, 4)),
-            np.array(classes) if classes else np.array([], dtype=int),
-            np.array(scores) if scores else np.array([]),
-            labels,
-        )
+        # 绘制（人脸框 + 关键点由 C++ 侧统一绘制）
+        if svc.supports_draw():
+            st, out = svc.draw(image)
+            result_image = out if st == VisionServiceStatus.OK else image
+        else:
+            result_image = image
         cv2.imwrite(args.output, result_image)
         print(f"结果已保存: {args.output}")
         return 0

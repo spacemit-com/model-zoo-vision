@@ -72,6 +72,9 @@ PPLiteSeg::PPLiteSeg(const std::string& model_path,
 }
 
 void PPLiteSeg::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
 
     if (output_num_ >= 1) {

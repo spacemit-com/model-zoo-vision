@@ -16,11 +16,12 @@ import time
 import cv2
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-from core.python.vision_model_factory import ModelFactory
-from common import load_labels
+
+def load_labels(label_path):
+    with open(label_path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 def resolve_path(path_value, project_root):
@@ -57,33 +58,19 @@ def main():
     try:
         default_config = Path(__file__).parent.parent / "config" / "bytetrack.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
         model_name = config_path.stem
 
-        # Create model factory
-        factory = ModelFactory()
-
-        # Create ByteTrack tracker using factory
+        # Create ByteTrack tracker via VisionServiceNative
         print(f"创建 {model_name} 追踪器...")
-        override_params = {}
+        model_path_override = ""
         if args.model_path:
             p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
+            model_path_override = str(
                 p if p.is_absolute() else (project_root / p).resolve()
             )
-        if args.conf_threshold is not None:
-            override_params["conf_threshold"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_threshold"] = args.iou_threshold
-        if args.track_buffer is not None:
-            override_params["track_buffer"] = args.track_buffer
-        if args.frame_rate is not None:
-            override_params["frame_rate"] = args.frame_rate
-        tracker = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params
+        tracker = VisionServiceNative.create(
+            str(config_path), model_path_override=model_path_override
         )
 
         # Load labels and video path from specified yaml
@@ -154,12 +141,22 @@ def main():
 
             frame_count += 1
 
-            # Run tracking
-            tracks = tracker.track(frame)
+            # Run tracking (per-frame inference; track id in r.track_id)
+            status, tracks = tracker.infer_image(
+                frame,
+                conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+            )
+            if status != VisionServiceStatus.OK:
+                raise RuntimeError(tracker.last_error())
 
             if tracks:
-                # Draw tracking results
-                result_frame = tracker.draw_results(frame, tracks, labels)
+                # Draw tracking results using C++ side drawing API
+                if tracker.supports_draw():
+                    st, out = tracker.draw(frame)
+                    result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                else:
+                    result_frame = frame.copy()
             else:
                 result_frame = frame.copy()
                 if args.use_camera and (frame_count <= 5 or frame_count % 30 == 0):

@@ -70,6 +70,9 @@ YOLOv8PoseDetector::YOLOv8PoseDetector(const std::string& model_path,
 }
 
 void YOLOv8PoseDetector::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }

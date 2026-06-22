@@ -192,6 +192,12 @@ void BaseModel::ensure_model_loaded() {
 }
 
 void BaseModel::init_session(int num_threads, const std::string& provider) {
+    // Idempotent: composite wrappers (e.g. ByteTrack) may call load_model() on an
+    // eager-loaded sub-model; skip re-creating the ONNX session and re-acquiring EP cores.
+    if (session_) {
+        return;
+    }
+
     model_path_ = resolve_and_check_model_path(model_path_);
 
     Ort::SessionOptions session_options;

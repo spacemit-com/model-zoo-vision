@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 
 MODULE_ROOT = Path(__file__).resolve().parent.parent
-SRC = MODULE_ROOT / "src"
 PR_DIR = Path(__file__).resolve().parent / "pr"
 
-sys.path.insert(0, str(SRC))
+# Python interface is provided by the installed `spacemit_vision` wheel (the old
+# source-tree pure-Python packages under src/ were removed). Only the PR test
+# helpers dir is added to sys.path; the package itself must be pip-installed.
 sys.path.insert(0, str(PR_DIR))
 
 

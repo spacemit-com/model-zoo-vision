@@ -12,16 +12,12 @@ MobileNetV1 输出 1001 类（含 background），使用 deploy.mobilenet.Mobile
 运行方式：通过 --config 指定 yaml 路径（与 yolov8.py 一致）。
 """
 
-import sys
 import argparse
 from pathlib import Path
 import cv2
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
@@ -83,21 +79,16 @@ def main():
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
         model_name = config_path.stem
 
-        # Create model factory
-        factory = ModelFactory()
-
         # Create MobileNet classifier
         print(f"创建 {model_name} 分类器...")
-        override_params = {}
+        model_path_override = ""
         if args.model_path:
             p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
+            model_path_override = str(
                 p if p.is_absolute() else (project_root / p).resolve()
             )
-        classifier = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params,
+        svc = VisionServiceNative.create(
+            str(config_path), model_path_override=model_path_override
         )
 
         # Get model config from specified yaml (test_image, label_file_path)
@@ -131,9 +122,23 @@ def main():
             else:
                 print(f"警告: 未找到标签文件 {label_rel}")
 
-        # Run classification（ResNetClassifier 使用 predict_top_k，返回 [(class_name, score), ...]）
+        # Run classification (infer_image → class_scores → top-k)
         print("运行图像分类...")
-        predictions = classifier.predict_top_k(image, labels or [], k=args.top_k)
+        status, results = svc.infer_image(image)
+        if status != VisionServiceStatus.OK:
+            raise RuntimeError(svc.last_error())
+        if not results or not list(results[0].class_scores):
+            print("未得到分类结果或类别分数为空。")
+            return 0
+
+        scores = list(results[0].class_scores)
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[
+            : args.top_k
+        ]
+        predictions = [
+            (labels[i] if labels and i < len(labels) else f"Class {i}", scores[i])
+            for i in order
+        ]
 
         print(f"\nTop-{args.top_k} 预测结果:")
         for i, (class_name, confidence) in enumerate(predictions):

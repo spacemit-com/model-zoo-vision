@@ -310,6 +310,9 @@ YOLOv8Detector::YOLOv8Detector(const std::string& model_path,
 }
 
 void YOLOv8Detector::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     if (output_num_ >= 2) {
         Ort::TypeInfo score_type_info = session_->GetOutputTypeInfo(1);

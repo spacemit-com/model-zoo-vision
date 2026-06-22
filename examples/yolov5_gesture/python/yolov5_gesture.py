@@ -4,30 +4,28 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-YOLOv5 Detection Example using CV Model Factory
+YOLOv5 Detection Example using spacemit_vision
 
 运行方式：通过 --config 指定 yaml 路径（与 yolov8.py 一致）。
 """
 
-import sys
 import argparse
 from pathlib import Path
 import time
 import cv2
-import numpy as np
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
-from common.python.drawing import draw_detections
-from common import load_labels
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
     p = Path(path_value).expanduser()
     return p if p.is_absolute() else (project_root / p).resolve()
+
+
+def load_label_names(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 def parse_args():
@@ -54,32 +52,20 @@ def parse_args():
 def main():
     args = parse_args()
 
+    conf = args.conf_threshold if args.conf_threshold is not None else -1.0
+    iou = args.iou_threshold if args.iou_threshold is not None else -1.0
+
     try:
         default_config = Path(__file__).parent.parent / "config" / "yolov5_gesture.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
         model_name = config_path.stem
 
-        # Create model factory
-        factory = ModelFactory()
-
         # Create YOLOv5 detector（未传 --conf-threshold/--iou-threshold 时使用 yaml 中的 default_params）
         print(f"创建 {model_name} 检测器...")
-        override_params = {}
-        if args.model_path:
-            p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
-                p if p.is_absolute() else (project_root / p).resolve()
-            )
-        if args.conf_threshold is not None:
-            override_params["conf_threshold"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_threshold"] = args.iou_threshold
-        detector = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params
+        svc = VisionServiceNative.create(
+            str(config_path),
+            model_path_override=args.model_path or "",
         )
 
         # Get model config from specified yaml
@@ -94,7 +80,7 @@ def main():
         if label_file_path:
             label_file_path = resolve_path(label_file_path, project_root)
             try:
-                labels = load_labels(str(label_file_path))
+                labels = load_label_names(str(label_file_path))
                 print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")
             except Exception as e:
                 print(f"警告: 无法加载标签文件 {label_file_path}: {e}")
@@ -121,25 +107,17 @@ def main():
                 frame_count += 1
 
                 # Run detection
-                results = detector.infer(frame)
+                status, results = svc.infer_image(frame, conf=conf, iou=iou)
+                if status != VisionServiceStatus.OK:
+                    raise RuntimeError(svc.last_error())
 
-                # Process results for drawing
-                boxes = []
-                classes = []
-                scores = []
-
-                for result in results:
-                    x1, y1, x2, y2 = map(int, result["bbox"])
-                    confidence = result["confidence"]
-                    class_id = result["class_id"]
-
-                    boxes.append([x1, y1, x2, y2])
-                    classes.append(class_id)
-                    scores.append(confidence)
-
-                if boxes:
-                    # Draw results using unified drawing API
-                    result_frame = draw_detections(frame, np.array(boxes), np.array(classes), np.array(scores), labels)
+                if results:
+                    # Draw results using C++ side drawing
+                    if svc.supports_draw():
+                        st, out = svc.draw(frame)
+                        result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                    else:
+                        result_frame = frame.copy()
 
                     # Print detection info for first few frames
                     if frame_count <= 5 or frame_count % 30 == 0:
@@ -183,37 +161,32 @@ def main():
 
             print(f"图像尺寸: {image.shape}")
 
-            # Run detection（YOLOv5Detector 使用 infer，返回 List[Dict]）
+            # Run detection
             print("运行检测...")
-            results = detector.infer(image)
+            status, results = svc.infer_image(image, conf=conf, iou=iou)
+            if status != VisionServiceStatus.OK:
+                raise RuntimeError(svc.last_error())
 
             # Process results
             print(f"检测到 {len(results)} 个目标:")
 
-            # Convert results to standard format for drawing API
-            boxes = []
-            classes = []
-            scores = []
-
-            for i, result in enumerate(results):
-                x1, y1, x2, y2 = map(int, result["bbox"])
-                confidence = result["confidence"]
-                class_id = result["class_id"]
+            for i, r in enumerate(results):
+                x1, y1, x2, y2 = int(r.x1), int(r.y1), int(r.x2), int(r.y2)
 
                 # Get class name
-                if labels and class_id < len(labels):
-                    class_name = labels[class_id]
+                if labels and r.label < len(labels):
+                    class_name = labels[r.label]
                 else:
-                    class_name = f"Class_{class_id}"
+                    class_name = f"Class_{r.label}"
 
-                print(f"  {i+1}: {class_name} ({confidence:.3f}) at [{x1}, {y1}, {x2}, {y2}]")
+                print(f"  {i+1}: {class_name} ({r.score:.3f}) at [{x1}, {y1}, {x2}, {y2}]")
 
-                boxes.append([x1, y1, x2, y2])
-                classes.append(class_id)
-                scores.append(confidence)
-
-            # Draw results using unified drawing API
-            result_image = draw_detections(image, np.array(boxes), np.array(classes), np.array(scores), labels)
+            # Draw results using C++ side drawing
+            if svc.supports_draw():
+                st, out = svc.draw(image)
+                result_image = out if st == VisionServiceStatus.OK else image
+            else:
+                result_image = image
 
             # Save result
             cv2.imwrite(args.output, result_image)

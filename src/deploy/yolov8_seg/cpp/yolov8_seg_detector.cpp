@@ -90,6 +90,9 @@ YOLOv8SegDetector::YOLOv8SegDetector(const std::string& model_path,
 }
 
 void YOLOv8SegDetector::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
 
     if (output_num_ == 2) {

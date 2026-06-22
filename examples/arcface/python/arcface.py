@@ -9,16 +9,12 @@ ArcFace Face Recognition Example using CV Model Factory
 运行方式：通过 --config 指定 yaml 路径（与 yolov8.py 一致）。
 """
 
-import sys
 import argparse
 from pathlib import Path
 import cv2
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
@@ -47,7 +43,6 @@ def main():
     try:
         default_config = Path(__file__).parent.parent / "config" / "arcface.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
         model_name = config_path.stem
 
@@ -69,19 +64,16 @@ def main():
             image1_path = resolve_path(args.image1, project_root)
             image2_path = resolve_path(args.image2, project_root)
 
-        # Create model factory
-        factory = ModelFactory()
+        # Create face recognizer via VisionServiceNative
         print(f"创建 {model_name} 人脸识别器...")
-        override_params = {}
+        model_path_override = ""
         if args.model_path:
             p = Path(args.model_path).expanduser()
-            override_params["model_path"] = str(
+            model_path_override = str(
                 p if p.is_absolute() else (project_root / p).resolve()
             )
-        recognizer = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params,
+        recognizer = VisionServiceNative.create(
+            str(config_path), model_path_override=model_path_override
         )
 
         # Load images
@@ -104,9 +96,13 @@ def main():
         # For ArcFace, we assume the input images are already cropped faces
         # In a real application, you would first detect faces and then crop them
 
-        embedding1 = recognizer.infer(image1)
-        embedding2 = recognizer.infer(image2)
-        similarity = recognizer.compute_similarity(embedding1, embedding2)
+        st1, embedding1 = recognizer.infer_embedding(image1)
+        if st1 != VisionServiceStatus.OK:
+            raise RuntimeError(recognizer.last_error())
+        st2, embedding2 = recognizer.infer_embedding(image2)
+        if st2 != VisionServiceStatus.OK:
+            raise RuntimeError(recognizer.last_error())
+        similarity = VisionServiceNative.embedding_similarity(embedding1, embedding2)
 
         print(f"相似度: {similarity:.4f}")
         if similarity >= args.threshold:

@@ -9,19 +9,18 @@ YOLOv8 Instance Segmentation Example using CV Model Factory
 This example demonstrates how to use YOLOv8 instance segmentation through the CV model factory.
 """
 
-import sys
 import argparse
 from pathlib import Path
 import time
 import cv2
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-from core.python.vision_model_factory import ModelFactory
-from common.python.drawing import draw_segmentation
-from common import load_labels
+
+def load_labels(label_path):
+    with open(label_path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 def resolve_path(path_value, project_root):
@@ -59,26 +58,13 @@ def main():
         # Config 位于 examples/yolov8_seg/config，资源路径相对 model_zoo/cv
         default_config = Path(__file__).parent.parent / "config" / "yolov8_seg.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
-
-        # Create model factory
-        factory = ModelFactory()
 
         # Create YOLOv8 segmentation model
         model_name = config_path.stem
         print(f"创建 {model_name} 实例分割器...")
-        override_params = {}
-        if args.conf_threshold is not None:
-            override_params["conf_threshold"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_threshold"] = args.iou_threshold
-        if args.model_path is not None:
-            override_params["model_path"] = args.model_path
-        segmentor = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params
+        segmentor = VisionServiceNative.create(
+            str(config_path), model_path_override=args.model_path or ""
         )
 
         # Get model config from local yaml
@@ -121,28 +107,25 @@ def main():
                 frame_count += 1
 
                 # Run segmentation
-                detections, masks = segmentor.infer(frame)
+                status, results = segmentor.infer_image(
+                    frame,
+                    conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                    iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+                )
+                if status != VisionServiceStatus.OK:
+                    raise RuntimeError(segmentor.last_error())
 
-                # Process results for drawing
-                detections_for_draw = []
-                for result in detections:
-                    x1, y1, x2, y2 = map(int, result["bbox"])
-                    confidence = result["confidence"]
-                    class_id = result["class_id"]
-
-                    detections_for_draw.append({
-                        'bbox': [x1, y1, x2, y2],
-                        'class_id': class_id,
-                        'confidence': confidence
-                    })
-
-                if detections_for_draw:
-                    # Draw results
-                    result_frame = draw_segmentation(frame, detections_for_draw, masks, labels)
+                if results:
+                    # Draw results using C++ side drawing API
+                    if segmentor.supports_draw():
+                        st, out = segmentor.draw(frame)
+                        result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                    else:
+                        result_frame = frame.copy()
 
                     # Print detection info for first few frames
                     if frame_count <= 5 or frame_count % 30 == 0:
-                        print(f"帧 {frame_count}: 检测到 {len(detections)} 个实例")
+                        print(f"帧 {frame_count}: 检测到 {len(results)} 个实例")
                 else:
                     result_frame = frame.copy()
                     if frame_count <= 5 or frame_count % 30 == 0:
@@ -182,19 +165,23 @@ def main():
 
             print(f"图像尺寸: {image.shape}")
 
-            # Run segmentation（infer 返回 (detections, masks) 元组，masks 为 [N,H,W]）
+            # Run segmentation（infer_image 返回 (status, results)，每个 result 的 mask 为 numpy HxW 或 None）
             print("运行实例分割...")
-            detections, masks = segmentor.infer(image)
+            status, results = segmentor.infer_image(
+                image,
+                conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+            )
+            if status != VisionServiceStatus.OK:
+                raise RuntimeError(segmentor.last_error())
 
             # Process results
-            print(f"检测到 {len(detections)} 个实例:")
+            print(f"检测到 {len(results)} 个实例:")
 
-            # Convert to format for drawing API
-            detections_for_draw = []
-            for i, result in enumerate(detections):
-                x1, y1, x2, y2 = map(int, result["bbox"])
-                confidence = result["confidence"]
-                class_id = result["class_id"]
+            for i, r in enumerate(results):
+                x1, y1, x2, y2 = int(r.x1), int(r.y1), int(r.x2), int(r.y2)
+                confidence = r.score
+                class_id = r.label
 
                 if labels and class_id < len(labels):
                     class_name = labels[class_id]
@@ -202,17 +189,15 @@ def main():
                     class_name = f"Class_{class_id}"
 
                 print(f"  {i+1}: {class_name} ({confidence:.3f}) at [{x1}, {y1}, {x2}, {y2}]")
-                if masks is not None and i < len(masks):
-                    print(f"    掩码尺寸: {masks[i].shape}")
+                if r.mask is not None:
+                    print(f"    掩码尺寸: {r.mask.shape}")
 
-                detections_for_draw.append({
-                    'bbox': [x1, y1, x2, y2],
-                    'class_id': class_id,
-                    'confidence': confidence
-                })
-
-            # Draw results（masks 为 [N,H,W] 或 None）
-            result_image = draw_segmentation(image, detections_for_draw, masks, labels)
+            # Draw results using C++ side drawing API
+            if segmentor.supports_draw():
+                st, out = segmentor.draw(image)
+                result_image = out if st == VisionServiceStatus.OK else image
+            else:
+                result_image = image
 
             # Save result
             cv2.imwrite(args.output, result_image)

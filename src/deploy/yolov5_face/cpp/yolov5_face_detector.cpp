@@ -60,6 +60,9 @@ YOLOv5FaceDetector::YOLOv5FaceDetector(const std::string& model_path,
 }
 
 void YOLOv5FaceDetector::load_model() {
+    if (model_loaded_) {
+        return;
+    }
     init_session(num_threads_, provider_);
     model_loaded_ = true;
 }

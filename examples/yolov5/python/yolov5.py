@@ -4,10 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-YOLOv5 Detection Example using CV Model Factory
+YOLOv5 Detection Example using spacemit_vision
 
 运行方式：通过 --config 指定 yaml 路径
-→ ModelFactory.create_model(model_name, config_dir=config_dir) 创建模型
+→ VisionServiceNative.create(config_path) 创建模型
 → 从 yaml 读 test_image、label_file_path 等参数做推理。
 """
 
@@ -15,16 +15,15 @@ import sys
 import argparse
 from pathlib import Path
 import cv2
-import numpy as np
 import yaml
 import time
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-from core.python.vision_model_factory import ModelFactory
-from common.python.drawing import draw_detections
-from common import load_labels
+
+def load_label_names(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
 
 
 def parse_args():
@@ -51,28 +50,21 @@ def parse_args():
 def main():
     args = parse_args()
 
+    conf = args.conf_threshold if args.conf_threshold is not None else -1.0
+    iou = args.iou_threshold if args.iou_threshold is not None else -1.0
+
     try:
         # 本 example 的 config 目录；yaml 中路径相对 model_zoo/cv
         default_config = Path(__file__).parent.parent / "config" / "yolov5.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent
 
-        factory = ModelFactory()
         model_name = config_path.stem
         # 根据 config yaml 创建模型
         print(f"创建 {model_name} 检测器...")
-        override_params = {}
-        if args.conf_threshold is not None:
-            override_params["conf_threshold"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_threshold"] = args.iou_threshold
-        if args.model_path:
-            override_params["model_path"] = args.model_path
-        detector = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params
+        svc = VisionServiceNative.create(
+            str(config_path),
+            model_path_override=args.model_path or "",
         )
 
         # Load labels if available
@@ -91,7 +83,7 @@ def main():
                     if not Path(label_file_path).is_absolute():
                         label_file_path = project_root / label_file_path
                     try:
-                        labels = load_labels(str(label_file_path))
+                        labels = load_label_names(str(label_file_path))
                         print(f"加载标签文件: {label_file_path} ({len(labels)} 个标签)")
                     except Exception as e:
                         print(f"警告: 无法加载标签文件 {label_file_path}: {e}")
@@ -129,14 +121,17 @@ def main():
                 frame_count += 1
 
                 # Run detection
-                detections = detector.infer(frame)
+                status, detections = svc.infer_image(frame, conf=conf, iou=iou)
+                if status != VisionServiceStatus.OK:
+                    raise RuntimeError(svc.last_error())
 
                 if detections:
-                    # Draw results using unified drawing API
-                    boxes = np.array([det['bbox'] for det in detections])
-                    classes = np.array([det['class_id'] for det in detections])
-                    scores = np.array([det['confidence'] for det in detections])
-                    result_frame = draw_detections(frame, boxes, classes, scores, labels)
+                    # Draw results using C++ side drawing
+                    if svc.supports_draw():
+                        st, out = svc.draw(frame)
+                        result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                    else:
+                        result_frame = frame.copy()
 
                     # Print detection info for first few frames
                     if frame_count <= 5 or frame_count % 30 == 0:
@@ -178,25 +173,27 @@ def main():
                 raise ValueError(f"无法加载图像: {image_path}")
 
             print("运行检测...")
-            detections = detector.infer(image)
+            status, detections = svc.infer_image(image, conf=conf, iou=iou)
+            if status != VisionServiceStatus.OK:
+                raise RuntimeError(svc.last_error())
 
             if detections:
                 print(f"检测到 {len(detections)} 个目标:")
-                for i, det in enumerate(detections):
+                for r in detections:
                     class_name = (
-                        labels[det['class_id']]
-                        if labels and det['class_id'] < len(labels)
-                        else f"Class {det['class_id']}"
+                        labels[r.label]
+                        if labels and r.label < len(labels)
+                        else f"Class {r.label}"
                     )
-                    bbox = det['bbox']
-                    print(f"  {class_name} (Class {det['class_id']}), Score: {det['confidence']:.6f}, "
-                          f"Box: [{bbox[0]:.3f}, {bbox[1]:.3f}, {bbox[2]:.3f}, {bbox[3]:.3f}]")
+                    print(f"  {class_name} (Class {r.label}), Score: {r.score:.6f}, "
+                          f"Box: [{r.x1:.3f}, {r.y1:.3f}, {r.x2:.3f}, {r.y2:.3f}]")
 
-                # Draw results
-                boxes = np.array([det['bbox'] for det in detections])
-                classes = np.array([det['class_id'] for det in detections])
-                scores = np.array([det['confidence'] for det in detections])
-                result_image = draw_detections(image, boxes, classes, scores, labels)
+                # Draw results using C++ side drawing
+                if svc.supports_draw():
+                    st, out = svc.draw(image)
+                    result_image = out if st == VisionServiceStatus.OK else image
+                else:
+                    result_image = image
 
                 # Save result
                 cv2.imwrite(args.output, result_image)

@@ -8,22 +8,17 @@ YOLOv8 Pose Estimation Example using CV Model Factory
 
 运行方式（与其它 examples 一致）：
   1. 通过 --config 指定 yaml 路径
-  2. 通过 ModelFactory.create_model(model_name, config_dir=config_dir) 创建模型
+  2. 通过 VisionServiceNative.create(config_path) 创建模型
   3. 从 yaml 读取参数（test_image 等）进行推理
 """
 
-import sys
 import argparse
 from pathlib import Path
 import time
 import cv2
 import yaml
 
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "src"))
-
-from core.python.vision_model_factory import ModelFactory
-from common.python.drawing import draw_keypoints
+from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
 
 def resolve_path(path_value, project_root):
@@ -59,24 +54,13 @@ def main():
         # 1) 本 example 的 config 目录；资源路径（test_image 等）相对 model_zoo/cv
         default_config = Path(__file__).parent.parent / "config" / "yolov8_pose.yaml"
         config_path = Path(args.config) if args.config else default_config
-        config_dir = config_path.parent
         project_root = Path(__file__).parent.parent.parent.parent  # model_zoo/cv
 
-        factory = ModelFactory()
         model_name = config_path.stem
         # 2) 根据 yaml 创建模型
         print(f"创建 {model_name} 姿态估计器...")
-        override_params = {}
-        if args.conf_threshold is not None:
-            override_params["conf_threshold"] = args.conf_threshold
-        if args.iou_threshold is not None:
-            override_params["iou_threshold"] = args.iou_threshold
-        if args.model_path:
-            override_params["model_path"] = args.model_path
-        estimator = factory.create_model(
-            model_name,
-            config_dir=config_dir,
-            **override_params
+        estimator = VisionServiceNative.create(
+            str(config_path), model_path_override=args.model_path or ""
         )
 
         # 3) 从同一 yaml 读取推理参数（test_image 等）
@@ -107,23 +91,21 @@ def main():
                 frame_count += 1
 
                 # Run pose estimation
-                results = estimator.infer(frame)
+                status, results = estimator.infer_image(
+                    frame,
+                    conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                    iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+                )
+                if status != VisionServiceStatus.OK:
+                    raise RuntimeError(estimator.last_error())
 
-                # Process results for drawing
-                detections = []
-                for result in results:
-                    if "box" in result:
-                        x1, y1, x2, y2 = map(int, result["box"])
-                        keypoints = result.get("keypoints", [])
-
-                        detections.append({
-                            'box': [x1, y1, x2, y2],
-                            'keypoints': keypoints
-                        })
-
-                if detections:
-                    # Draw results using unified drawing API
-                    result_frame = draw_keypoints(frame, detections)
+                if results:
+                    # Draw results using C++ side drawing API
+                    if estimator.supports_draw():
+                        st, out = estimator.draw(frame)
+                        result_frame = out if st == VisionServiceStatus.OK else frame.copy()
+                    else:
+                        result_frame = frame.copy()
 
                     # Print detection info for first few frames
                     if frame_count <= 5 or frame_count % 30 == 0:
@@ -167,39 +149,39 @@ def main():
 
             print(f"图像尺寸: {image.shape}")
 
-            # Run pose estimation（YOLOv8PoseDetector 使用 infer，返回 List[Dict] 含 box/score/keypoints）
+            # Run pose estimation
             print("运行姿态估计...")
-            results = estimator.infer(image)
+            status, results = estimator.infer_image(
+                image,
+                conf=args.conf_threshold if args.conf_threshold is not None else -1.0,
+                iou=args.iou_threshold if args.iou_threshold is not None else -1.0,
+            )
+            if status != VisionServiceStatus.OK:
+                raise RuntimeError(estimator.last_error())
 
             # Process results
             print(f"检测到 {len(results)} 个人:")
 
-            # Convert results to standard format for drawing API
-            detections = []
-            for i, result in enumerate(results):
-                # Get person bounding box（infer 返回 box, score, keypoints）
-                if "box" in result:
-                    x1, y1, x2, y2 = map(int, result["box"])
-                    confidence = result.get("score", 0.0)
+            for i, r in enumerate(results):
+                x1, y1, x2, y2 = int(r.x1), int(r.y1), int(r.x2), int(r.y2)
+                confidence = r.score
 
-                    print(f"  人 {i+1}: 置信度 {confidence:.3f} at [{x1}, {y1}, {x2}, {y2}]")
+                print(f"  人 {i+1}: 置信度 {confidence:.3f} at [{x1}, {y1}, {x2}, {y2}]")
 
-                    # Get keypoints
-                    keypoints = result.get("keypoints", [])
-                    print(f"    关键点数量: {len(keypoints)}")
+                # Get keypoints (each has .x .y .visibility)
+                keypoints = r.keypoints
+                print(f"    关键点数量: {len(keypoints)}")
 
-                    # Count visible keypoints
-                    visible_count = sum(1 for kpt in keypoints if len(kpt) > 2 and kpt[2] > 0.5)
-                    print(f"    可见关键点: {visible_count}/{len(keypoints)}")
+                # Count visible keypoints
+                visible_count = sum(1 for kpt in keypoints if kpt.visibility > 0.5)
+                print(f"    可见关键点: {visible_count}/{len(keypoints)}")
 
-                    # Add to detections list in standard format
-                    detections.append({
-                        'box': [x1, y1, x2, y2],
-                        'keypoints': keypoints
-                    })
-
-            # Draw results using unified drawing API
-            result_image = draw_keypoints(image, detections)
+            # Draw results using C++ side drawing API
+            if estimator.supports_draw():
+                st, out = estimator.draw(image)
+                result_image = out if st == VisionServiceStatus.OK else image
+            else:
+                result_image = image
 
             # Save result
             cv2.imwrite(args.output, result_image)

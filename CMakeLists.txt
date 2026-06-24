@@ -34,6 +34,7 @@ option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings (_vision_service_cpp) for the spacemit_vision wheel" ON)
 option(BUILD_PYTHON_WHEEL "Also build the spacemit_vision wheel as part of the default build (needs python -m build)" ON)
+option(VISION_WITH_MPP "Enable MPP camera capture backend (UVC/VI) in examples" OFF)
 
 # ============================================================================
 # Dependencies Configuration
@@ -72,12 +73,36 @@ else()
 endif()
 
 # Library Dependencies
-set(LIBS 
-    ${OpenCV_LIBS} 
-    onnxruntime 
-    spacemit_ep     
+set(LIBS
+    ${OpenCV_LIBS}
+    onnxruntime
+    spacemit_ep
     yaml-cpp
 )
+
+if(VISION_WITH_MPP)
+    if(NOT DEFINED STAGING_DIR)
+        set(STAGING_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../output/staging")
+    endif()
+    set(VISION_MPP_LIB "${STAGING_DIR}/lib/libmpp.so")
+    if(NOT EXISTS "${VISION_MPP_LIB}")
+        message(FATAL_ERROR
+            "VISION_WITH_MPP=ON but ${VISION_MPP_LIB} not found. "
+            "Build MPP first or pass -DSTAGING_DIR=<output/staging>.")
+    endif()
+    set(VISION_MPP_RPATH "${STAGING_DIR}/lib")
+    set(VISION_MPP_INCLUDE_DIRS
+        "${STAGING_DIR}/include"
+        "${STAGING_DIR}/include/sys"
+        "${STAGING_DIR}/include/uvc"
+        "${STAGING_DIR}/include/vdec"
+        "${STAGING_DIR}/include/v2d"
+        "${STAGING_DIR}/include/vi"
+    )
+    message(STATUS "Vision MPP enabled (staging: ${STAGING_DIR})")
+else()
+    message(STATUS "Vision MPP disabled (pass -DVISION_WITH_MPP=ON to enable)")
+endif()
 
 # ============================================================================
 # Source Files
@@ -184,6 +209,20 @@ target_include_directories(vision PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
+
+if(VISION_WITH_MPP)
+    target_compile_definitions(vision PRIVATE
+        VISION_HAS_MPP=1
+        VISION_MPP_STAGING_LIB="${VISION_MPP_RPATH}"
+    )
+    target_include_directories(vision PRIVATE ${VISION_MPP_INCLUDE_DIRS})
+    target_link_libraries(vision
+        "${VISION_MPP_LIB}"
+        ${CMAKE_DL_LIBS}
+    )
+    set_property(TARGET vision APPEND PROPERTY BUILD_RPATH "${VISION_MPP_RPATH}")
+    set_property(TARGET vision APPEND PROPERTY INSTALL_RPATH "${VISION_MPP_RPATH}")
+endif()
 
 # ============================================================================
 # Python Bindings (pybind11 extension: _vision_service_cpp)

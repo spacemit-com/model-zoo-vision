@@ -13,12 +13,18 @@ function(add_model_example example_name deploy_dir)
         add_executable(${example_name} ${example_name}/cpp/${example_name}.cpp)
         link_vision_with_registration(${example_name})
         target_link_libraries(${example_name} PRIVATE ${LIBS})
-        
-        # Examples must only depend on the public API headers under include/.
+
         target_include_directories(${example_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src/common/cpp
         )
-        
+
+        if(VISION_WITH_MPP)
+            target_compile_definitions(${example_name} PRIVATE VISION_HAS_MPP=1)
+            set_property(TARGET ${example_name} APPEND PROPERTY BUILD_RPATH "${VISION_MPP_RPATH}")
+            set_property(TARGET ${example_name} APPEND PROPERTY INSTALL_RPATH "${VISION_MPP_RPATH}")
+        endif()
+
         # Add to install list
         set(EXAMPLE_TARGETS ${EXAMPLE_TARGETS} ${example_name} PARENT_SCOPE)
     endif()

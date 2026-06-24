@@ -13,6 +13,7 @@
 #include <opencv2/opencv.hpp>  // NOLINT(build/include_order)
 
 #include "vision_service.h"  // NOLINT(build/include_order)
+#include "mpp_example_helpers.h"  // NOLINT(build/include_order)
 
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " <config_yaml> [options]\n"
@@ -21,6 +22,7 @@ void print_usage(const char* program_name) {
                 << "  --video <path>        Input video path (overrides config)\n"
                 << "  --use-camera          Use camera input instead of video file\n"
                 << "  --camera-id <i>       Camera device ID (default: 0)\n"
+                << vision_mpp::MppUsage()
                 << "  --help                Show this help message\n"
                 << "\nDisplay: Real-time. Press 'q' to quit.\n"
                 << "Example: " << program_name
@@ -77,19 +79,41 @@ int main(int argc, char* argv[]) {
     }
 
     cv::VideoCapture cap;
+    vision_mpp::MppFrameSourceConfig src_cfg;
+    std::unique_ptr<vision_mpp::MppFrameSource> mpp_cap;
+    bool use_mpp = false;
+    int fps = 0;
     if (use_camera) {
-        cap.open(camera_id);
-        std::cout << "Using camera " << camera_id << "..." << std::endl;
+        use_mpp = vision_mpp::ParseMppArgs(argc, argv, camera_id, &src_cfg);
+        if (use_mpp) {
+            std::cout << "Using camera " << camera_id << " (MPP backend)..." << std::endl;
+            mpp_cap = std::make_unique<vision_mpp::MppFrameSource>(src_cfg);
+            if (!mpp_cap->open()) {
+                std::cerr << "Error: Could not open MPP camera" << std::endl;
+                return 1;
+            }
+        } else {
+            std::cout << "Using camera " << camera_id << "..." << std::endl;
+            cap.open(camera_id);
+            if (!cap.isOpened()) {
+                std::cerr << "Error: Could not open camera" << std::endl;
+                return 1;
+            }
+        }
     } else {
         cap.open(video_path);
         std::cout << "Opening video: " << video_path << std::endl;
-    }
-    if (!cap.isOpened()) {
-        std::cerr << "Error: Could not open " << (use_camera ? "camera" : "video") << std::endl;
-        return 1;
+        if (!cap.isOpened()) {
+            std::cerr << "Error: Could not open video" << std::endl;
+            return 1;
+        }
+        fps = static_cast<int>(cap.get(cv::CAP_PROP_FPS));
     }
 
-    int fps = static_cast<int>(cap.get(cv::CAP_PROP_FPS));
+    auto read_frame = [&](cv::Mat* f) -> bool {
+        return use_mpp ? mpp_cap->read(f) : cap.read(*f);
+    };
+
     int delay_ms = (fps > 0) ? std::max(1, 1000 / fps) : 33;
     std::cout << "Real-time display. Press 'q' to quit." << std::endl;
 
@@ -97,7 +121,7 @@ int main(int argc, char* argv[]) {
     int frame_count = 0;
     double t_prev = use_camera ? (static_cast<double>(cv::getTickCount()) / cv::getTickFrequency()) : 0.0;
     double current_fps = 0.0;
-    while (cap.read(frame)) {
+    while (read_frame(&frame)) {
         frame_count++;
         VisionServiceResponse response;
         VisionServiceStatus ret = service->Infer(frame, &response);

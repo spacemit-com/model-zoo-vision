@@ -10,7 +10,6 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
-#include <iostream>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -550,22 +549,24 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
     int proto_size = mask_h * mask_w;
     int num_masks = static_cast<int>(mask_coeffs.size());
 
-    // Manual matmul: [num_masks, mask_dim] x [mask_dim, proto_size] = [num_masks, proto_size]
-    // Outer loop over k (channels) for cache-friendly sequential reads of proto rows.
-    // ~7x faster than Eigen GEMM on RISC-V which lacks SIMD optimizations.
+    // Mask assembly is a GEMM: raw_masks[num_masks, proto_size] =
+    //   mask_coeffs[num_masks, mask_dim] * protos[mask_dim, proto_size].
+    // Expressed via Eigen; EIGEN_USE_BLAS (CMake) routes GEMM to OpenBLAS.
     std::vector<float> raw_masks(static_cast<size_t>(num_masks) * proto_size, 0.0f);
-    for (int k = 0; k < mask_dim; ++k) {
-        const float* proto_row = protos + k * proto_size;
-        for (int i = 0; i < num_masks; ++i) {
-            float c = mask_coeffs[i][k];
-            float* out = raw_masks.data() + i * proto_size;
-            for (int j = 0; j < proto_size; ++j) {
-                out[j] += c * proto_row[j];
-            }
+
+    // Pack mask coefficients into a contiguous row-major [num_masks, mask_dim] matrix.
+    using RowMatrixXf =
+        Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    RowMatrixXf coeff_mat(num_masks, mask_dim);
+    for (int i = 0; i < num_masks; ++i) {
+        for (int k = 0; k < mask_dim; ++k) {
+            coeff_mat(i, k) = mask_coeffs[i][k];
         }
     }
+    Eigen::Map<const RowMatrixXf> proto_mat(protos, mask_dim, proto_size);
+    Eigen::Map<RowMatrixXf> raw_mat(raw_masks.data(), num_masks, proto_size);
+    raw_mat.noalias() = coeff_mat * proto_mat;
     // Skip sigmoid: sigmoid(x) > 0.5 <==> x > 0, threshold on raw logits
-
     // Calculate crop parameters for letterbox padding removal
     int orig_h = orig_shape.height;
     int orig_w = orig_shape.width;
@@ -590,7 +591,6 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
 
     std::vector<std::shared_ptr<cv::Mat>> masks_scaled;
     masks_scaled.reserve(num_masks);
-
     for (int i = 0; i < num_masks; ++i) {
         // Each mask is contiguous in [i * proto_size, (i+1) * proto_size).
         cv::Mat mask_full(mask_h, mask_w, CV_32F, raw_masks.data() + static_cast<size_t>(i) * proto_size);

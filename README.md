@@ -18,15 +18,18 @@
 ### 2.1. 安装依赖
 
 - **编译环境**：CMake 3.10+，C++17；Python 3.12+（可选）。
-- **C++ 依赖**：OpenCV 4（与本工程 `CMakeLists.txt` 中 `find_package` 一致，含 core、imgproc、imgcodecs、highgui、dnn）、Eigen3、spacemit-ort、yaml-cpp。路径可通过 `OpenCV_DIR`、`SPACEMIT_DIR` 等在 CMake 中设置。
+- **C++ 依赖**：OpenCV 4（与本工程 `CMakeLists.txt` 中 `find_package` 一致，含 core、imgproc、imgcodecs、highgui、dnn）、`/opt/eigen-spacemit`、`/opt/openblas-spacemit`、spacemit-ort、yaml-cpp。路径可通过 `OpenCV_DIR`、`SPACEMIT_DIR`、`EIGEN_SPACEMIT_DIR`、`OPENBLAS_DIR` 等在 CMake 中设置。
 - **Python 依赖**（跑示例 / 使用 wheel）：NumPy、OpenCV；打 wheel 时需 `pybind11`、`build`（见下方命令）。
 
 ```bash
 # 系统依赖示例（Linux）
 sudo apt-get update
-sudo apt-get install -y python3-spacemit-ort opencv-spacemit libeigen3-dev spacemit-onnxruntime libyaml-cpp-dev
-
+sudo apt-get install -y python3-spacemit-ort opencv-spacemit spacemit-onnxruntime libyaml-cpp-dev \
+    eigen-spacemit libeigen3-dev openblas-spacemit
 ```
+
+安装后 Eigen / OpenBLAS 默认位于 `/opt/eigen-spacemit`、`/opt/openblas-spacemit`（与 `CMakeLists.txt` 一致）。
+
 
 **Python 安装（推荐先用于跑通示例）：**
 

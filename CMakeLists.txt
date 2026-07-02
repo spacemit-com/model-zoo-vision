@@ -40,7 +40,9 @@ option(VISION_WITH_MPP "Enable MPP camera capture backend (UVC/VI) in examples" 
 # Dependencies Configuration
 # ============================================================================
 
-set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4")
+if(NOT DEFINED OpenCV_DIR)
+    set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4")
+endif()
 find_package(OpenCV REQUIRED
     COMPONENTS core imgproc imgcodecs highgui dnn
     NO_DEFAULT_PATH

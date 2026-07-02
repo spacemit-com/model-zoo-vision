@@ -116,6 +116,7 @@ set(VISION_SERVICE_SOURCES
 )
 file(GLOB_RECURSE CV_COMMON_SOURCES "src/common/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_SOURCES "src/deploy/yolov8/cpp/*.cpp")
+file(GLOB_RECURSE CV_YOLO26_SOURCES "src/deploy/yolo26/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV8_POSE_SOURCES "src/deploy/yolov8_pose/cpp/*.cpp")
 file(GLOB_RECURSE CV_ARCFACE_SOURCES "src/deploy/arcface/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOV5_SOURCES "src/deploy/yolov5/cpp/*.cpp")
@@ -142,6 +143,7 @@ add_library(vision SHARED
     ${VISION_CORE_SOURCES}
     ${CV_COMMON_SOURCES}
     ${CV_YOLOV8_SOURCES}
+    ${CV_YOLO26_SOURCES}
     ${CV_YOLOV8_POSE_SOURCES}
     ${CV_ARCFACE_SOURCES}
     ${CV_YOLOV5_SOURCES}
@@ -184,6 +186,7 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolo26/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_pose/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/arcface/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5/cpp

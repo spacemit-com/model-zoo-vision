@@ -188,13 +188,26 @@ class VisionServiceNative:
         image_or_path: Union[str, npt.NDArray[np.uint8]],
         conf: float = -1.0,
         iou: float = -1.0,
+        prompts: Optional[List[str]] = None,
     ) -> Tuple[object, List]:
         """Run image inference; returns flat ``VisionServiceResult`` list for compatibility.
 
         ``conf`` / ``iou`` <= 0 use each model's configured defaults. Positive values apply
         only to this call.
+
+        ``prompts`` is only used by open-vocabulary models (e.g. YOLO-World): pass a list of
+        text labels to set/override the vocabulary for this call. Empty/None -> use the
+        model's configured default vocabulary. Ignored by other models. Requires a numpy
+        image (not a path).
         """
-        if isinstance(image_or_path, str):
+        if prompts:
+            arr = np.ascontiguousarray(image_or_path)
+            if arr.dtype != np.uint8:
+                raise TypeError("image must be uint8 BGR (HxWx3)")
+            status, results, response = self._svc.infer_image_prompts(
+                image_bgr_uint8=arr, prompts=list(prompts), conf=conf, iou=iou
+            )
+        elif isinstance(image_or_path, str):
             status, results, response = self._svc.infer_image(
                 image_path=image_or_path, conf=conf, iou=iou
             )

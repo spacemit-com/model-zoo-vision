@@ -185,6 +185,11 @@ struct VisionServiceRequest {
     int sequence_width = 0;               // source frame width
     int sequence_height = 0;              // source frame height
 
+    // Open-vocabulary text prompts (e.g. YOLO-World). Empty means "use the
+    // model's configured default vocabulary". Models that don't consume text
+    // ignore this field, so existing image/sequence callers are unaffected.
+    std::vector<std::string> prompts;
+
     VisionServiceInferParams params;
 };
 

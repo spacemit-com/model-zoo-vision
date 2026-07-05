@@ -322,4 +322,8 @@ std::vector<std::string> BaseModel::get_sequence_class_names() const {
     return {};
 }
 
+std::vector<std::string> BaseModel::get_dynamic_class_names() const {
+    return {};
+}
+
 }  // namespace vision_core

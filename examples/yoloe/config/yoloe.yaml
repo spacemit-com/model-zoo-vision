@@ -1,0 +1,17 @@
+# YOLOE open-vocabulary instance segmentation.
+# Text prompts (= class vocabulary) come from default_params.prompts, or override
+# per run via VisionServiceRequest.prompts / --prompts. Text features are computed
+# once per distinct vocabulary by the MobileCLIP text encoder and cached.
+model_path: ~/.cache/models/vision/yoloe/yoloe-v8s-seg.dynq.onnx
+test_image: ~/.cache/assets/image/014_bus.jpg
+class: deploy.yoloe.YoloeSegmentor
+default_params:
+  clip_model_path: ~/.cache/models/vision/yoloe/mobileclip.q.onnx
+  # BPE merges ships with the repo (shared with yolo_world), referenced repo-relative.
+  bpe_merges_path: assets/clip/bpe_merges.txt
+  prompts: [person, bus]
+  conf_threshold: 0.25
+  iou_threshold: 0.45
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

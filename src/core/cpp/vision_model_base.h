@@ -135,6 +135,15 @@ public:
      */
     virtual std::vector<std::string> get_sequence_class_names() const;
 
+    /**
+     * @brief Model-provided class names that are only known at runtime, e.g.
+     * open-vocabulary detectors (YOLO-World) whose labels come from the active
+     * text prompts rather than a static label_file_path. Empty by default;
+     * VisionService::GetClassNames() falls back to this when the config
+     * declares no labels.
+     */
+    virtual std::vector<std::string> get_dynamic_class_names() const;
+
 protected:
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;

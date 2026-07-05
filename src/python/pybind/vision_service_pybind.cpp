@@ -325,6 +325,25 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             py::arg("conf") = -1.0f,
             py::arg("iou") = -1.0f)
         .def(
+            // Open-vocabulary variant (e.g. YOLO-World): pass text prompts.
+            // Empty prompts -> use the model's configured default vocabulary.
+            "infer_image_prompts",
+            [](VisionService& self, const py::array& arr,
+                const std::vector<std::string>& prompts, float conf, float iou) {
+                cv::Mat mat = NumpyToMatBgr(arr);
+                VisionServiceRequest request{};
+                request.image = mat;
+                request.prompts = prompts;
+                request.params = MakeParams(conf, iou);
+                VisionServiceResponse response;
+                const VisionServiceStatus st = self.Infer(request, &response);
+                return py::make_tuple(st, FlattenResults(response.results), response);
+            },
+            py::arg("image_bgr_uint8"),
+            py::arg("prompts"),
+            py::arg("conf") = -1.0f,
+            py::arg("iou") = -1.0f)
+        .def(
             "infer_embedding",
             [](VisionService& self, const std::string& path) {
                 VisionServiceResponse response;

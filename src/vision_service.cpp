@@ -354,6 +354,7 @@ VisionServiceStatus VisionService::Infer(
         infer_params.kp_threshold = request.params.kp_threshold;
         infer_params.mask_threshold = request.params.mask_threshold;
         infer_params.max_det = request.params.max_det;
+        infer_params.prompts = request.prompts;  // open-vocabulary text (YOLO-World)
 
         // Build the internal request input.
         vision_core::InferInput input;
@@ -531,8 +532,13 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image,
             : std::chrono::steady_clock::time_point{};
         *out_image = image.clone();
 
+        // Prefer static config labels; fall back to runtime model-provided
+        // labels (e.g. YOLO-World prompts) so boxes show names, not "Class N".
+        const std::vector<std::string>& draw_labels =
+            !impl_->labels.empty() ? impl_->labels : impl_->model->get_dynamic_class_names();
+
         // draw_results handles ModelResult variants (alias of vision::Result).
-        vision_common::draw_results(*out_image, response.results, impl_->labels);
+        vision_common::draw_results(*out_image, response.results, draw_labels);
 
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
@@ -629,6 +635,14 @@ std::string VisionService::GetConfigPathValue(const std::string& config_key) {
 std::vector<std::string> VisionService::GetClassNames() const {
     if (impl_ == nullptr) {
         return {};
+    }
+    if (!impl_->labels.empty()) {
+        return impl_->labels;
+    }
+    // Fall back to runtime model-provided labels (e.g. YOLO-World prompts) when
+    // the config declares no static label_file_path.
+    if (impl_->model != nullptr) {
+        return impl_->model->get_dynamic_class_names();
     }
     return impl_->labels;
 }

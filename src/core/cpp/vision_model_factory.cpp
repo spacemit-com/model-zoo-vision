@@ -107,6 +107,27 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
     if (it == creators_.end()) {
         throw std::runtime_error("Unsupported model class: " + class_name + " (config: " + config_path + ")");
     }
+
+    // Resolve any default_params entry whose key ends with "_path" (e.g.
+    // clip_model_path, bpe_merges_path) like model_path: expand ~ and resolve
+    // repo-relative paths against the config file location, so auxiliary
+    // resource paths are robust regardless of the process cwd.
+    YAML::Node dp = config["default_params"];
+    if (dp && dp.IsMap()) {
+        const std::string suffix = "_path";
+        for (auto entry = dp.begin(); entry != dp.end(); ++entry) {
+            const std::string key = entry->first.as<std::string>();
+            if (key.size() >= suffix.size() &&
+                key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0 &&
+                entry->second.IsScalar()) {
+                const std::string raw = entry->second.as<std::string>();
+                if (!raw.empty()) {
+                    dp[key] = resolveResourcePath(raw, config_path);
+                }
+            }
+        }
+    }
+
     return it->second(config, lazy_load);
 }
 

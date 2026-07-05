@@ -49,6 +49,11 @@ struct InferParams {
     float kp_threshold = -1.f;
     float mask_threshold = -1.f;
     int max_det = -1;
+
+    // Open-vocabulary text prompts (e.g. YOLO-World). Empty means "use the
+    // model's configured default vocabulary". Ignored by models that don't
+    // consume text.
+    std::vector<std::string> prompts;
 };
 
 struct InferRequest {

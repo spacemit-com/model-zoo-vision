@@ -57,6 +57,8 @@ add_model_example(mobilenetv1 mobilenet)
 add_model_example(vit resnet)
 add_model_example(yolo12 yolov8)
 add_model_example(yolo26 yolov8)
+add_model_example(yolo_world yolo_world)
+add_model_example(yoloe yoloe)
 
 # Install examples (only install targets that were actually created)
 if(EXAMPLE_TARGETS)

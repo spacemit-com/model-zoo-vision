@@ -288,6 +288,7 @@ void draw_results(
     std::vector<PoseResult> poses;
     std::vector<SegmentationResult> segmentations;
     std::vector<TrackingResult> trackings;
+    std::vector<TextResult> texts;
 
     for (const auto& result : results) {
         std::visit([&](const auto& r) {
@@ -300,6 +301,8 @@ void draw_results(
                 segmentations.push_back(r);
             } else if constexpr (std::is_same_v<T, TrackingResult>) {
                 trackings.push_back(r);
+            } else if constexpr (std::is_same_v<T, TextResult>) {
+                texts.push_back(r);
             }
         }, result);
     }
@@ -316,6 +319,39 @@ void draw_results(
     }
     if (!trackings.empty()) {
         draw_tracking_results(image, trackings, labels, line_thickness);
+    }
+    if (!texts.empty()) {
+        draw_text(image, texts, cv::Scalar(0, 255, 0), line_thickness);
+    }
+}
+
+void draw_text(
+    cv::Mat& image,
+    const std::vector<vision_common::TextResult>& results,
+    const cv::Scalar& color,
+    int line_thickness) {
+    for (const auto& r : results) {
+        if (r.polygon.size() < 2) {
+            continue;
+        }
+        // Draw the polygon outline (usually a quadrilateral).
+        std::vector<cv::Point> pts;
+        pts.reserve(r.polygon.size());
+        for (const auto& kp : r.polygon) {
+            pts.emplace_back(static_cast<int>(kp.x), static_cast<int>(kp.y));
+        }
+        const cv::Point* p = pts.data();
+        int n = static_cast<int>(pts.size());
+        cv::polylines(image, &p, &n, 1, true, color, line_thickness);
+
+        // Put the recognized text above the first (top-left) corner.
+        // NOTE: cv::putText renders ASCII only; non-ASCII (e.g. Chinese) shows
+        // as '?'. The recognized string itself is intact in the result.
+        const std::string label = r.text + " " + std::to_string(r.score).substr(0, 4);
+        const int tx = pts[0].x;
+        const int ty = std::max(pts[0].y - 5, 12);
+        cv::putText(image, label, cv::Point(tx, ty), cv::FONT_HERSHEY_SIMPLEX, 0.6,
+                    color, line_thickness);
     }
 }
 

@@ -85,6 +85,22 @@ void draw_tracking_results(
 );
 
 /**
+ * @brief Draw OCR text results: quadrilateral polygon + recognized string.
+ * @note cv::putText renders ASCII only; non-ASCII text (e.g. Chinese) appears
+ *       as '?' on the image, though the string in the result is intact.
+ * @param image Input/output image
+ * @param results Vector of TextResult (polygon + text + score)
+ * @param color Polygon/text color
+ * @param line_thickness Line thickness
+ */
+void draw_text(
+    cv::Mat& image,
+    const std::vector<TextResult>& results,
+    const cv::Scalar& color = cv::Scalar(0, 255, 0),
+    int line_thickness = 2
+);
+
+/**
  * @brief Draw ModelResult variant (auto-detects type and calls appropriate function)
  * @param image Input/output image
  * @param results Vector of ModelResult variants

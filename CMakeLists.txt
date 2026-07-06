@@ -130,6 +130,7 @@ file(GLOB_RECURSE CV_EMOTION_SOURCES "src/deploy/emotion/cpp/*.cpp")
 file(GLOB_RECURSE CV_EMOTION_LSTM_SOURCES "src/deploy/emotion_lstm/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLO_WORLD_SOURCES "src/deploy/yolo_world/cpp/*.cc" "src/deploy/yolo_world/cpp/*.cpp")
 file(GLOB_RECURSE CV_YOLOE_SOURCES "src/deploy/yoloe/cpp/*.cc" "src/deploy/yoloe/cpp/*.cpp")
+file(GLOB_RECURSE CV_PPOCR_SOURCES "src/deploy/ppocr/cpp/*.cpp")
 file(GLOB_RECURSE CV_STGCN_SOURCES "src/deploy/stgcn/cpp/*.cpp")
 file(GLOB_RECURSE CV_BYTETRACK_SOURCES "src/deploy/bytetrack/cpp/src/*.cpp")
 file(GLOB_RECURSE CV_BYTETRACK_TRACKER_SOURCES "src/deploy/bytetrack/cpp/byte_track_tracker.cpp")
@@ -159,6 +160,7 @@ add_library(vision SHARED
     ${CV_EMOTION_LSTM_SOURCES}
     ${CV_YOLO_WORLD_SOURCES}
     ${CV_YOLOE_SOURCES}
+    ${CV_PPOCR_SOURCES}
     ${CV_STGCN_SOURCES}
     ${CV_BYTETRACK_SOURCES}
     ${CV_BYTETRACK_TRACKER_SOURCES}
@@ -204,6 +206,7 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/emotion_lstm/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolo_world/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yoloe/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/ppocr/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/stgcn/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp/include

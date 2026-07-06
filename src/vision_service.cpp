@@ -193,6 +193,7 @@ std::optional<vision_core::InferIntent> PickImageIntent(
         vision_core::InferIntent::kTrack,
         vision_core::InferIntent::kEstimatePose,
         vision_core::InferIntent::kSegment,
+        vision_core::InferIntent::kOcr,
         vision_core::InferIntent::kDetect,
         vision_core::InferIntent::kClassify,
     };

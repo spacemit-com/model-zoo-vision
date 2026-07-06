@@ -38,6 +38,7 @@ enum class InferIntent {
     kTrack,
     kEmbed,
     kInferSequence,
+    kOcr,
 };
 
 // Unified inference-time parameters (field <= 0 means "use model default").

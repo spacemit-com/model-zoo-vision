@@ -59,6 +59,7 @@ add_model_example(yolo12 yolov8)
 add_model_example(yolo26 yolov8)
 add_model_example(yolo_world yolo_world)
 add_model_example(yoloe yoloe)
+add_model_example(ppocr ppocr)
 
 # Install examples (only install targets that were actually created)
 if(EXAMPLE_TARGETS)

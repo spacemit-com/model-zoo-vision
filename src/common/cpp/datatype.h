@@ -40,6 +40,7 @@ using SegmentationResult = vision::Segmentation;
 using EmbeddingResult = vision::Embedding;
 using TrackingResult = vision::Tracking;
 using ActionResult = vision::Action;
+using TextResult = vision::Text;
 
 using ModelResult = vision::Result;
 
@@ -48,6 +49,7 @@ using ClassificationResultList = std::vector<ClassificationResult>;
 using PoseResultList = std::vector<PoseResult>;
 using SegmentationResultList = std::vector<SegmentationResult>;
 using TrackingResultList = std::vector<TrackingResult>;
+using TextResultList = std::vector<TextResult>;
 
 // ----------------------------------------------------------------------------
 // Helpers

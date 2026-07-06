@@ -94,6 +94,16 @@ struct Action {
     std::vector<float> class_scores;
 };
 
+// Text detection + recognition (OCR, e.g. PP-OCR). Each result is one text
+// instance: a 4-point polygon (usually clockwise from top-left, in pixel
+// coordinates), the recognized string, and a confidence score.
+struct Text {
+    std::vector<KeyPoint> polygon;  // quadrilateral corners (x, y); visibility unused
+    std::string text;               // recognized characters (UTF-8)
+    float score = 0.0f;             // recognition confidence
+    int label = -1;                 // unused for OCR (kept for accessor symmetry)
+};
+
 // ============================================================================
 // Unified result variant
 // ============================================================================
@@ -105,7 +115,8 @@ using Result = std::variant<
     Segmentation,
     Embedding,
     Tracking,
-    Action>;
+    Action,
+    Text>;
 
 using ResultList = std::vector<Result>;
 

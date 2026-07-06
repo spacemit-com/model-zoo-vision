@@ -29,6 +29,8 @@ struct PyFlatResult {
     std::vector<vision::KeyPoint> keypoints;
     cv::Mat mask;
     std::vector<float> class_scores;
+    std::string text;                          // OCR: recognized string
+    std::vector<vision::KeyPoint> polygon;     // OCR: text-box quadrilateral corners
 };
 
 PyFlatResult ToFlatResult(const vision::Result& r) {
@@ -52,6 +54,9 @@ PyFlatResult ToFlatResult(const vision::Result& r) {
         out.class_scores = c->class_scores;
     } else if (const vision::Action* a = std::get_if<vision::Action>(&r)) {
         out.class_scores = a->class_scores;
+    } else if (const vision::Text* t = std::get_if<vision::Text>(&r)) {
+        out.text = t->text;
+        out.polygon = t->polygon;
     }
     return out;
 }
@@ -207,6 +212,8 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def_readwrite("track_id", &PyFlatResult::track_id)
         .def_readwrite("keypoints", &PyFlatResult::keypoints)
         .def_readwrite("class_scores", &PyFlatResult::class_scores)
+        .def_readwrite("text", &PyFlatResult::text)
+        .def_readwrite("polygon", &PyFlatResult::polygon)
         .def_property(
             "mask",
             [](const PyFlatResult& r) -> py::object {

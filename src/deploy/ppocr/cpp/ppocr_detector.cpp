@@ -142,7 +142,6 @@ void PPOCRDetector::load_model() {
     init_session(num_threads_, provider_);
 
     // Self-managed recognition session.
-    rec_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "PPOCR_REC");
     Ort::SessionOptions rec_opts;
     rec_opts.SetIntraOpNumThreads(num_threads_);
     rec_opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -154,7 +153,8 @@ void PPOCRDetector::load_model() {
     }
     // rec_model_path_ / dict_path_ arrive already resolved: the factory expands
     // any default_params key ending in "_path" via resolveResourcePath before create().
-    rec_session_ = std::make_unique<Ort::Session>(*rec_env_, rec_model_path_.c_str(), rec_opts);
+    rec_session_ = std::make_unique<Ort::Session>(
+        vision_core::shared_ort_env(), rec_model_path_.c_str(), rec_opts);
 
     const size_t rec_num_in = rec_session_->GetInputCount();
     rec_input_names_.resize(rec_num_in);

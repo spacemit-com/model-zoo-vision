@@ -35,6 +35,8 @@ enum class ModelCapability {
     kDraw,
 };
 
+Ort::Env& shared_ort_env();
+
 /**
  * @brief Base class for all vision models
  *
@@ -147,7 +149,6 @@ public:
 protected:
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;
-    std::unique_ptr<Ort::Env> env_;
     std::vector<int64_t> input_shape_;
     bool model_loaded_;
     bool lazy_load_;

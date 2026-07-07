@@ -30,7 +30,6 @@ public:
 
 private:
     std::unique_ptr<MobileClipTokenizer> tokenizer_;
-    Ort::Env env_;
     std::unique_ptr<Ort::Session> session_;
     Ort::AllocatorWithDefaultOptions allocator_;
 

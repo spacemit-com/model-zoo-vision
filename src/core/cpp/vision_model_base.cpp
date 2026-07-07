@@ -90,10 +90,13 @@ static std::string resolve_and_check_model_path(const std::string& raw_path) {
     }
 }
 
+Ort::Env& shared_ort_env() {
+    static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "VisionModel");
+    return env;
+}
+
 BaseModel::BaseModel(const std::string& model_path, bool lazy_load)
     : model_path_(model_path), model_loaded_(false), lazy_load_(lazy_load) {
-    env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "VisionModel");
-
 #ifdef DEBUG
     owner_thread_ = std::thread::id{};  // 初始化为空，第一次调用时设置
 #endif
@@ -211,7 +214,7 @@ void BaseModel::init_session(int num_threads, const std::string& provider) {
         }
     }
 
-    session_ = std::make_unique<Ort::Session>(*env_, model_path_.c_str(), session_options);
+    session_ = std::make_unique<Ort::Session>(shared_ort_env(), model_path_.c_str(), session_options);
     if (provider == "SpaceMITExecutionProvider") {
         std::cout << "SpaceMIT EP initialized: " << model_path_ << std::endl;
     }

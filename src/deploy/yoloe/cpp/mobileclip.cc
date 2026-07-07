@@ -13,14 +13,16 @@
 #include <utility>
 #include <vector>
 
+#include "vision_model_base.h"
+
 namespace vision_deploy {
 
 MobileClip::MobileClip(const std::string& text_model_path, const std::string& bpe_merges_path, int num_threads)
-    : env_(ORT_LOGGING_LEVEL_WARNING, "MobileClip"),
-        session_(nullptr) {
+    : session_(nullptr) {
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(num_threads);
-    session_ = std::make_unique<Ort::Session>(env_, text_model_path.c_str(), session_options);
+    session_ = std::make_unique<Ort::Session>(
+        vision_core::shared_ort_env(), text_model_path.c_str(), session_options);
 
     const size_t num_inputs = session_->GetInputCount();
     input_names_.resize(num_inputs);

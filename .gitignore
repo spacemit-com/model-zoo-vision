@@ -59,3 +59,4 @@ src/python/.cmake-build/
 src/python/dist/
 src/python/spacemit_vision/*.so
 src/python/spacemit_vision.egg-info/
+docs_local/

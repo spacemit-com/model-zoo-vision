@@ -96,7 +96,6 @@ private:
     std::vector<std::string> dict_;  // index -> character; index 0 is CTC blank
 
     // Self-managed recognition session (det uses BaseModel::session_).
-    std::unique_ptr<Ort::Env> rec_env_;
     std::unique_ptr<Ort::Session> rec_session_;
     std::vector<const char*> rec_input_names_;
     std::vector<const char*> rec_output_names_;

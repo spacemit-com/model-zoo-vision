@@ -115,27 +115,14 @@ set(VISION_SERVICE_SOURCES
     src/vision_service.cpp
 )
 file(GLOB_RECURSE CV_COMMON_SOURCES "src/common/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV8_SOURCES "src/deploy/yolov8/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLO26_SOURCES "src/deploy/yolo26/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV8_POSE_SOURCES "src/deploy/yolov8_pose/cpp/*.cpp")
-file(GLOB_RECURSE CV_ARCFACE_SOURCES "src/deploy/arcface/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV5_SOURCES "src/deploy/yolov5/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV5_FACE_SOURCES "src/deploy/yolov5_face/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV5_GESTURE_SOURCES "src/deploy/yolov5_gesture/cpp/*.cpp")
-file(GLOB_RECURSE CV_RESNET_SOURCES "src/deploy/resnet/cpp/*.cpp")
-file(GLOB_RECURSE CV_MOBILENET_SOURCES "src/deploy/mobilenet/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOV8_SEG_SOURCES "src/deploy/yolov8_seg/cpp/*.cpp")
-file(GLOB_RECURSE CV_PP_LITESEG_SOURCES "src/deploy/pp_liteseg/cpp/*.cpp")
-file(GLOB_RECURSE CV_EMOTION_SOURCES "src/deploy/emotion/cpp/*.cpp")
-file(GLOB_RECURSE CV_EMOTION_LSTM_SOURCES "src/deploy/emotion_lstm/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLO_WORLD_SOURCES "src/deploy/yolo_world/cpp/*.cc" "src/deploy/yolo_world/cpp/*.cpp")
-file(GLOB_RECURSE CV_YOLOE_SOURCES "src/deploy/yoloe/cpp/*.cc" "src/deploy/yoloe/cpp/*.cpp")
-file(GLOB_RECURSE CV_PPOCR_SOURCES "src/deploy/ppocr/cpp/*.cpp")
-file(GLOB_RECURSE CV_STGCN_SOURCES "src/deploy/stgcn/cpp/*.cpp")
-file(GLOB_RECURSE CV_BYTETRACK_SOURCES "src/deploy/bytetrack/cpp/src/*.cpp")
-file(GLOB_RECURSE CV_BYTETRACK_TRACKER_SOURCES "src/deploy/bytetrack/cpp/byte_track_tracker.cpp")
-file(GLOB_RECURSE CV_OCSORT_SOURCES "src/deploy/ocsort/cpp/src/*.cpp")
-file(GLOB_RECURSE CV_OCSORT_TRACKER_SOURCES "src/deploy/ocsort/cpp/ocsort_tracker.cpp")
+file(GLOB DEPLOY_TOP_SOURCES CONFIGURE_DEPENDS
+    "src/deploy/*/cpp/*.cpp"
+    "src/deploy/*/cpp/*.cc"
+)
+file(GLOB_RECURSE DEPLOY_NESTED_SOURCES CONFIGURE_DEPENDS
+    "src/deploy/*/cpp/src/*.cpp"
+    "src/deploy/*/cpp/src/*.cc"
+)
 
 # ============================================================================
 # Library Target (output: libvision.so)
@@ -145,27 +132,8 @@ add_library(vision SHARED
     ${VISION_SERVICE_SOURCES}
     ${VISION_CORE_SOURCES}
     ${CV_COMMON_SOURCES}
-    ${CV_YOLOV8_SOURCES}
-    ${CV_YOLO26_SOURCES}
-    ${CV_YOLOV8_POSE_SOURCES}
-    ${CV_ARCFACE_SOURCES}
-    ${CV_YOLOV5_SOURCES}
-    ${CV_YOLOV5_FACE_SOURCES}
-    ${CV_YOLOV5_GESTURE_SOURCES}
-    ${CV_RESNET_SOURCES}
-    ${CV_MOBILENET_SOURCES}
-    ${CV_YOLOV8_SEG_SOURCES}
-    ${CV_PP_LITESEG_SOURCES}
-    ${CV_EMOTION_SOURCES}
-    ${CV_EMOTION_LSTM_SOURCES}
-    ${CV_YOLO_WORLD_SOURCES}
-    ${CV_YOLOE_SOURCES}
-    ${CV_PPOCR_SOURCES}
-    ${CV_STGCN_SOURCES}
-    ${CV_BYTETRACK_SOURCES}
-    ${CV_BYTETRACK_TRACKER_SOURCES}
-    ${CV_OCSORT_SOURCES}
-    ${CV_OCSORT_TRACKER_SOURCES}
+    ${DEPLOY_TOP_SOURCES}
+    ${DEPLOY_NESTED_SOURCES}
 )
 
 target_link_libraries(vision
@@ -186,31 +154,21 @@ if(NOT HAVE_NATIVE_FP16)
     message(STATUS "vision: defining __fp16=_Float16 for dependency headers (no native __fp16)")
 endif()
 
+file(GLOB DEPLOY_CPP_DIRS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/*/cpp"
+)
+file(GLOB DEPLOY_INTERNAL_INCLUDE_DIRS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/*/cpp/include"
+)
+
 target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolo26/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_pose/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/arcface/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_face/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov5_gesture/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/resnet/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/mobilenet/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolov8_seg/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/pp_liteseg/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/emotion/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/emotion_lstm/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yolo_world/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/yoloe/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/ppocr/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/stgcn/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/bytetrack/cpp/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy/ocsort/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy
+    ${DEPLOY_CPP_DIRS}
+    ${DEPLOY_INTERNAL_INCLUDE_DIRS}
     Eigen3::Eigen
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${OpenCV_INCLUDE_DIRS}

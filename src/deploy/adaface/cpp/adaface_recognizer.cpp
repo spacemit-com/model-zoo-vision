@@ -3,59 +3,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "arcface_recognizer.h"
+#include "adaface_recognizer.h"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <memory>
 #include <stdexcept>
-#include <string>
 #include <utility>
 #include <variant>
-#include <vector>
 
-#include "common.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
 namespace vision_deploy {
 
-std::unique_ptr<vision_core::BaseModel> ArcFaceRecognizer::create(const YAML::Node& config, bool lazy_load) {
+std::unique_ptr<vision_core::BaseModel> AdaFaceRecognizer::create(const YAML::Node& config, bool lazy_load) {
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
-        throw std::runtime_error("model_path not found in config for ArcFaceRecognizer");
+        throw std::runtime_error("model_path not found in config for AdaFaceRecognizer");
     }
 
     YAML::Node default_params = config["default_params"];
     if (!default_params) {
-        throw std::runtime_error("default_params not found in config for ArcFaceRecognizer");
+        throw std::runtime_error("default_params not found in config for AdaFaceRecognizer");
     }
 
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
-    float norm_std = vision_core::yaml_utils::getFloat(default_params, "norm_std", 127.5f);
 
-    return std::make_unique<ArcFaceRecognizer>(model_path, num_threads, lazy_load, provider, norm_std);
+    return std::make_unique<AdaFaceRecognizer>(model_path, num_threads, lazy_load, provider);
 }
 
-ArcFaceRecognizer::ArcFaceRecognizer(const std::string& model_path,
+AdaFaceRecognizer::AdaFaceRecognizer(const std::string& model_path,
                                     int num_threads,
                                     bool lazy_load,
-                                    const std::string& provider,
-                                    float norm_std)
+                                    const std::string& provider)
     : BaseModel(model_path, lazy_load),
         num_threads_(num_threads),
-        provider_(provider),
-        norm_std_(norm_std) {
+        provider_(provider) {
     if (!lazy_load) {
         load_model();
     }
 }
 
-void ArcFaceRecognizer::load_model() {
+void AdaFaceRecognizer::load_model() {
     if (model_loaded_) {
         return;
     }
@@ -63,47 +54,47 @@ void ArcFaceRecognizer::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
+cv::Mat AdaFaceRecognizer::preprocess(const cv::Mat& image) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
 
     ensure_model_loaded();
 
-    int inputWidth = static_cast<int>(input_shape_[3]);  // width
-    int inputHeight = static_cast<int>(input_shape_[2]);  // height
+    const int crop = std::min(image.cols, image.rows);
+    const int crop_x = (image.cols - crop) / 2;
+    const int crop_y = (image.rows - crop) / 2;
+    cv::Mat cropped = image(cv::Rect(crop_x, crop_y, crop, crop));
 
-    cv::Mat resized = image;
-    if (image.cols != inputWidth || image.rows != inputHeight) {
-        cv::resize(image, resized, cv::Size(inputWidth, inputHeight), 0, 0, cv::INTER_LINEAR);
+    int input_width = static_cast<int>(input_shape_[3]);
+    int input_height = static_cast<int>(input_shape_[2]);
+    if (input_width <= 0 || input_height <= 0) {
+        input_width = 112;
+        input_height = 112;
     }
 
-    // Official ArcFace preprocess: direct resize, BGR->RGB, (x - 127.5) / norm_std.
-    const float inv_std = 1.0f / norm_std_;
-    return cv::dnn::blobFromImage(resized, inv_std,
-                                    cv::Size(inputWidth, inputHeight),
-                                    cv::Scalar(127.5, 127.5, 127.5),
-                                    true, false, CV_32F);
+    cv::Mat resized;
+    cv::resize(cropped, resized, cv::Size(input_width, input_height), 0, 0, cv::INTER_LINEAR);
+
+    return cv::dnn::blobFromImage(resized, 1.0 / 127.5, cv::Size(input_width, input_height),
+                                cv::Scalar(127.5, 127.5, 127.5), true, false, CV_32F);
 }
 
-vision_common::EmbeddingResult ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {
+vision_common::EmbeddingResult AdaFaceRecognizer::infer_embedding(const cv::Mat& image) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
+    cv::Mat input_tensor = preprocess(image);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
-    // Run inference using base class method
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    std::vector<Ort::Value> outputs = run_session(input_tensor);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
-    // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
     std::vector<float> embedding = postprocess(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
@@ -112,26 +103,23 @@ vision_common::EmbeddingResult ArcFaceRecognizer::infer_embedding(const cv::Mat&
     const auto t1 = std::chrono::steady_clock::now();
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
 
-    // Create EmbeddingResult
     vision_common::EmbeddingResult result;
     result.embedding = std::move(embedding);
-    result.score = 1.0f;  // Quality score (can be computed if needed)
-
+    result.score = 1.0f;
     return result;
 }
 
-
-std::vector<vision_core::InferIntent> ArcFaceRecognizer::supported_intents() const {
+std::vector<vision_core::InferIntent> AdaFaceRecognizer::supported_intents() const {
     return {vision_core::InferIntent::kEmbed};
 }
 
-vision_core::InferResponse ArcFaceRecognizer::Run(const vision_core::InferRequest& request) {
+vision_core::InferResponse AdaFaceRecognizer::Run(const vision_core::InferRequest& request) {
     assert(request.intent == vision_core::InferIntent::kEmbed);
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;
         response.ok = false;
-        response.error_message = "ArcFaceRecognizer expects ImageInput";
+        response.error_message = "AdaFaceRecognizer expects ImageInput";
         return response;
     }
     vision_core::InferResponse response;
@@ -139,32 +127,24 @@ vision_core::InferResponse ArcFaceRecognizer::Run(const vision_core::InferReques
     return response;
 }
 
-std::vector<vision_core::ModelCapability> ArcFaceRecognizer::get_capabilities() const {
+std::vector<vision_core::ModelCapability> AdaFaceRecognizer::get_capabilities() const {
     return {};
 }
 
-std::vector<float> ArcFaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    // Extract embedding from outputs
+std::vector<float> AdaFaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
     const float* output_data = outputs[0].GetTensorMutableData<float>();
     auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
     std::vector<int64_t> dims = tensor_info.GetShape();
 
     size_t embedding_size = 1;
     for (size_t i = 1; i < dims.size(); ++i) {
-        embedding_size *= dims[i];
+        embedding_size *= static_cast<size_t>(dims[i]);
     }
 
-    // Copy embedding data
     std::vector<float> embedding(output_data, output_data + embedding_size);
-
-    // L2 normalize using common function
-    embedding = vision_common::normalize_embedding(embedding);
-
-    return embedding;
+    return vision_common::normalize_embedding(embedding);
 }
 
-// Self-registration (runs at program startup)
-static vision_core::ModelRegistrar<ArcFaceRecognizer> registrar("ArcFaceRecognizer");
+static vision_core::ModelRegistrar<AdaFaceRecognizer> registrar("AdaFaceRecognizer");
 
 }  // namespace vision_deploy
-

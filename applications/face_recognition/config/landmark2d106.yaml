@@ -1,0 +1,9 @@
+model_path: ~/.cache/models/vision/buffalo_l/2d106det.onnx
+class: deploy.landmark2d106.Landmark2d106
+default_params:
+  num_threads: 1
+  # buffalo_l 2d106det.onnx includes leading Sub/Mul normalization nodes.
+  input_mean: 0.0
+  input_std: 1.0
+  providers:
+    - CPUExecutionProvider

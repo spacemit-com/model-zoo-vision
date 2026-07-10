@@ -367,6 +367,14 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 return py::make_tuple(st, ExtractEmbedding(response), response);
             },
             py::arg("image_bgr_uint8"))
+        .def(
+            "encode_text",
+            [](VisionService& self, const std::string& text) {
+                std::vector<float> embedding;
+                const VisionServiceStatus st = self.EncodeText(text, &embedding);
+                return py::make_tuple(st, embedding);
+            },
+            py::arg("text"))
         .def_static(
             "embedding_similarity",
             [](const std::vector<float>& a, const std::vector<float>& b) {

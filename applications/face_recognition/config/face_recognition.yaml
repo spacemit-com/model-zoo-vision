@@ -1,0 +1,13 @@
+# Face recognition app entry (buffalo_l pipeline).
+
+scrfd_model: scrfd.yaml
+arcface_model: arcface_buffalo.yaml
+genderage_model: genderage.yaml
+landmark106_model: landmark2d106.yaml
+
+enable_landmark106: false
+recognize_threshold: 0.3
+face_db_dir: ~/.cache/face_db
+output_image: output_face_recognition.jpg
+
+test_image: ~/.cache/assets/image/001_emotion.jpg

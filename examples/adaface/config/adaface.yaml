@@ -1,0 +1,10 @@
+# AdaFace face embedding model configuration.
+model_path: ~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged_dynq.onnx
+test_image1: ~/.cache/assets/image/003_face0.png
+test_image2: ~/.cache/assets/image/004_face1.png
+image_size: [112, 112]
+class: deploy.adaface.AdaFaceRecognizer
+default_params:
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

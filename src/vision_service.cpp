@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <opencv2/imgcodecs.hpp>  // NOLINT(build/include_order)
@@ -179,6 +180,9 @@ bool IntentDeclared(const std::vector<vision_core::InferIntent>& intents,
 bool ValidateIntentInputPair(const vision_core::InferRequest& request) {
     if (request.intent == vision_core::InferIntent::kInferSequence) {
         return std::holds_alternative<vision_core::SequenceInput>(request.input);
+    }
+    if (request.intent == vision_core::InferIntent::kEmbedText) {
+        return std::holds_alternative<vision_core::TextInput>(request.input);
     }
     return std::holds_alternative<vision_core::ImageInput>(request.input);
 }
@@ -404,7 +408,8 @@ VisionServiceStatus VisionService::Infer(
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
-            if (intent == vision_core::InferIntent::kEmbed) {
+            if (intent == vision_core::InferIntent::kEmbed ||
+                intent == vision_core::InferIntent::kEmbedText) {
                 impl_->last_timing.preprocess_ms = profile.preprocess_ms;
                 impl_->last_timing.model_infer_ms = profile.model_infer_ms;
                 impl_->last_timing.postprocess_ms = profile.postprocess_ms;
@@ -492,6 +497,72 @@ VisionServiceStatus VisionService::Infer(
     request.image = image;
     request.params = params;
     return Infer(request, response);
+}
+
+VisionServiceStatus VisionService::EncodeText(const std::string& text,
+                                                std::vector<float>* out_embedding) {
+    if (impl_ == nullptr || impl_->model == nullptr) {
+        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "service/model must not be null");
+    }
+    if (out_embedding == nullptr) {
+        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "out_embedding must not be null");
+    }
+    if (text.empty()) {
+        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "text must not be empty");
+    }
+
+    try {
+        vision_core::BaseModel* model = impl_->model.get();
+        const std::vector<vision_core::InferIntent> declared = model->supported_intents();
+        if (!IntentDeclared(declared, vision_core::InferIntent::kEmbedText)) {
+            return SetError(VISION_SERVICE_INFER_FAILED,
+                            "current model does not support text encoding");
+        }
+
+        const bool timing_enabled = impl_->timing_options.enabled;
+        std::chrono::steady_clock::time_point t0;
+        if (timing_enabled) {
+            ResetAllTiming(&impl_->last_timing);
+            t0 = std::chrono::steady_clock::now();
+        }
+
+        vision_core::TextInput text_input;
+        text_input.text = text;
+        vision_core::InferRequest internal_request{
+            std::move(text_input), vision_core::InferIntent::kEmbedText, {}};
+        if (!ValidateIntentInputPair(internal_request)) {
+            return SetError(VISION_SERVICE_INVALID_ARGUMENT, "intent and input type mismatch");
+        }
+
+        vision_core::InferResponse internal_response = model->Run(internal_request);
+        if (!internal_response.ok) {
+            return SetError(VISION_SERVICE_INFER_FAILED, internal_response.error_message);
+        }
+        if (internal_response.results.empty()) {
+            return SetError(VISION_SERVICE_INFER_FAILED, "model returned no embedding");
+        }
+        const vision_common::EmbeddingResult* emb =
+            std::get_if<vision_common::EmbeddingResult>(&internal_response.results[0]);
+        if (emb == nullptr) {
+            return SetError(VISION_SERVICE_INFER_FAILED, "model did not return an Embedding result");
+        }
+        *out_embedding = emb->embedding;
+
+        if (timing_enabled) {
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto profile = model->get_runtime_profile();
+            impl_->last_timing.preprocess_ms = profile.preprocess_ms;
+            impl_->last_timing.model_infer_ms = profile.model_infer_ms;
+            impl_->last_timing.postprocess_ms = profile.postprocess_ms;
+            impl_->last_timing.embedding_ms =
+                (profile.total_ms > 0.0) ? profile.total_ms : ToMs(t1 - t0);
+            MaybePrintEmbeddingTiming(impl_->timing_options, impl_->last_timing);
+        }
+
+        return VISION_SERVICE_OK;
+    } catch (const std::exception& e) {
+        return SetError(VISION_SERVICE_INFER_FAILED, e.what());
+    }
 }
 
 float VisionService::EmbeddingSimilarity(const std::vector<float>& embedding_a,

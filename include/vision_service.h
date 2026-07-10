@@ -306,6 +306,13 @@ public:
         const VisionServiceInferParams& params = {});
 
     /**
+     * @brief Encode a text string into an embedding vector (multimodal models).
+     * @thread_safety NOT thread-safe.
+     */
+    VisionServiceStatus EncodeText(const std::string& text,
+                                    std::vector<float>* out_embedding);
+
+    /**
      * @brief Compute cosine similarity between two embeddings
      * @thread_safety Thread-safe (pure function)
      */

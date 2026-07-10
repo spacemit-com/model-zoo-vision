@@ -1,0 +1,8 @@
+model_path: ~/.cache/models/vision/buffalo_l/w600k_r50.q.onnx
+class: deploy.arcface.ArcFaceRecognizer
+default_params:
+  num_threads: 4
+  # If buffalo embedding mismatches reference demo, try norm_std: 128
+  # norm_std: 128
+  providers:
+    - CPUExecutionProvider

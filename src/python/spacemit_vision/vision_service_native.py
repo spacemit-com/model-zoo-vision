@@ -237,6 +237,11 @@ class VisionServiceNative:
             self._last_response = response
         return status, embedding
 
+    def encode_text(self, text: str) -> Tuple[object, List[float]]:
+        _require_ext()
+        status, embedding = self._svc.encode_text(text=text)
+        return status, embedding
+
     @staticmethod
     def embedding_similarity(a: List[float], b: List[float]) -> float:
         _require_ext()

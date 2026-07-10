@@ -28,7 +28,11 @@ struct SequenceInput {
     int image_height = 0;
 };
 
-using InferInput = std::variant<ImageInput, SequenceInput>;
+struct TextInput {
+    std::string text;
+};
+
+using InferInput = std::variant<ImageInput, SequenceInput, TextInput>;
 
 enum class InferIntent {
     kDetect,
@@ -37,6 +41,7 @@ enum class InferIntent {
     kSegment,
     kTrack,
     kEmbed,
+    kEmbedText,
     kInferSequence,
     kOcr,
 };

@@ -1,0 +1,11 @@
+# MobileCLIP2-S3 dual-tower image-text embedding.
+model_path: ~/.cache/models/vision/mobileclip2/image_encoder.onnx
+test_image: ~/.cache/assets/image/007_dog.jpg
+image_size: [256, 256]
+class: deploy.mobileclip2.Mobileclip2Encoder
+default_params:
+  text_model_path: ~/.cache/models/vision/mobileclip2/text_encoder.onnx
+  bpe_merges_path: assets/clip/bpe_merges.txt
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

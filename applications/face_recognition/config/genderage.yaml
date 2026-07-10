@@ -1,0 +1,8 @@
+model_path: ~/.cache/models/vision/buffalo_l/genderage.onnx
+class: deploy.genderage.GenderAgeClassifier
+default_params:
+  num_threads: 1  
+  input_mean: 0.0
+  input_std: 1.0
+  providers:
+    - SpaceMITExecutionProvider

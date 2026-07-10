@@ -70,6 +70,20 @@ bianbu@k3:~/.cache/models/vision# tree
 .
 ├── arcface
 │   └── arcface_mobilefacenet_cut.q.onnx
+├── adaface
+│   └── adaface_ir101_webface12m_merged_dynq.onnx
+├── siglip2
+│   ├── siglip2_vision_encoder.onnx
+│   ├── siglip2_text_encoder.onnx
+│   └── tokenizer.bin
+├── mobileclip2
+│   ├── image_encoder.onnx
+│   └── text_encoder.onnx
+├── buffalo_l
+│   ├── det_10g.q.onnx
+│   ├── w600k_r50.q.onnx
+│   ├── genderage.onnx
+│   └── 2d106det.onnx
 ├── ocsort
 │   ├── ocsort_yoloxs_sim.fp32.onnx
 │   └── yolov8n_no_dfl.q.onnx
@@ -203,7 +217,7 @@ make -j$(nproc)
 ./examples/yolov8 examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg
 ```
 
-更多模型（ByteTrack、OC-SORT、ArcFace 等）的用法与参数见**各示例子目录 README**。
+更多模型（ByteTrack、OC-SORT、ArcFace、AdaFace、SigLIP2、MobileCLIP2 等）的用法与参数见**各示例子目录 README**。
 
 ## 3. 应用开发
 
@@ -258,7 +272,7 @@ target_link_libraries(your_app PRIVATE
 ### 3.2. API 使用与 CMake 集成
 
 - **C++**：`#include "vision_service.h"`，包含路径指向本组件 `include/`（或安装后的 `include`）；链接 `vision` 及上表所列依赖库。接口为类 `VisionService`，创建与推理、绘制均使用 `cv::Mat`，无需 raw buffer 转换。
-- **Python**：安装 `spacemit_vision` wheel 后，`from spacemit_vision import VisionServiceNative`，用 `VisionServiceNative.create(config_yaml)` 创建服务，再调 `infer_image` / `infer_embedding` / `infer_sequence` / `draw`；参数见各示例子目录 README。
+- **Python**：安装 `spacemit_vision` wheel 后，`from spacemit_vision import VisionServiceNative`，用 `VisionServiceNative.create(config_yaml)` 创建服务，再调 `infer_image` / `infer_embedding` / `encode_text` / `infer_sequence` / `draw`；参数见各示例子目录 README。图文双塔模型（SigLIP2、MobileCLIP2）的文本侧用 `encode_text`。
 
 **C++ 调用示例（图像推理 + 绘制）：**
 
@@ -313,6 +327,16 @@ if svc.supports_draw():
         cv2.imwrite("result.jpg", vis)
 ```
 
+**图文 embedding（SigLIP2 / MobileCLIP2）示例：**
+
+```python
+svc = VisionServiceNative.create("examples/siglip2/config/siglip2.yaml")
+img = cv2.imread("~/.cache/assets/image/007_dog.jpg")
+st, image_emb = svc.infer_embedding(img)
+st, text_emb = svc.encode_text("a photo of a dog")
+score = VisionServiceNative.embedding_similarity(image_emb, text_emb)
+```
+
 **CMake 集成示例**：将本组件作为子目录添加后，对目标执行 `target_link_libraries(your_app PRIVATE vision ${OpenCV_LIBS} onnxruntime spacemit_ep yaml-cpp)`，并 `target_include_directories(your_app PRIVATE path/to/vision/include)`。
 
 ## 4. 常见问题
@@ -332,7 +356,7 @@ if svc.supports_draw():
 
 | 版本   | 说明 |
 | ------ | ---- |
-| 0.1.0  | 计算机视觉模型部署库，支持 YOLOv8、ByteTrack、OC-SORT、ArcFace、ResNet 等；C++ / Python 统一接口，ONNX Runtime 后端。 |
+| 0.1.0  | 计算机视觉模型部署库，支持 YOLOv8、ByteTrack、OC-SORT、ArcFace、AdaFace、SigLIP2、MobileCLIP2、ResNet 等；C++ / Python 统一接口，ONNX Runtime 后端。 |
 
 重要变更与兼容性说明将随版本更新在本文档或仓库 Release 中记录。
 

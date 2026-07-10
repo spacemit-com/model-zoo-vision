@@ -31,7 +31,8 @@ public:
     ArcFaceRecognizer(const std::string& model_path,
                         int num_threads = 4,
                         bool lazy_load = false,
-                        const std::string& provider = "SpaceMITExecutionProvider");
+                        const std::string& provider = "SpaceMITExecutionProvider",
+                        float norm_std = 127.5f);
 
     virtual ~ArcFaceRecognizer() = default;
 
@@ -81,6 +82,7 @@ public:
 private:
     int num_threads_;
     std::string provider_;
+    float norm_std_ = 127.5f;
 };
 
 }  // namespace vision_deploy

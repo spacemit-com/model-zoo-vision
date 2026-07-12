@@ -239,10 +239,12 @@ vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>
         outputs[8].GetTensorData<float>(),
     };
 
+    // Score tensors may be [N], [N,1], or [1,N]; use element count so both
+    // InsightFace ([N,1]) and batched ([1,N]) layouts map to anchor count.
     const int num_anchors[3] = {
-        static_cast<int>(outputs[0].GetTensorTypeAndShapeInfo().GetShape()[0]),
-        static_cast<int>(outputs[1].GetTensorTypeAndShapeInfo().GetShape()[0]),
-        static_cast<int>(outputs[2].GetTensorTypeAndShapeInfo().GetShape()[0]),
+        static_cast<int>(outputs[0].GetTensorTypeAndShapeInfo().GetElementCount()),
+        static_cast<int>(outputs[1].GetTensorTypeAndShapeInfo().GetElementCount()),
+        static_cast<int>(outputs[2].GetTensorTypeAndShapeInfo().GetElementCount()),
     };
 
     const float scale_x = 1.0f / det_scale;

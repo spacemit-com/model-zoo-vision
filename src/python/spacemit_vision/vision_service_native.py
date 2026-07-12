@@ -129,9 +129,11 @@ class VisionServiceNative:
         config_path: str,
         model_path_override: str = "",
         lazy_load: bool = False,
-        timing_enabled: bool = True,
-        timing_print_to_stdout: bool = True,
+        timing_enabled: bool = False,
+        timing_print_to_stdout: bool = False,
     ) -> VisionServiceNative:
+        # Examples do not warm up; cold-start timings are misleading, so keep
+        # stdout printing off by default (same as C++ VisionServiceTimingOptions).
         _require_ext()
         impl = _ext.VisionService.create(config_path, model_path_override, lazy_load)
         svc = VisionServiceNative(impl)

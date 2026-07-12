@@ -122,23 +122,27 @@ cv::Mat Mobileclip2Encoder::preprocess(const cv::Mat& image) {
 
     cv::Mat resized;
     cv::resize(image, resized, cv::Size(input_width, input_height), 0, 0, cv::INTER_LINEAR);
-    cv::Mat normalized;
-    resized.convertTo(normalized, CV_32F, 1.0 / 255.0);
-    cv::Mat channels[3];
-    cv::split(normalized, channels);
-    for (int c = 0; c < 3; ++c) {
-        channels[c] = (channels[c] - (kClipMean[c] / 255.0)) / (kClipStd[c] / 255.0);
+    // OpenCV images are BGR; CLIP mean/std expect RGB (same as reference stbi_load RGB).
+    cv::Mat rgb;
+    if (resized.channels() == 3) {
+        cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+    } else if (resized.channels() == 4) {
+        cv::cvtColor(resized, rgb, cv::COLOR_BGRA2RGB);
+    } else {
+        cv::cvtColor(resized, rgb, cv::COLOR_GRAY2RGB);
     }
-    cv::Mat merged;
-    cv::merge(channels, 3, merged);
 
-    std::vector<cv::Mat> chw(3);
-    cv::split(merged, chw.data());
-    cv::Mat blob(1, 3 * input_height * input_width, CV_32F);
+    // Per-channel (x - mean) / std into NCHW blob. Avoid merge→split round-trip;
+    // blobFromImage cannot express different std per channel in one call.
+    cv::Mat channels[3];
+    cv::split(rgb, channels);
+    const int plane = input_height * input_width;
+    cv::Mat blob(1, 3 * plane, CV_32F);
     for (int c = 0; c < 3; ++c) {
-        cv::Mat channel_blob = blob.colRange(c * input_height * input_width,
-                                            (c + 1) * input_height * input_width);
-        chw[c].reshape(1, 1).copyTo(channel_blob);
+        cv::Mat plane_f;
+        const double inv_std = 1.0 / kClipStd[c];
+        channels[c].convertTo(plane_f, CV_32F, inv_std, -kClipMean[c] * inv_std);
+        plane_f.reshape(1, 1).copyTo(blob.colRange(c * plane, (c + 1) * plane));
     }
     return blob.reshape(1, {1, 3, input_height, input_width});
 }

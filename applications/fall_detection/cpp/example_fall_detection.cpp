@@ -7,7 +7,7 @@
  * @brief Fall Detection Demo (YOLOv8-Pose + STGCN)
  *
  * Logic aligned with python example_fall_detection.py:
- * - Run pose estimation; select the detection with highest score (one person)
+ * - Single-target only: pose estimate then keep the highest-score person
  * - Draw that person's box and keypoints
  * - Feed 30-frame keypoint sequence to STGCN for action recognition (7 classes, Fall Down)
  * - Show action name and fall probability; smooth fall decision over recent predictions
@@ -25,7 +25,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -56,14 +55,6 @@ struct StgcnResult {
     float fall_prob = 0.0f;
 };
 
-struct FallInfo {
-    float aspect_ratio = 0.0f;
-    bool vertical_check = false;
-    bool angle_check = false;
-    float height_ratio = 0.0f;
-    std::vector<std::string> reasons;
-};
-
 /** Build one frame of 13 keypoints (x,y,vis) for STGCN from C API keypoints (at least 17). */
 std::vector<float> keypoints_to_stgcn_frame(const vision::KeyPoint* kpts, int count,
                                             int image_width, int image_height) {
@@ -91,97 +82,6 @@ std::vector<float> keypoint_buffer_to_pts(const std::deque<std::vector<float>>& 
         off += 13 * 3;
     }
     return pts;
-}
-
-inline bool is_nan(float v) {
-    return std::isnan(v);
-}
-
-cv::Point2f nan_pt() {
-    float n = std::numeric_limits<float>::quiet_NaN();
-    return cv::Point2f(n, n);
-}
-
-cv::Point2f avg_if_valid(const cv::Point2f& a, const cv::Point2f& b) {
-    if (!is_nan(a.x) && !is_nan(b.x)) return (a + b) * 0.5f;
-    if (!is_nan(a.x)) return a;
-    if (!is_nan(b.x)) return b;
-    return nan_pt();
-}
-
-bool detect_fall(const std::vector<KeyPoint>& keypoints, const PoseResult& r, float kp_threshold, FallInfo& info_out) {
-    if (keypoints.size() < 17) return false;
-
-    // COCO indices
-    constexpr int NOSE = 0;
-    constexpr int LEFT_SHOULDER = 5;
-    constexpr int RIGHT_SHOULDER = 6;
-    constexpr int LEFT_HIP = 11;
-    constexpr int RIGHT_HIP = 12;
-    constexpr int LEFT_ANKLE = 15;
-    constexpr int RIGHT_ANKLE = 16;
-
-    std::vector<cv::Point2f> kp(17, nan_pt());
-    for (int i = 0; i < 17; ++i) {
-        if (keypoints[i].visibility >= kp_threshold) {
-            kp[i] = cv::Point2f(keypoints[i].x, keypoints[i].y);
-        }
-    }
-
-    cv::Point2f nose = kp[NOSE];
-    cv::Point2f shoulder_center = avg_if_valid(kp[LEFT_SHOULDER], kp[RIGHT_SHOULDER]);
-    cv::Point2f hip_center = avg_if_valid(kp[LEFT_HIP], kp[RIGHT_HIP]);
-    cv::Point2f ankle_center = avg_if_valid(kp[LEFT_ANKLE], kp[RIGHT_ANKLE]);
-
-    float bbox_width = r.bbox.x2 - r.bbox.x1;
-    float bbox_height = r.bbox.y2 - r.bbox.y1;
-    float aspect_ratio = (bbox_height > 0.0f) ? (bbox_width / bbox_height) : 0.0f;
-
-    bool vertical_check = false;
-    if (!is_nan(nose.y) && !is_nan(shoulder_center.y)) {
-        vertical_check = nose.y > shoulder_center.y;  // nose below shoulders
-    }
-
-    bool angle_check = false;
-    if (!is_nan(shoulder_center.x) && !is_nan(hip_center.x)) {
-        cv::Point2f vec = hip_center - shoulder_center;
-        float norm = std::sqrt(vec.x * vec.x + vec.y * vec.y);
-        if (norm > 1e-6f) {
-            constexpr float kPi = 3.14159265358979323846f;
-            float angle = std::atan2(std::abs(vec.x), std::abs(vec.y)) * 180.0f / kPi;
-            angle_check = angle > 45.0f;
-        }
-    }
-
-    float height_ratio = 0.0f;
-    if (!is_nan(nose.y) && !is_nan(ankle_center.y) && bbox_height > 0.0f) {
-        float head_to_feet = std::abs(nose.y - ankle_center.y);
-        height_ratio = head_to_feet / bbox_height;
-    }
-
-    bool is_fall = false;
-    std::vector<std::string> reasons;
-    if (aspect_ratio > 1.2f) {
-        is_fall = true;
-        std::ostringstream oss;
-        oss << "AspectRatio(" << std::fixed << std::setprecision(2) << aspect_ratio << ")";
-        reasons.push_back(oss.str());
-    }
-    if (vertical_check && angle_check) {
-        is_fall = true;
-        reasons.push_back("HeadBelowShoulders+Tilt");
-    }
-    if (aspect_ratio > 1.0f && height_ratio > 0.0f && height_ratio < 0.6f) {
-        is_fall = true;
-        reasons.push_back("PoseAbnormal");
-    }
-
-    info_out.aspect_ratio = aspect_ratio;
-    info_out.vertical_check = vertical_check;
-    info_out.angle_check = angle_check;
-    info_out.height_ratio = height_ratio;
-    info_out.reasons = std::move(reasons);
-    return is_fall;
 }
 
 void draw_one_pose_with_action(cv::Mat& image, const PoseResult& r, float kp_threshold,
@@ -341,6 +241,7 @@ int main(int argc, char** argv) {
     std::string video_path;
     bool use_camera = false;
     int camera_id = 0;
+    bool camera_id_set = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -351,7 +252,19 @@ int main(int argc, char** argv) {
         } else if (a == "--use-camera") {
             use_camera = true;
         } else if (a == "--camera-id" && i + 1 < argc) {
-            camera_id = std::stoi(argv[++i]);
+            const std::string camera_id_str = argv[++i];
+            try {
+                size_t parsed_len = 0;
+                camera_id = std::stoi(camera_id_str, &parsed_len);
+                if (parsed_len != camera_id_str.size()) {
+                    throw std::invalid_argument("contains trailing characters");
+                }
+                camera_id_set = true;
+            } catch (const std::exception&) {
+                std::cerr << "Invalid --camera-id value: " << camera_id_str
+                    << " (expected an integer)" << std::endl;
+                return -1;
+            }
         } else if (a == "-h" || a == "--help") {
             std::cout << "Usage: " << argv[0]
                 << " [config.yaml] [--config <app.yaml>] [--video <path>]"
@@ -400,7 +313,8 @@ int main(int argc, char** argv) {
         } else {
             video_path = ResolveUnderRoot(project_root_path, video_path);
         }
-    } else if (app_cfg["camera_id"]) {
+    } else if (!camera_id_set && app_cfg["camera_id"]) {
+        // CLI --camera-id takes precedence over yaml (same as Python).
         camera_id = app_cfg["camera_id"].as<int>();
     }
 
@@ -493,7 +407,7 @@ int main(int argc, char** argv) {
     if (fps > 1e-3) delay_ms = std::max(1, static_cast<int>(1000.0 / fps));
 
     std::cout << "Start processing... press 'q' to quit.\n";
-    std::cout << "Action/fall by STGCN (30-frame sequence), draw highest-score person only.\n";
+    std::cout << "Single-target: highest-score person + STGCN (30-frame sequence).\n";
     int frame_idx = 0;
     int last_warn_frame = -9999;
     const int warn_interval_frames = 30;
@@ -512,7 +426,7 @@ int main(int argc, char** argv) {
         t_prev = t_now;
 
         cv::Mat vis = frame.clone();
-        int fall_count = 0;
+        bool is_fall = false;
 
         VisionServiceResponse pose_response;
         int ret = pose_service->Infer(frame, &pose_response);
@@ -592,7 +506,7 @@ int main(int argc, char** argv) {
                 best = *cr;  // vision::Pose carries bbox, score, label, keypoints
             }
             draw_one_pose_with_action(vis, best, kp_threshold, last_stgcn_result);
-            if (last_stgcn_result.is_fall) fall_count = 1;
+            is_fall = last_stgcn_result.is_fall;
         } else {
             if (!keypoint_buffer.empty()) {
                 keypoint_buffer.pop_front();
@@ -610,8 +524,8 @@ int main(int argc, char** argv) {
                     cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(0, 0, 0), 2);
         cv::putText(vis, info_line, cv::Point(10, 28),
                     cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(255, 255, 255), 1);
-        if (fall_count > 0) {
-            cv::putText(vis, "FALL COUNT: " + std::to_string(fall_count), cv::Point(10, 58),
+        if (is_fall) {
+            cv::putText(vis, "FALL DETECTED", cv::Point(10, 58),
                         cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 2);
             if (frame_idx - last_warn_frame >= warn_interval_frames) {
                 std::cout << "Warning: fall detected at frame=" << frame_idx << std::endl;

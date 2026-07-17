@@ -31,6 +31,9 @@
 
 #include <filesystem>  // NOLINT(build/c++17)
 #include <opencv2/opencv.hpp>
+#if __has_include(<opencv2/geometry.hpp>)
+#include <opencv2/geometry.hpp>  // OpenCV 5: pointPolygonTest
+#endif
 #include <yaml-cpp/yaml.h>  // NOLINT(build/include_order)
 
 #include "vision_service.h"

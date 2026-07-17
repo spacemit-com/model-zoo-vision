@@ -4,6 +4,7 @@
 */
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>  // NOLINT(build/c++17)
@@ -13,14 +14,19 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
+#if __has_include(<opencv2/geometry.hpp>)
+#include <opencv2/geometry.hpp>  // OpenCV 5: invertAffineTransform
+#endif
 #include <yaml-cpp/yaml.h>
 
 #include "align_face.h"
+#include "face_recognition_runtime.h"
 #include "vision_service.h"
 
 namespace fs = std::filesystem;
@@ -637,7 +643,8 @@ int main(int argc, char* argv[]) {
         std::vector<vision::Pose> faces;
         std::vector<FaceDrawInfo> draw_infos;
         if (!ProcessImagePipeline(image, scrfd.get(), arcface.get(), genderage.get(), landmark106.get(),
-                                    enable_landmark106, false, true, true,
+                                    enable_landmark106, false,
+                                    face_recognition::RunEmbeddingInRegistrationPipeline(), true,
                                     face_db_dir, recognize_threshold,
                                     &faces, &draw_infos)) {
             return 1;
@@ -724,12 +731,23 @@ int main(int argc, char* argv[]) {
             cap.set(cv::CAP_PROP_FRAME_HEIGHT, static_cast<double>(camera_height));
         }
         int frame_idx = 0;
+        constexpr int kCameraReadFailureLimit = 30;
+        constexpr auto kCameraReadFailureBackoff = std::chrono::milliseconds(100);
+        face_recognition::CameraReadFailurePolicy read_failure_policy(kCameraReadFailureLimit);
         std::cout << "Camera started. Press q or ESC to quit." << std::endl;
         while (true) {
             cv::Mat frame;
             if (!cap.read(frame) || frame.empty()) {
+                if (!read_failure_policy.OnReadFailure()) {
+                    std::cerr << "Error: camera read failed "
+                                << read_failure_policy.consecutive_failures()
+                                << " consecutive times; stopping." << std::endl;
+                    return 1;
+                }
+                std::this_thread::sleep_for(kCameraReadFailureBackoff);
                 continue;
             }
+            read_failure_policy.OnReadSuccess();
             ++frame_idx;
             if (camera_skip > 0 && (frame_idx % (camera_skip + 1)) != 1) {
                 cv::imshow("face_recognition_camera", frame);

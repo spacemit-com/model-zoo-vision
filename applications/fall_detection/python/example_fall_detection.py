@@ -6,7 +6,7 @@
 Fall Detection Example (跌倒检测示例)
 
 使用 YOLOv8-Pose 姿态估计 + STGCN 动作识别（多类别，含 Fall Down）进行跌倒检测。
-仅通过 STGCN 判断动作/跌倒，无角度规则。
+单目标：只跟踪/绘制当前帧 score 最高的一人，仅通过 STGCN 判断动作/跌倒。
 """
 
 from pathlib import Path
@@ -19,7 +19,7 @@ import numpy as np
 
 from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-# STGCN/TSSTG：30 帧、13 关键点（COCO 子集），用于 --use-stgcn 时
+# STGCN/TSSTG：30 帧、13 关键点（COCO 子集）
 COCO17_TO_TSTSGO13 = [0, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4]
 STGCN_SEQUENCE_LENGTH = 30
 
@@ -123,75 +123,71 @@ def _draw_skeleton(image, bbox, keypoints, box_color, kp_color, kp_threshold):
     return image
 
 
-def draw_fall_detection(image, detections, kp_threshold=0.3, action_results=None):
+def draw_fall_detection(image, detection, kp_threshold=0.3, action_result=None):
     """
-    在图像上绘制动作/跌倒检测结果（仅 STGCN 多类别结果）。
+    在图像上绘制单人动作/跌倒检测结果（仅 STGCN）。
 
     Args:
         image: 输入图像
-        detections: 检测结果列表，每项为 {'box'/'bbox': [x1,y1,x2,y2],
-                    'keypoints': [(x,y,vis), ...]}
+        detection: {'box'/'bbox': [x1,y1,x2,y2], 'keypoints': [(x,y,vis), ...]}
         kp_threshold: 关键点可见度阈值
-        action_results: 每人的动作结果 [{'action_name': str, 'is_fall': bool, 'fall_prob': float}, ...]；
-                        未提供或对应索引无结果时显示 "—"
+        action_result: {'action_name': str, 'is_fall': bool, 'fall_prob': float}；
+                       未提供时动作显示 "—"
 
     Returns:
         绘制后的图像
     """
     result = image.copy()
+    bbox = detection.get('bbox', detection.get('box', []))
+    keypoints = detection.get('keypoints', [])
 
-    for i, det in enumerate(detections):
-        bbox = det.get('bbox', det.get('box', []))
-        keypoints = det.get('keypoints', [])
+    if len(bbox) < 4 or len(keypoints) < 17:
+        return result
 
-        if len(bbox) < 4 or len(keypoints) < 17:
-            continue
+    if action_result is not None:
+        action_name = action_result.get('action_name', '—')
+        is_fall = action_result.get('is_fall', False)
+        fall_prob = action_result.get('fall_prob', 0.0)
+    else:
+        action_name = '—'
+        is_fall = False
+        fall_prob = 0.0
 
-        if action_results is not None and i < len(action_results):
-            ar = action_results[i]
-            action_name = ar.get('action_name', '—')
-            is_fall = ar.get('is_fall', False)
-            fall_prob = ar.get('fall_prob', 0.0)
-        else:
-            action_name = '—'
-            is_fall = False
-            fall_prob = 0.0
+    box_color = (0, 0, 255) if is_fall else (0, 255, 0)
+    kp_color = (0, 0, 255) if is_fall else (255, 0, 0)
+    result = _draw_skeleton(
+        result, bbox, keypoints,
+        box_color=box_color,
+        kp_color=kp_color,
+        kp_threshold=kp_threshold,
+    )
 
-        box_color = (0, 0, 255) if is_fall else (0, 255, 0)
-        kp_color = (0, 0, 255) if is_fall else (255, 0, 0)
-        result = _draw_skeleton(
-            result, bbox, keypoints,
-            box_color=box_color,
-            kp_color=kp_color,
-            kp_threshold=kp_threshold,
-        )
-
-        x1, y1, x2, y2 = map(int, bbox)
-        status_text = action_name if action_name else '—'
-        text_color = (0, 0, 255) if is_fall else (0, 255, 0)
-        (tw, th), bl = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-        cv2.rectangle(
-            result,
-            (x1, y1 - th - bl - 10),
-            (x1 + tw + 10, y1),
-            text_color,
-            -1
-        )
+    x1, y1, x2, y2 = map(int, bbox)
+    status_text = action_name if action_name else '—'
+    text_color = (0, 0, 255) if is_fall else (0, 255, 0)
+    (tw, th), bl = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+    cv2.rectangle(
+        result,
+        (x1, y1 - th - bl - 10),
+        (x1 + tw + 10, y1),
+        text_color,
+        -1
+    )
+    cv2.putText(
+        result, status_text, (x1 + 5, y1 - 5),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2
+    )
+    if is_fall:
+        sub_text = f"Fall Down ({fall_prob:.2f})"
         cv2.putText(
-            result, status_text, (x1 + 5, y1 - 5),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2
+            result, sub_text, (x1, y2 + 20),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1
         )
-        if is_fall:
-            sub_text = f"Fall Down ({fall_prob:.2f})"
-            cv2.putText(
-                result, sub_text, (x1, y2 + 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1
-            )
-        elif action_name != '—' and fall_prob is not None:
-            cv2.putText(
-                result, f"P(fall)={fall_prob:.2f}", (x1, y2 + 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1
-            )
+    elif action_name != '—' and fall_prob is not None:
+        cv2.putText(
+            result, f"P(fall)={fall_prob:.2f}", (x1, y2 + 20),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1
+        )
 
     return result
 
@@ -256,7 +252,7 @@ def main():
     else:
         print(f"输入视频: {args.video}")
     print(f"关键点阈值: {args.kp_threshold}")
-    print("动作/跌倒判断: STGCN 动作识别 (30 帧序列)")
+    print("动作/跌倒判断: STGCN（单目标，取 score 最高一人）")
     print("按 'q' 键退出")
     print("=" * 60)
 
@@ -342,7 +338,7 @@ def main():
 
             # 运行检测
             result = frame
-            fall_count = 0
+            is_fall = False
             try:
                 status, results = pose_svc.infer_image(frame)
                 if status != VisionServiceStatus.OK:
@@ -365,7 +361,7 @@ def main():
                 if formatted_detections:
                     h, w = frame.shape[:2]
 
-                    # STGCN：对第一人维护 30 帧 buffer，满则推理并更新 last_stgcn_result
+                    # 单目标：只取 score 最高的一人做 STGCN
                     det0 = max(formatted_detections, key=lambda d: float(d.get('score', 0.0)))
                     kps = det0.get('keypoints', [])
                     box = det0.get('box', det0.get('bbox', []))
@@ -411,24 +407,19 @@ def main():
                                 except Exception:
                                     pass
                     else:
-                        # 与 test_stgcn 一致：关键点不足时不 popleft，只不 append，保证 30 帧为连续有效序列
+                        # 关键点不足时不 append，保证 30 帧为连续有效序列
                         pass
 
-                    # 只画被跟踪的一个人（score 最高），与 test_stgcn 一致
-                    single_detection = [det0]
-                    single_action = (
+                    action = (
                         last_stgcn_result if last_stgcn_result is not None
                         else {'action_name': '—', 'is_fall': False, 'fall_prob': 0.0}
                     )
                     result = draw_fall_detection(
-                        frame, single_detection, args.kp_threshold, action_results=[single_action])
+                        frame, det0, args.kp_threshold, action_result=action)
 
-                    if single_action.get('is_fall', False):
-                        fall_count = 1
-                    else:
-                        fall_count = 0
+                    is_fall = bool(action.get('is_fall', False))
 
-                    # 左上角：当前动作与跌倒计数
+                    # 左上角：当前动作与跌倒状态
                     primary_action = last_stgcn_result.get('action_name', '—') if last_stgcn_result else '—'
                     primary_fall_prob = last_stgcn_result.get('fall_prob', 0.0) if last_stgcn_result else 0.0
                     info_line = f"Action: {primary_action}  P(fall): {primary_fall_prob:.2f}"
@@ -436,9 +427,9 @@ def main():
                                0.65, (0, 0, 0), 2)
                     cv2.putText(result, info_line, (10, 28), cv2.FONT_HERSHEY_SIMPLEX,
                                0.65, (255, 255, 255), 1)
-                    if fall_count > 0:
+                    if is_fall:
                         cv2.putText(
-                            result, f"FALL COUNT: {fall_count}",
+                            result, "FALL DETECTED",
                             (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2
                         )
                         if frame_idx - last_warn_frame >= warn_interval_frames:

@@ -18,6 +18,9 @@
 #include <vector>
 
 #include <opencv2/opencv.hpp>
+#if __has_include(<opencv2/geometry.hpp>)
+#include <opencv2/geometry.hpp>  // OpenCV 5: contour/hull/minAreaRect/getPerspectiveTransform
+#endif
 
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 

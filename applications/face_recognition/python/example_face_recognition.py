@@ -393,7 +393,7 @@ def main():
             image, scrfd, arcface, genderage, landmark106,
             enable_landmark106=enable_landmark106,
             enable_recognition=False,
-            run_embedding=True,
+            run_embedding=False,
             face_db_dir=face_db_dir,
             threshold=threshold,
         )

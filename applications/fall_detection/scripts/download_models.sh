@@ -30,8 +30,10 @@ download_base "$BASE_POSE" "$MODEL_DIR_POSE" "yolov8n-pose.q.onnx"
 
 BASE_STGCN="https://archive.spacemit.com/spacemit-ai/model_zoo/vision/stgcn"
 download_base "$BASE_STGCN" "$MODEL_DIR_STGCN" "stgcn.fp32.onnx"
+download_base "$BASE_STGCN" "$MODEL_DIR_STGCN" "stgcn.dynq.onnx"
 
 echo "完成。模型目录: $CACHE_BASE"
 echo "配置中请使用:"
 echo "  pose_model_path: ~/.cache/models/vision/yolov8_pose/yolov8n-pose.q.onnx"
-echo "  stgcn_model_path: ~/.cache/models/vision/stgcn/stgcn.fp32.onnx"
+echo "  stgcn_model_path (默认 dynq + SpaceMIT EP): ~/.cache/models/vision/stgcn/stgcn.dynq.onnx"
+echo "  stgcn_model_path (备选 fp32 + CPU EP):     ~/.cache/models/vision/stgcn/stgcn.fp32.onnx"

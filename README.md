@@ -94,6 +94,7 @@ bianbu@k3:~/.cache/models/vision# tree
 ├── resnet
 │   └── resnet50.q.onnx
 ├── stgcn
+│   ├── stgcn.dynq.onnx
 │   └── stgcn.fp32.onnx
 ├── yolov11
 │   ├── yolo11m.q.onnx

@@ -6,7 +6,7 @@ test_video: ~/.cache/assets/video/002_fall.mp4
 kp_threshold: 0.3
 stgcn_wait_frames: 10
 stgcn_smooth_window: 5
-camera_id: 0
+camera_id: 1
 
 # Application policy: which STGCN output class counts as a "fall" event.
 # This is a business decision of this app, not a property of the model

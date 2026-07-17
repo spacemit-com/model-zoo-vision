@@ -41,7 +41,14 @@ option(VISION_WITH_MPP "Enable MPP camera capture backend (UVC/VI) in examples" 
 # ============================================================================
 
 if(NOT DEFINED OpenCV_DIR)
-    set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4")
+    # Bianbu 4.x ships OpenCV 5 under opencv5/; older images used opencv4/
+    if(EXISTS "/opt/opencv-spacemit/lib/cmake/opencv5/OpenCVConfig.cmake")
+        set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv5")
+    elseif(EXISTS "/opt/opencv-spacemit/lib/cmake/opencv4/OpenCVConfig.cmake")
+        set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv4")
+    else()
+        set(OpenCV_DIR "/opt/opencv-spacemit/lib/cmake/opencv5")
+    endif()
 endif()
 find_package(OpenCV REQUIRED
     COMPONENTS core imgproc imgcodecs highgui dnn
@@ -81,6 +88,24 @@ set(LIBS
     spacemit_ep
     yaml-cpp
 )
+
+# OpenCV 5 moved contour/hull/perspective APIs out of imgproc into the new
+# opencv_geometry module (see opencv2/geometry/2d.hpp); on OpenCV 4 those APIs
+# live in imgproc, which is already linked via OpenCV_LIBS.
+if(OpenCV_VERSION VERSION_GREATER_EQUAL 5)
+    # Derive the lib dir from OpenCV_DIR (…/lib/cmake/opencvN -> …/lib) so a
+    # custom OpenCV_DIR also works; keep the vendor default as fallback.
+    get_filename_component(_opencv_lib_dir "${OpenCV_DIR}/../.." ABSOLUTE)
+    find_library(OPENCV_GEOMETRY_LIBRARY
+        NAMES opencv_geometry
+        PATHS "${_opencv_lib_dir}"
+              /opt/opencv-spacemit/lib
+        NO_DEFAULT_PATH
+        REQUIRED
+    )
+    list(APPEND LIBS ${OPENCV_GEOMETRY_LIBRARY})
+    message(STATUS "OpenCV geometry: ${OPENCV_GEOMETRY_LIBRARY}")
+endif()
 
 if(VISION_WITH_MPP)
     if(NOT DEFINED STAGING_DIR)

@@ -26,8 +26,9 @@ download() {
 }
 
 download "det_10g.q.onnx"
+download "det_10g_fixed.q.onnx"
 download "w600k_r50.q.onnx"
-download "genderage.onnx"
+download "genderage.q.onnx"
 download "2d106det.onnx"
 
 echo "Done. Models in $MODEL_DIR"

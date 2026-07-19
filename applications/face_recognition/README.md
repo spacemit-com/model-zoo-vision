@@ -10,7 +10,7 @@
 bash applications/face_recognition/scripts/download_models.sh
 ```
 
-模型目录：`~/.cache/models/vision/buffalo_l/`（`det_10g.q.onnx`、`w600k_r50.q.onnx`、`genderage.onnx`、`2d106det.onnx`）。
+模型目录：`~/.cache/models/vision/buffalo_l/`（`det_10g.q.onnx`、`det_10g_fixed.q.onnx`、`w600k_r50.q.onnx`、`genderage.q.onnx`、`2d106det.onnx`）。
 
 ## 配置
 
@@ -32,60 +32,28 @@ bash applications/face_recognition/scripts/download_models.sh
 
 在仓库根目录跑 Python；C++ 在 `build/` 目录。
 
-### 默认模式（analyze）
-
-不做人脸注册/识别，只跑流程并默认保存结果图。
+默认会读 `config/face_recognition.yaml`，**不用手动传 yaml**（和其他 application 一样）。
 
 ```bash
-# Python
-python applications/face_recognition/python/example_face_recognition.py analyze /path/to/image.jpg
-python applications/face_recognition/python/example_face_recognition.py /path/to/image.jpg
+# 默认 analyze（用 yaml 里的 test_image）
+./applications/example_face_recognition
+python applications/face_recognition/python/example_face_recognition.py
 
-# C++（在 build 目录）
-./applications/example_face_recognition analyze /path/to/image.jpg
-./applications/example_face_recognition /path/to/image.jpg
+# 指定图片
+./applications/example_face_recognition --image /path/to/image.jpg
+
+# 注册 / 识别
+./applications/example_face_recognition --register alice --image /path/to/face.jpg
+./applications/example_face_recognition --recognize --image /path/to/query.jpg
+
+# 摄像头
+./applications/example_face_recognition --use-camera --camera-id 1
+./applications/example_face_recognition --use-camera --camera-id 1 --recognize
 ```
 
-### 注册
+CLI：`--config`、`--image`、`--output`、`--use-camera`、`--camera-id`、`--register`、`--recognize`、`--save-image` / `--no-save-image`；C++ 另有 `--camera-width` / `--camera-height` / `--camera-skip`。也支持位置参数 `[config.yaml] [image] [output]`（可选，用来覆盖默认配置）。
 
-```bash
-python applications/face_recognition/python/example_face_recognition.py register alice /path/to/face.jpg
-./applications/example_face_recognition register alice /path/to/face.jpg
-```
-
-### 识别
-
-```bash
-python applications/face_recognition/python/example_face_recognition.py recognize /path/to/query.jpg
-./applications/example_face_recognition recognize /path/to/query.jpg
-```
-
-### 摄像头
-
-```bash
-# Python：camera [<camera_index>]，默认不做 embedding
-python applications/face_recognition/python/example_face_recognition.py camera 1 --enable-recognition
-
-# C++：支持 camera 子命令，以及与其他 application 对齐的 --use-camera 写法
-./applications/example_face_recognition camera 1 --enable-recognition
-./applications/example_face_recognition --use-camera --camera-id 1 --camera-width 640 --camera-height 480 --camera-skip 1
-```
-
-> 说明：`--use-camera` / `--camera-id` / `--camera-width` / `--camera-height` / `--camera-skip` 仅 C++ 支持；Python 用 `camera [<index>]`。无显示环境（如纯 SSH）时 OpenCV GUI 可能失败，属运行环境限制。
-
-### 常用参数
-
-- `--config <app.yaml>`
-- `--output <jpg>`
-- `--save-image` / `--no-save-image`
-- `--enable-recognition` / `--disable-recognition`
-- C++ 额外：`--use-camera` / `--camera-id` / `--camera-width` / `--camera-height` / `--camera-skip`
-- `--output` 为相对路径时，保存到当前工作目录（与其他 applications 一致）
-
-默认保存策略：
-- `analyze`：默认保存图片
-- `register/recognize`：默认不保存（可用 `--save-image` 开启）
-- `camera`：实时显示，不保存图片；默认不做 embedding（`--enable-recognition` 后才做）
+默认保存策略：默认 analyze 保存图片；`--register` / `--recognize` / `--use-camera` 默认不保存（可用 `--save-image` 开启）。无显示环境（如纯 SSH）时 OpenCV GUI 可能失败，属运行环境限制。
 
 ## Pipeline
 

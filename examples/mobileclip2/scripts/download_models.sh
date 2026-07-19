@@ -1,11 +1,11 @@
 #!/bin/sh
-# Download MobileCLIP2 image/text ONNX to ~/.cache/models/vision/mobileclip2/
+# Download MobileCLIP2-S3 image/text ONNX to ~/.cache/models/vision/mobileclip2/s3/
 # BPE merges ship in the repo at assets/clip/bpe_merges.txt (no download).
 set -e
 CACHE_BASE="${HOME:-/tmp}/.cache/models/vision"
-MODEL_DIR="$CACHE_BASE/mobileclip2"
+MODEL_DIR="$CACHE_BASE/mobileclip2/s3"
 mkdir -p "$MODEL_DIR"
-BASE_URL="https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2"
+BASE_URL="https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2/s3"
 
 download() {
   name="$1"
@@ -21,7 +21,7 @@ download() {
   fi
 }
 
-download "image_encoder.onnx"
+download "image_encoder.fp16.onnx"
 download "text_encoder.onnx"
 echo "Done. Models in $MODEL_DIR"
 echo "Note: bpe_merges.txt ships in the repo at assets/clip/bpe_merges.txt (no download needed)."

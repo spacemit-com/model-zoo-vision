@@ -5,11 +5,11 @@
 """
 Face recognition application (buffalo_l pipeline).
 
-Usage:
-  python example_face_recognition.py analyze /path/to/image.jpg
-  python example_face_recognition.py register alice /path/to/face.jpg
-  python example_face_recognition.py recognize /path/to/query.jpg
-  python example_face_recognition.py camera 0 --enable-recognition
+Usage (same style as other applications):
+  python example_face_recognition.py [config.yaml] [--image path] [output_path]
+  python example_face_recognition.py --register alice --image face.jpg
+  python example_face_recognition.py --recognize --image query.jpg
+  python example_face_recognition.py --use-camera --camera-id 1 [--recognize]
 """
 
 import argparse
@@ -34,6 +34,11 @@ _ARCFACE_SRC5 = np.array(
     ],
     dtype=np.float32,
 )
+
+
+def _looks_like_yaml(path: str) -> bool:
+    lower = path.lower()
+    return lower.endswith(".yaml") or lower.endswith(".yml")
 
 
 def _find_project_root(start: Path) -> Path:
@@ -328,21 +333,54 @@ def _process_image_pipeline(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Face recognition (buffalo_l)")
-    parser.add_argument("mode", nargs="?", default="analyze")
-    parser.add_argument("items", nargs="*")
+    parser = argparse.ArgumentParser(
+        description="Face recognition (buffalo_l)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Same positional style as other applications:\n"
+            "  [config.yaml] [--image <path>] [output_path]\n"
+            "  [--use-camera] [--camera-id <id>] [--register <name>] [--recognize]"
+        ),
+    )
+    parser.add_argument("positionals", nargs="*", help="[config.yaml] [image] [output]")
     parser.add_argument("--config", default=None, help="app config yaml")
+    parser.add_argument("--image", default=None, help="input image path")
     parser.add_argument("--output", default=None, help="annotated result image path")
+    parser.add_argument("--register", default=None, metavar="NAME", help="enroll face as NAME")
+    parser.add_argument("--recognize", action="store_true", help="match against face db")
     parser.add_argument("--save-image", action="store_true")
     parser.add_argument("--no-save-image", action="store_true")
-    parser.add_argument("--enable-recognition", action="store_true")
-    parser.add_argument("--disable-recognition", action="store_true")
-    args = parser.parse_args()
-    valid = {"analyze", "register", "recognize", "camera"}
-    if args.mode not in valid:
-        args.items = [args.mode] + args.items
-        args.mode = "analyze"
-    return args
+    parser.add_argument("--use-camera", action="store_true")
+    parser.add_argument("--camera-id", type=int, default=0)
+    raw = parser.parse_args()
+
+    image_path = raw.image
+    config = raw.config
+    output = raw.output
+    for item in raw.positionals:
+        if _looks_like_yaml(item) and not config:
+            config = item
+        elif not image_path:
+            image_path = item
+        elif not output:
+            output = item
+        else:
+            parser.error(f"unexpected argument: {item}")
+
+    if raw.register and (raw.recognize or raw.use_camera):
+        parser.error("--register cannot be combined with --recognize or --use-camera")
+
+    return argparse.Namespace(
+        register_name=raw.register,
+        recognize=raw.recognize,
+        image=image_path,
+        config=config,
+        output=output,
+        use_camera=raw.use_camera,
+        camera_id=raw.camera_id,
+        save_image=raw.save_image,
+        no_save_image=raw.no_save_image,
+    )
 
 
 def main():
@@ -368,22 +406,22 @@ def main():
     if args.save_image and args.no_save_image:
         print("Error: --save-image and --no-save-image cannot both be set")
         return 1
-    save_default = (args.mode == "analyze")
+
+    is_register = bool(args.register_name)
+    is_camera = bool(args.use_camera)
+    is_recognize = bool(args.recognize) and not is_camera
+    enable_recognition = bool(args.recognize)
+    save_default = not is_register and not is_recognize and not is_camera
     save_image = args.save_image if args.save_image or args.no_save_image else save_default
     if args.no_save_image:
         save_image = False
-    enable_recognition = args.enable_recognition
-    if args.mode == "recognize":
-        enable_recognition = not args.disable_recognition
-    elif args.disable_recognition:
-        enable_recognition = False
 
-    if args.mode == "register":
-        if len(args.items) < 2:
-            print("Usage: register <name> <image>")
+    if is_register:
+        if not args.image:
+            print("Error: --register requires --image or a positional image path")
             return 1
-        name = args.items[0]
-        image_path = _resolve(args.items[1], root)
+        name = args.register_name
+        image_path = _resolve(args.image, root)
         image = cv2.imread(str(image_path))
         if image is None:
             print(f"Error: cannot load image: {image_path}")
@@ -427,36 +465,10 @@ def main():
             _save_result_image(image, poses, labels, colors, extras, output_image_path)
         return 0
 
-    if args.mode in ("analyze", "recognize"):
-        image_arg = args.items[0] if args.items else app_config.get("test_image")
-        if not image_arg:
-            print("Usage: analyze <image> | recognize <image>")
-            return 1
-        image_path = _resolve(image_arg, root)
-        image = cv2.imread(str(image_path))
-        if image is None:
-            print(f"Error: cannot load image: {image_path}")
-            return 1
-
-        status, poses, labels, colors, extras = _process_image_pipeline(
-            image, scrfd, arcface, genderage, landmark106,
-            enable_landmark106=enable_landmark106,
-            enable_recognition=enable_recognition,
-            run_embedding=True,
-            face_db_dir=face_db_dir,
-            threshold=threshold,
-        )
-        if status != VisionServiceStatus.OK:
-            return 1
-        if save_image:
-            _save_result_image(image, poses, labels, colors, extras, output_image_path)
-        return 0
-
-    if args.mode == "camera":
-        cam_idx = int(args.items[0]) if args.items else 0
-        cap = cv2.VideoCapture(cam_idx)
+    if is_camera:
+        cap = cv2.VideoCapture(int(args.camera_id))
         if not cap.isOpened():
-            print(f"Error: cannot open camera index: {cam_idx}")
+            print(f"Error: cannot open camera index: {args.camera_id}")
             return 1
         print("Camera started. Press q or ESC to quit.")
         while True:
@@ -482,8 +494,29 @@ def main():
         cv2.destroyAllWindows()
         return 0
 
-    print("Unknown mode")
-    return 1
+    image_arg = args.image or app_config.get("test_image")
+    if not image_arg:
+        print("Error: provide --image / positional image, or set test_image in config")
+        return 1
+    image_path = _resolve(image_arg, root)
+    image = cv2.imread(str(image_path))
+    if image is None:
+        print(f"Error: cannot load image: {image_path}")
+        return 1
+
+    status, poses, labels, colors, extras = _process_image_pipeline(
+        image, scrfd, arcface, genderage, landmark106,
+        enable_landmark106=enable_landmark106,
+        enable_recognition=enable_recognition,
+        run_embedding=True,
+        face_db_dir=face_db_dir,
+        threshold=threshold,
+    )
+    if status != VisionServiceStatus.OK:
+        return 1
+    if save_image:
+        _save_result_image(image, poses, labels, colors, extras, output_image_path)
+    return 0
 
 
 if __name__ == "__main__":

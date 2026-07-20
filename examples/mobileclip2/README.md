@@ -4,8 +4,8 @@ MobileCLIP2 图文双塔 embedding（256 视觉 + 77 token 文本，768 维）�
 
 ## 1. 模型与权重
 
-- **模型文件**（缓存目录 `~/.cache/models/vision/mobileclip2/`）：
-  - 图像：`image_encoder.onnx`
+- **模型文件**（缓存目录 `~/.cache/models/vision/mobileclip2/s3/`，与 `config/mobileclip2.yaml` 一致）：
+  - 图像：`image_encoder.fp16.onnx`
   - 文本：`text_encoder.onnx`
 - **下载**：
 
@@ -13,7 +13,7 @@ MobileCLIP2 图文双塔 embedding（256 视觉 + 77 token 文本，768 维）�
 bash examples/mobileclip2/scripts/download_models.sh
 ```
 
-归档路径：`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2/`
+归档路径：`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2/s3/`
 
 **测试图片**：默认 `~/.cache/assets/image/007_dog.jpg`。在根目录执行 `bash scripts/download_assets.sh`。
 
@@ -21,9 +21,9 @@ bash examples/mobileclip2/scripts/download_models.sh
 
 | 配置项 | 含义 | 默认 |
 |--------|------|------|
-| `model_path` | 图像编码 ONNX | `~/.cache/models/vision/mobileclip2/image_encoder.onnx` |
+| `model_path` | 图像编码 ONNX | `~/.cache/models/vision/mobileclip2/s3/image_encoder.fp16.onnx` |
 | `test_image` | 默认测试图 | `007_dog.jpg` |
-| `default_params.text_model_path` | 文本编码 ONNX | `~/.cache/models/vision/mobileclip2/text_encoder.onnx` |
+| `default_params.text_model_path` | 文本编码 ONNX | `~/.cache/models/vision/mobileclip2/s3/text_encoder.onnx` |
 | `default_params.bpe_merges_path` | CLIP BPE 合并表 | `assets/clip/bpe_merges.txt` |
 | `image_size` | 视觉输入 | `[256, 256]` |
 
@@ -55,6 +55,6 @@ python examples/mobileclip2/python/mobileclip2.py --config examples/mobileclip2/
 
 ## 5. 故障排查
 
-- **模型未找到**：执行 `download_models.sh`，确认 `~/.cache/models/vision/mobileclip2/` 下两个 ONNX 非空。
+- **模型未找到**：执行 `download_models.sh`，确认 `~/.cache/models/vision/mobileclip2/s3/` 下两个 ONNX 非空。
 - **bpe_merges 打不开**：从仓库根目录运行，或 `bpe_merges_path` 用绝对路径。
 - **encode_text 报错**：确认已重装带 `encode_text` 绑定的 `spacemit_vision` wheel。

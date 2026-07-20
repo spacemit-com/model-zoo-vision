@@ -73,16 +73,18 @@ bianbu@k3:~/.cache/models/vision# tree
 ├── adaface
 │   └── adaface_ir101_webface12m_merged_dynq.onnx
 ├── siglip2
-│   ├── siglip2_vision_encoder.onnx
-│   ├── siglip2_text_encoder.onnx
+│   ├── siglip2_vision_encoder_fp16_proj_dynq.onnx
+│   ├── siglip2_text_encoder_dynq.onnx
 │   └── tokenizer.bin
 ├── mobileclip2
-│   ├── image_encoder.onnx
-│   └── text_encoder.onnx
+│   └── s3
+│       ├── image_encoder.fp16.onnx
+│       └── text_encoder.onnx
 ├── buffalo_l
 │   ├── det_10g.q.onnx
+│   ├── det_10g_fixed.q.onnx
 │   ├── w600k_r50.q.onnx
-│   ├── genderage.onnx
+│   ├── genderage.q.onnx
 │   └── 2d106det.onnx
 ├── ocsort
 │   ├── ocsort_yoloxs_sim.fp32.onnx

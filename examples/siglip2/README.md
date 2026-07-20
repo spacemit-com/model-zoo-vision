@@ -5,8 +5,8 @@
 ## 1. 模型与权重
 
 - **模型文件**（与 `config/siglip2.yaml` 一致）：
-  - 视觉：`~/.cache/models/vision/siglip2/siglip2_vision_encoder.onnx`
-  - 文本：`~/.cache/models/vision/siglip2/siglip2_text_encoder.onnx`
+  - 视觉：`~/.cache/models/vision/siglip2/siglip2_vision_encoder_fp16_proj_dynq.onnx`
+  - 文本：`~/.cache/models/vision/siglip2/siglip2_text_encoder_dynq.onnx`
   - 分词器：`~/.cache/models/vision/siglip2/tokenizer.bin`（Gemma BPE 二进制，随模型归档下载）
 - **下载**：
 
@@ -32,10 +32,10 @@ python3 examples/siglip2/scripts/export_tokenizer_bin.py \
 
 | 配置项 | 含义 | 默认 |
 |--------|------|------|
-| `model_path` | 视觉 ONNX | `siglip2_vision_encoder.onnx` |
+| `model_path` | 视觉 ONNX | `siglip2_vision_encoder_fp16_proj_dynq.onnx` |
 | `test_image` | 默认测试图 | `007_dog.jpg` |
 | `scene_labels_path` | 标签文件（可选；未设且无 `--text`/`--labels` 时用内置 3 类） | 无 |
-| `default_params.text_model_path` | 文本 ONNX | `siglip2_text_encoder.onnx` |
+| `default_params.text_model_path` | 文本 ONNX | `siglip2_text_encoder_dynq.onnx` |
 | `default_params.tokenizer_path` | tokenizer.bin | `~/.cache/models/vision/siglip2/tokenizer.bin` |
 | `image_size` | 视觉输入 | `[224, 224]` |
 

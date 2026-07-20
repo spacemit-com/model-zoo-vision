@@ -44,6 +44,14 @@ struct FaceDrawInfo {
 };
 
 
+bool LooksLikeYamlPath(const std::string& path) {
+    if (path.size() < 5) {
+        return false;
+    }
+    return path.compare(path.size() - 5, 5, ".yaml") == 0 ||
+        path.compare(path.size() - 4, 4, ".yml") == 0;
+}
+
 bool IsRepoRoot(const fs::path& dir) {
     return fs::exists(dir / "applications") && fs::exists(dir / "examples") &&
             fs::exists(dir / "src");
@@ -492,16 +500,16 @@ bool ProcessImagePipeline(
 }
 
 void PrintUsage(const char* prog) {
-    std::cout << "Usage:\n"
-                << "  " << prog << " analyze [<image>] [--config <app.yaml>] [--output <jpg>] [--save-image|--no-save-image]\n"
-                << "  " << prog << " register <name> <image> [--config <app.yaml>] [--save-image] [--output <jpg>]\n"
-                << "  " << prog << " recognize <image> [--config <app.yaml>] [--save-image] [--output <jpg>]\n"
-                << "  " << prog << " camera [<camera_index>] [--config <app.yaml>] [--enable-recognition]\n"
-                << "  " << prog << " [--use-camera] [--camera-id <id>] [--camera-width <w>] [--camera-height <h>] [--camera-skip <n>]\n"
+    std::cout << "Usage: " << prog
+                << " [--image <path>] [output_path]\n"
+                << "      [--use-camera] [--camera-id <id>] [--camera-width <w>] [--camera-height <h>] [--camera-skip <n>]\n"
+                << "      [--register <name>] [--recognize] [--save-image|--no-save-image]\n"
+                << "      [--config <app.yaml>]  (optional; default: applications/face_recognition/config/face_recognition.yaml)\n"
                 << "\nDefaults:\n"
-                << "  analyze: save image enabled, recognition disabled\n"
-                << "  register/recognize: save image disabled by default\n"
-                << "  camera: display window only, no image saving; embedding disabled unless recognition enabled\n";
+                << "  (none): analyze with config test_image, save image enabled\n"
+                << "  --register <name>: enroll face from --image / positional image\n"
+                << "  --recognize: match against face db\n"
+                << "  --use-camera: live camera; add --recognize to enable matching\n";
 }
 
 }  // namespace
@@ -509,65 +517,84 @@ void PrintUsage(const char* prog) {
 int main(int argc, char* argv[]) {
     const fs::path project_root = FindProjectRoot((argc > 0 && argv[0]) ? fs::path(argv[0]) : fs::path());
     std::string app_config_rel = kDefaultAppConfig;
+    std::string image_path;
     std::string output_path_arg;
+    std::string register_name;
+    bool do_recognize = false;
     bool save_image_override = false;
     bool save_image_value = false;
-    bool enable_recognition_override = false;
-    bool enable_recognition_value = false;
     bool use_camera_flag = false;
     int camera_id_flag = 0;
     int camera_width = 0;
     int camera_height = 0;
     int camera_skip = 0;
 
-    std::string mode = "analyze";
-    int pos_start = 1;
-    if (argc > 1) {
-        const std::string first = argv[1];
-        if (first == "analyze" || first == "register" || first == "recognize" || first == "camera") {
-            mode = first;
-            pos_start = 2;
-        }
-    }
-
-    std::vector<std::string> positional;
-    positional.reserve(static_cast<size_t>(argc));
-    for (int i = pos_start; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--config" && i + 1 < argc) {
             app_config_rel = argv[++i];
+        } else if (arg == "--image" && i + 1 < argc) {
+            image_path = argv[++i];
         } else if (arg == "--output" && i + 1 < argc) {
             output_path_arg = argv[++i];
+        } else if (arg == "--register" && i + 1 < argc) {
+            register_name = argv[++i];
+        } else if (arg == "--recognize") {
+            do_recognize = true;
         } else if (arg == "--save-image") {
             save_image_override = true;
             save_image_value = true;
         } else if (arg == "--no-save-image") {
             save_image_override = true;
             save_image_value = false;
-        } else if (arg == "--enable-recognition") {
-            enable_recognition_override = true;
-            enable_recognition_value = true;
-        } else if (arg == "--disable-recognition") {
-            enable_recognition_override = true;
-            enable_recognition_value = false;
         } else if (arg == "--use-camera") {
             use_camera_flag = true;
         } else if (arg == "--camera-id" && i + 1 < argc) {
-            camera_id_flag = std::stoi(argv[++i]);
+            try {
+                camera_id_flag = std::stoi(argv[++i]);
+            } catch (const std::exception&) {
+                std::cerr << "Error: invalid --camera-id value" << std::endl;
+                return 1;
+            }
         } else if (arg == "--camera-width" && i + 1 < argc) {
             camera_width = std::max(0, std::stoi(argv[++i]));
         } else if (arg == "--camera-height" && i + 1 < argc) {
             camera_height = std::max(0, std::stoi(argv[++i]));
         } else if (arg == "--camera-skip" && i + 1 < argc) {
             camera_skip = std::max(0, std::stoi(argv[++i]));
+        } else if (arg == "-h" || arg == "--help") {
+            PrintUsage(argv[0]);
+            return 0;
+        } else if (!arg.empty() && arg[0] != '-') {
+            if (LooksLikeYamlPath(arg) && app_config_rel == kDefaultAppConfig) {
+                app_config_rel = arg;
+            } else if (image_path.empty()) {
+                image_path = arg;
+            } else if (output_path_arg.empty()) {
+                output_path_arg = arg;
+            } else {
+                std::cerr << "Error: unexpected argument: " << arg << std::endl;
+                PrintUsage(argv[0]);
+                return 1;
+            }
         } else {
-            positional.push_back(arg);
+            std::cerr << "Error: unknown option: " << arg << std::endl;
+            PrintUsage(argv[0]);
+            return 1;
         }
     }
 
-    if (use_camera_flag) {
-        mode = "camera";
+    if (!register_name.empty() && (do_recognize || use_camera_flag)) {
+        std::cerr << "Error: --register cannot be combined with --recognize or --use-camera"
+            << std::endl;
+        return 1;
     }
+
+    const bool is_register = !register_name.empty();
+    const bool is_camera = use_camera_flag;
+    const bool is_recognize = do_recognize && !is_camera;
+    // camera + --recognize: live matching; bare --recognize: image matching
+    const bool enable_recognition = do_recognize;
 
     const fs::path app_config_path(ResolveUserPath(project_root, app_config_rel));
     if (!fs::exists(app_config_path)) {
@@ -604,10 +631,9 @@ int main(int argc, char* argv[]) {
         output_image = kDefaultOutputImage;
     }
     output_image = ExpandTilde(output_image);
-    const bool save_image_default = (mode == "analyze");
+
+    const bool save_image_default = !is_register && !is_recognize && !is_camera;
     const bool save_image = save_image_override ? save_image_value : save_image_default;
-    const bool enable_recognition = enable_recognition_override ? enable_recognition_value
-                                                                : (mode == "recognize");
 
     auto scrfd = CreateModelService(config_dir, project_root, YamlString(app_cfg, "scrfd_model"));
     auto arcface = CreateModelService(config_dir, project_root, YamlString(app_cfg, "arcface_model"));
@@ -627,16 +653,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (mode == "register") {
-        if (positional.size() < 2) {
-            PrintUsage(argv[0]);
+    if (is_register) {
+        if (image_path.empty()) {
+            std::cerr << "Error: --register requires --image or a positional image path" << std::endl;
             return 1;
         }
-        const std::string name = positional[0];
-        const std::string image_path = ResolveUserPath(project_root, positional[1]);
-        const cv::Mat image = cv::imread(image_path);
+        const std::string name = register_name;
+        const std::string resolved_image = ResolveUserPath(project_root, image_path);
+        const cv::Mat image = cv::imread(resolved_image);
         if (image.empty()) {
-            std::cerr << "Error: failed to load image: " << image_path << std::endl;
+            std::cerr << "Error: failed to load image: " << resolved_image << std::endl;
             return 1;
         }
 
@@ -680,48 +706,10 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (mode == "recognize" || mode == "analyze") {
-        std::string image_path;
-        if (!positional.empty()) {
-            image_path = ResolveUserPath(project_root, positional[0]);
-        } else if (mode == "analyze" && app_cfg["test_image"]) {
-            image_path = ResolveUserPath(project_root, app_cfg["test_image"].as<std::string>());
-        }
-        if (image_path.empty()) {
-            PrintUsage(argv[0]);
-            return 1;
-        }
-
-        const cv::Mat image = cv::imread(image_path);
-        if (image.empty()) {
-            std::cerr << "Error: failed to load image: " << image_path << std::endl;
-            return 1;
-        }
-        std::vector<vision::Pose> faces;
-        std::vector<FaceDrawInfo> draw_infos;
-        if (!ProcessImagePipeline(image, scrfd.get(), arcface.get(), genderage.get(), landmark106.get(),
-                                    enable_landmark106, enable_recognition, true, true, face_db_dir,
-                                    recognize_threshold, &faces, &draw_infos)) {
-            return 1;
-        }
-        if (save_image) {
-            if (SaveResultImage(image, faces, draw_infos, output_image)) {
-                std::cout << "Saved result image: " << output_image << std::endl;
-            } else {
-                std::cerr << "Warning: failed to save result image: " << output_image << std::endl;
-            }
-        }
-        return 0;
-    }
-
-    if (mode == "camera") {
-        int camera_index = camera_id_flag;
-        if (!positional.empty()) {
-            camera_index = std::stoi(positional[0]);
-        }
-        cv::VideoCapture cap(camera_index);
+    if (is_camera) {
+        cv::VideoCapture cap(camera_id_flag);
         if (!cap.isOpened()) {
-            std::cerr << "Error: failed to open camera index " << camera_index << std::endl;
+            std::cerr << "Error: failed to open camera index " << camera_id_flag << std::endl;
             return 1;
         }
         if (camera_width > 0) {
@@ -778,6 +766,36 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    PrintUsage(argv[0]);
-    return 1;
+    // analyze / recognize (image)
+    if (image_path.empty() && app_cfg["test_image"]) {
+        image_path = app_cfg["test_image"].as<std::string>();
+    }
+    if (image_path.empty()) {
+        std::cerr << "Error: provide --image / positional image, or set test_image in config"
+                    << std::endl;
+        PrintUsage(argv[0]);
+        return 1;
+    }
+
+    const std::string resolved_image = ResolveUserPath(project_root, image_path);
+    const cv::Mat image = cv::imread(resolved_image);
+    if (image.empty()) {
+        std::cerr << "Error: failed to load image: " << resolved_image << std::endl;
+        return 1;
+    }
+    std::vector<vision::Pose> faces;
+    std::vector<FaceDrawInfo> draw_infos;
+    if (!ProcessImagePipeline(image, scrfd.get(), arcface.get(), genderage.get(), landmark106.get(),
+                                enable_landmark106, enable_recognition, true, true, face_db_dir,
+                                recognize_threshold, &faces, &draw_infos)) {
+        return 1;
+    }
+    if (save_image) {
+        if (SaveResultImage(image, faces, draw_infos, output_image)) {
+            std::cout << "Saved result image: " << output_image << std::endl;
+        } else {
+            std::cerr << "Warning: failed to save result image: " << output_image << std::endl;
+        }
+    }
+    return 0;
 }

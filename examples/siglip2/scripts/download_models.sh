@@ -20,7 +20,7 @@ download() {
   fi
 }
 
-download "siglip2_vision_encoder.onnx"
-download "siglip2_text_encoder.onnx"
+download "siglip2_vision_encoder_fp16_proj_dynq.onnx"
+download "siglip2_text_encoder_dynq.onnx"
 download "tokenizer.bin"
 echo "Done. Models in $MODEL_DIR"

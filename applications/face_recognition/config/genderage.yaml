@@ -1,4 +1,4 @@
-model_path: ~/.cache/models/vision/buffalo_l/genderage.onnx
+model_path: ~/.cache/models/vision/buffalo_l/genderage.q.onnx
 class: deploy.genderage.GenderAgeClassifier
 default_params:
   num_threads: 1  

@@ -20,5 +20,5 @@ download() {
   fi
 }
 
-download "adaface_ir101_webface12m_merged_dynq.onnx"
+download "adaface_ir101_webface12m_merged.dynq.onnx"
 echo "Done. Models in $MODEL_DIR"

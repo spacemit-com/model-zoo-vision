@@ -5,7 +5,7 @@
 ## 1. 模型与权重
 
 - **模型类型**：人脸 embedding（112×112 center-crop，512 维）
-- **默认模型**：`~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged_dynq.onnx`
+- **默认模型**：`~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged.dynq.onnx`
 - **下载**：
 
 ```bash
@@ -22,7 +22,7 @@ bash scripts/download_assets.sh
 
 | 配置项 | 含义 | 默认 |
 |--------|------|------|
-| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged_dynq.onnx` |
+| `model_path` | ONNX 模型路径 | `~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged.dynq.onnx` |
 | `image_size` | 输入尺寸 [高, 宽] | `[112, 112]` |
 | `test_image1` / `test_image2` | 示例人脸图路径 | `003_face0.png` / `004_face1.png` |
 | `default_params.num_threads` | 推理线程数 | `4` |

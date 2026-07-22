@@ -71,10 +71,10 @@ bianbu@k3:~/.cache/models/vision# tree
 ├── arcface
 │   └── arcface_mobilefacenet_cut.q.onnx
 ├── adaface
-│   └── adaface_ir101_webface12m_merged_dynq.onnx
+│   └── adaface_ir101_webface12m_merged.dynq.onnx
 ├── siglip2
-│   ├── siglip2_vision_encoder_fp16_proj_dynq.onnx
-│   ├── siglip2_text_encoder_dynq.onnx
+│   ├── siglip2_vision_encoder_fp16_proj.dynq.onnx
+│   ├── siglip2_text_encoder.dynq.onnx
 │   └── tokenizer.bin
 ├── mobileclip2
 │   └── s3

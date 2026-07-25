@@ -128,7 +128,20 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
         }
     }
 
-    return it->second(config, lazy_load);
+    std::unique_ptr<BaseModel> model =
+        it->second(config, lazy_load);
+    std::string preprocess_backend = "cpu";
+    const YAML::Node preprocess =
+        config["default_params"] &&
+            config["default_params"]["preprocess"]
+        ? config["default_params"]["preprocess"]
+        : config["preprocess"];
+    if (preprocess && preprocess["backend"]) {
+        preprocess_backend =
+            preprocess["backend"].as<std::string>();
+    }
+    model->configure_preprocess_backend(preprocess_backend);
+    return model;
 }
 
 static std::string expand_tilde(const std::string& path) {

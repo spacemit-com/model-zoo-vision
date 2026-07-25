@@ -43,6 +43,9 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
 private:
+    vision_common::EmbeddingResult infer_embedding_input(
+        const vision_core::ImageInput& input);
+
     std::vector<float> postprocess_embedding(std::vector<Ort::Value>& outputs);
     std::vector<float> run_vision(const cv::Mat& blob);
     std::vector<float> run_text(const std::vector<int64_t>& ids);

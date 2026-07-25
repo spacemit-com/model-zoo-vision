@@ -80,6 +80,9 @@ public:
     std::vector<float> postprocess(std::vector<Ort::Value>& outputs);
 
 private:
+    vision_common::EmbeddingResult infer_embedding_input(
+        const vision_core::ImageInput& input);
+
     int num_threads_;
     std::string provider_;
     float norm_std_ = 127.5f;
@@ -88,4 +91,3 @@ private:
 }  // namespace vision_deploy
 
 #endif  // ARCFACE_RECOGNIZER_H
-

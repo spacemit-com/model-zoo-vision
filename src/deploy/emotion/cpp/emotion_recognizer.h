@@ -76,6 +76,13 @@ public:
     vision_common::ClassificationResultList postprocess(std::vector<Ort::Value>& outputs);
 
 private:
+    PreparedImage prepare_input(
+        const vision_core::ImageInput& input);
+    vision_common::ClassificationResultList classify_input(
+        const vision_core::ImageInput& input);
+    vision_common::EmbeddingResult infer_embedding_input(
+        const vision_core::ImageInput& input);
+
     int num_threads_;
     cv::Size target_size_;
     std::string provider_;

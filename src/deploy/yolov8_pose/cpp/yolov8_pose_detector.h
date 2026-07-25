@@ -69,6 +69,11 @@ public:
         float iou_threshold);
 
 private:
+    vision_common::PoseResultList estimate_pose_input(
+        const vision_core::ImageInput& input,
+        float conf_threshold,
+        float iou_threshold);
+
     float conf_threshold_;
     float iou_threshold_;
     float point_confidence_threshold_;

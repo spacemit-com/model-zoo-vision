@@ -51,6 +51,9 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
 private:
+    vision_common::SegmentationResultList segment_input(
+        const vision_core::ImageInput& input);
+
     cv::Mat preprocess(const cv::Mat& image, int& valid_h, int& valid_w);
 
     cv::Mat postprocess_to_label_map(std::vector<Ort::Value>& outputs,

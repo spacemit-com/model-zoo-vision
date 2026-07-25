@@ -62,6 +62,9 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
 private:
+    vision_common::TextResultList detect_text_input(
+        const vision_core::ImageInput& input);
+
     struct TextBox {
         std::vector<cv::Point> points;  // 4 corners ordered TL, TR, BR, BL
         float score = 0.0f;

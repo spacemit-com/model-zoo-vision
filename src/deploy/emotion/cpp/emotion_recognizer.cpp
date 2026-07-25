@@ -81,19 +81,45 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
 }
 
 vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return classify_input(input);
+}
+
+vision_core::BaseModel::PreparedImage
+EmotionRecognizer::prepare_input(
+    const vision_core::ImageInput& input) {
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = target_size_.width;
+    spec.output_height = target_size_.height;
+    spec.output_rgb = false;
+    spec.interpolation =
+        vision_common::PreprocessInterpolation::kNearest;
+    spec.mean = {91.4953F, 103.8827F, 131.0912F};
+    return prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
+}
+
+vision_common::ClassificationResultList
+EmotionRecognizer::classify_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
+    auto prepared = prepare_input(input);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     // Run inference using base class method
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -111,17 +137,26 @@ vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Ma
 
 
 vision_common::EmbeddingResult EmotionRecognizer::infer_embedding(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return infer_embedding_input(input);
+}
+
+vision_common::EmbeddingResult
+EmotionRecognizer::infer_embedding_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
+    auto prepared = prepare_input(input);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -170,12 +205,14 @@ vision_core::InferResponse EmotionRecognizer::Run(const vision_core::InferReques
 
     vision_core::InferResponse response;
     if (request.intent == vision_core::InferIntent::kEmbed) {
-        response.results.emplace_back(infer_embedding(image_input->image));
+        response.results.emplace_back(
+            infer_embedding_input(*image_input));
         return response;
     }
 
     // Default: classification
-    vision_common::ClassificationResultList task_results = classify(image_input->image);
+    vision_common::ClassificationResultList task_results =
+        classify_input(*image_input);
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
         response.results.emplace_back(std::move(item));
@@ -248,4 +285,3 @@ vision_common::ClassificationResultList EmotionRecognizer::postprocess(std::vect
 static vision_core::ModelRegistrar<EmotionRecognizer> registrar("EmotionRecognizer");
 
 }  // namespace vision_deploy
-

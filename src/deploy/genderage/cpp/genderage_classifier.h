@@ -52,6 +52,9 @@ public:
     vision_common::ClassificationResultList postprocess(std::vector<Ort::Value>& outputs);
 
 private:
+    vision_common::ClassificationResultList classify_input(
+        const vision_core::ImageInput& input);
+
     int num_threads_;
     std::string provider_;
     float input_mean_ = 127.5f;

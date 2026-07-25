@@ -285,22 +285,58 @@ vision_common::SegmentationResultList PPLiteSeg::segment(
     const cv::Mat& image,
     float /*conf_threshold*/,
     float /*iou_threshold*/) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return segment_input(input);
+}
+
+vision_common::SegmentationResultList PPLiteSeg::segment_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const int origin_h = image.rows;
-    const int origin_w = image.cols;
+    const int origin_h =
+        input.format == vision_core::ImagePixelFormat::kNv12
+            ? input.image.rows * 2 / 3
+            : input.image.rows;
+    const int origin_w = input.image.cols;
 
-    int valid_h = 0;
-    int valid_w = 0;
+    const int in_h = positive_dim(input_shape_[2], 512);
+    const int in_w = positive_dim(input_shape_[3], 1024);
+    const float resize_scale = std::min(
+        static_cast<float>(in_h) / origin_h,
+        static_cast<float>(in_w) / origin_w);
+    int valid_h = static_cast<int>(
+        std::lround(origin_h * resize_scale));
+    int valid_w = static_cast<int>(
+        std::lround(origin_w * resize_scale));
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image, valid_h, valid_w);
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = in_w;
+    spec.output_height = in_h;
+    spec.resize_mode =
+        vision_common::PreprocessResizeMode::kFitTopLeft;
+    spec.output_rgb = true;
+    spec.mean = {
+        mean_val_ * 255.0F,
+        mean_val_ * 255.0F,
+        mean_val_ * 255.0F};
+    spec.scale = {
+        1.0F / (255.0F * std_val_),
+        1.0F / (255.0F * std_val_),
+        1.0F / (255.0F * std_val_)};
+    auto prepared = prepare_image(
+        input, spec,
+        [this, &valid_h, &valid_w](const cv::Mat& bgr) {
+            return preprocess(bgr, valid_h, valid_w);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(input_tensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -331,7 +367,8 @@ vision_core::InferResponse PPLiteSeg::Run(const vision_core::InferRequest& reque
         return response;
     }
 
-    vision_common::SegmentationResultList task_results = segment(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_common::SegmentationResultList task_results =
+        segment_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {

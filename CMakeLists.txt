@@ -71,6 +71,8 @@ if(Eigen3_FOUND)
     message(STATUS "Eigen3 found: ${Eigen3_VERSION}")
 endif()
 
+find_package(OpenCL REQUIRED)
+
 # yaml-cpp Configuration
 find_package(yaml-cpp REQUIRED)
 if(yaml-cpp_FOUND)
@@ -87,6 +89,7 @@ set(LIBS
     onnxruntime
     spacemit_ep
     yaml-cpp
+    OpenCL::OpenCL
 )
 
 # OpenCV 5 moved contour/hull/perspective APIs out of imgproc into the new

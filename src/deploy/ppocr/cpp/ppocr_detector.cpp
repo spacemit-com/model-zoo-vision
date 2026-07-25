@@ -465,7 +465,14 @@ std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
 // ---------------------------------------------------------------------------
 
 vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
-    if (image.empty()) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return detect_text_input(input);
+}
+
+vision_common::TextResultList PPOCRDetector::detect_text_input(
+    const vision_core::ImageInput& input) {
+    if (input.image.empty()) {
         throw std::runtime_error("PPOCRDetector: input image is empty");
     }
     ensure_model_loaded();
@@ -474,15 +481,59 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
 
     // --- detection ---
     const auto t_pre0 = std::chrono::steady_clock::now();
-    int net_h = 0, net_w = 0;
-    std::vector<float> det_input = det_preprocess(image, &net_h, &net_w);
+    const int original_height =
+        input.format == vision_core::ImagePixelFormat::kNv12
+            ? input.image.rows * 2 / 3
+            : input.image.rows;
+    const int original_width = input.image.cols;
+    float ratio =
+        static_cast<float>(
+            std::max(original_height, original_width)) /
+        det_limit_side_len_;
+    int net_h = original_height;
+    int net_w = original_width;
+    if (ratio > 1.0F) {
+        net_h = static_cast<int>(original_height / ratio);
+        net_w = static_cast<int>(original_width / ratio);
+    }
+    net_h = (net_h + 31) / 32 * 32;
+    net_w = (net_w + 31) / 32 * 32;
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = net_w;
+    spec.output_height = net_h;
+    spec.output_rgb = true;
+    spec.mean = {
+        0.485F * 255.0F,
+        0.456F * 255.0F,
+        0.406F * 255.0F};
+    spec.scale = {
+        1.0F / (0.229F * 255.0F),
+        1.0F / (0.224F * 255.0F),
+        1.0F / (0.225F * 255.0F)};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            int height = 0;
+            int width = 0;
+            std::vector<float> values =
+                det_preprocess(bgr, &height, &width);
+            const int shape[] = {1, 3, height, width};
+            cv::Mat tensor(4, shape, CV_32F);
+            std::copy(
+                values.begin(), values.end(),
+                tensor.ptr<float>());
+            return tensor;
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_inf0 = std::chrono::steady_clock::now();
     const std::vector<int64_t> det_shape = {1, 3, net_h, net_w};
     Ort::Value det_in = Ort::Value::CreateTensor<float>(
-        memory_info_, det_input.data(), det_input.size(), det_shape.data(), det_shape.size());
+        memory_info_,
+        const_cast<float*>(prepared.tensor().ptr<float>()),
+        prepared.tensor().total(),
+        det_shape.data(), det_shape.size());
     std::vector<Ort::Value> det_out = session_->Run(
         Ort::RunOptions{nullptr}, input_node_names_.data(), &det_in, 1,
         output_node_names_.data(), output_node_names_.size());
@@ -496,13 +547,19 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
     const int prob_h = static_cast<int>(pdims[pdims.size() - 2]);
     const int prob_w = static_cast<int>(pdims[pdims.size() - 1]);
     cv::Mat prob_map(prob_h, prob_w, CV_32FC1, prob);
-    std::vector<TextBox> boxes = db_postprocess(prob_map, image.rows, image.cols, net_h, net_w);
+    std::vector<TextBox> boxes = db_postprocess(
+        prob_map, original_height, original_width,
+        net_h, net_w);
 
     // --- recognition per box ---
+    cv::Mat source_bgr =
+        input.format == vision_core::ImagePixelFormat::kNv12
+        ? vision_common::nv12_dma_to_bgr_cpu(input)
+        : input.image;
     vision_common::TextResultList results;
     results.reserve(boxes.size());
     for (const TextBox& box : boxes) {
-        cv::Mat crop = crop_text_box(image, box.points);
+        cv::Mat crop = crop_text_box(source_bgr, box.points);
         float rec_score = 0.0f;
         std::string text = rec_run(crop, &rec_score);
         if (text.empty()) {
@@ -547,7 +604,8 @@ vision_core::InferResponse PPOCRDetector::Run(const vision_core::InferRequest& r
         response.error_message = "PPOCRDetector expects ImageInput";
         return response;
     }
-    vision_common::TextResultList task_results = detect_text(image_input->image);
+    vision_common::TextResultList task_results =
+        detect_text_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {

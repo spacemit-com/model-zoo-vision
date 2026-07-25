@@ -58,6 +58,11 @@ public:
                                                 float det_scale);
 
 private:
+    vision_common::PoseResultList estimate_pose_input(
+        const vision_core::ImageInput& input,
+        float conf_threshold,
+        float iou_threshold);
+
     struct Anchor {
         float cx = 0.0f;
         float cy = 0.0f;

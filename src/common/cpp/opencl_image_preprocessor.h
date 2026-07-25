@@ -53,6 +53,17 @@ struct OpenClPreprocessSpec {
     std::array<float, 3> padding{0.0F, 0.0F, 0.0F};
 };
 
+struct FitResizeDimensions {
+    int width = 0;
+    int height = 0;
+};
+
+FitResizeDimensions calculate_fit_resize_dimensions(
+    float source_width,
+    float source_height,
+    int output_width,
+    int output_height);
+
 class OpenClImagePreprocessor {
 public:
     explicit OpenClImagePreprocessor(

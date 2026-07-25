@@ -63,7 +63,8 @@ public:
     public:
         PreparedImage(
             cv::Mat tensor,
-            vision_common::OpenClImagePreprocessor* preprocessor);
+            std::shared_ptr<
+                vision_common::OpenClImagePreprocessor> preprocessor);
         ~PreparedImage();
 
         PreparedImage(const PreparedImage&) = delete;
@@ -77,7 +78,8 @@ public:
         void finish() noexcept;
 
         cv::Mat tensor_;
-        vision_common::OpenClImagePreprocessor* preprocessor_{nullptr};
+        std::shared_ptr<vision_common::OpenClImagePreprocessor>
+            preprocessor_;
     };
 
     explicit BaseModel(const std::string& model_path, bool lazy_load = false);
@@ -213,7 +215,7 @@ protected:
     Ort::MemoryInfo memory_info_{nullptr};
     RuntimeProfile runtime_profile_;
     std::string preprocess_backend_{"cpu"};
-    std::unique_ptr<vision_common::OpenClImagePreprocessor>
+    std::shared_ptr<vision_common::OpenClImagePreprocessor>
         opencl_preprocessor_;
     vision_common::OpenClPreprocessSpec opencl_preprocess_spec_;
     bool has_opencl_preprocess_spec_{false};

@@ -104,10 +104,12 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
     // Compute scale and valid region on original uint8 image
     const int h = image.rows;
     const int w = image.cols;
-    const float scale = std::min(static_cast<float>(in_h) / static_cast<float>(h),
-                                    static_cast<float>(in_w) / static_cast<float>(w));
-    const int new_h = static_cast<int>(std::lround(static_cast<float>(h) * scale));
-    const int new_w = static_cast<int>(std::lround(static_cast<float>(w) * scale));
+    const vision_common::FitResizeDimensions dimensions =
+        vision_common::calculate_fit_resize_dimensions(
+            static_cast<float>(w), static_cast<float>(h),
+            in_w, in_h);
+    const int new_h = dimensions.height;
+    const int new_w = dimensions.width;
     valid_h = new_h;
     valid_w = new_w;
 
@@ -304,13 +306,13 @@ vision_common::SegmentationResultList PPLiteSeg::segment_input(
 
     const int in_h = positive_dim(input_shape_[2], 512);
     const int in_w = positive_dim(input_shape_[3], 1024);
-    const float resize_scale = std::min(
-        static_cast<float>(in_h) / origin_h,
-        static_cast<float>(in_w) / origin_w);
-    int valid_h = static_cast<int>(
-        std::lround(origin_h * resize_scale));
-    int valid_w = static_cast<int>(
-        std::lround(origin_w * resize_scale));
+    const vision_common::FitResizeDimensions valid_dimensions =
+        vision_common::calculate_fit_resize_dimensions(
+            static_cast<float>(origin_w),
+            static_cast<float>(origin_h),
+            in_w, in_h);
+    int valid_h = valid_dimensions.height;
+    int valid_w = valid_dimensions.width;
     const auto t_pre0 = std::chrono::steady_clock::now();
     vision_common::OpenClPreprocessSpec spec;
     spec.output_width = in_w;

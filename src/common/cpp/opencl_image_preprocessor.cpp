@@ -516,13 +516,12 @@ GeometryPlan make_geometry(
     }
 
     if (spec.resize_mode != PreprocessResizeMode::kStretch) {
-        const float scale = std::min(
-            static_cast<float>(spec.output_width) / plan.src_width,
-            static_cast<float>(spec.output_height) / plan.src_height);
-        plan.dst_width = std::max(
-            1, static_cast<int>(std::round(plan.src_width * scale)));
-        plan.dst_height = std::max(
-            1, static_cast<int>(std::round(plan.src_height * scale)));
+        const FitResizeDimensions dimensions =
+            calculate_fit_resize_dimensions(
+                plan.src_width, plan.src_height,
+                spec.output_width, spec.output_height);
+        plan.dst_width = dimensions.width;
+        plan.dst_height = dimensions.height;
         if (spec.resize_mode == PreprocessResizeMode::kLetterbox) {
             plan.dst_x = static_cast<int>(std::round(
                 (spec.output_width - plan.dst_width) / 2.0F - 0.1F));
@@ -543,6 +542,27 @@ cl_float4 make_float4(const std::array<float, 3>& values)
 }
 
 }  // namespace
+
+FitResizeDimensions calculate_fit_resize_dimensions(
+    float source_width,
+    float source_height,
+    int output_width,
+    int output_height)
+{
+    if (source_width <= 0.0F || source_height <= 0.0F ||
+        output_width <= 0 || output_height <= 0) {
+        throw std::runtime_error(
+            "fit resize dimensions must be positive");
+    }
+    const float scale = std::min(
+        static_cast<float>(output_width) / source_width,
+        static_cast<float>(output_height) / source_height);
+    return {
+        std::max(
+            1, static_cast<int>(std::round(source_width * scale))),
+        std::max(
+            1, static_cast<int>(std::round(source_height * scale)))};
+}
 
 class OpenClImagePreprocessor::Impl {
 public:
@@ -825,12 +845,18 @@ private:
                 throw std::runtime_error(
                     "BGR8 OpenCL input must have type CV_8UC3");
             }
-        } else if (
-            input.image.type() != CV_8UC1 ||
-            input.image.rows % 3 != 0 ||
-            (input.image.cols & 1) != 0) {
-            throw std::runtime_error(
-                "NV12 OpenCL input must be CV_8UC1 H*3/2 x W");
+        } else {
+            const int input_height = input.image.rows * 2 / 3;
+            // NV12 chroma subsampling requires even image dimensions for
+            // both host and DMA-BUF inputs.
+            if (input.image.type() != CV_8UC1 ||
+                input.image.rows % 3 != 0 ||
+                (input.image.cols & 1) != 0 ||
+                (input_height & 1) != 0) {
+                throw std::runtime_error(
+                    "NV12 OpenCL input must be CV_8UC1 "
+                    "H*3/2 x W with even H and W");
+            }
         }
         if (!input.image.isContinuous() && input.image.step[0] == 0) {
             throw std::runtime_error(

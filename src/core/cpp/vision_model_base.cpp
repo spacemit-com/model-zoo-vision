@@ -120,8 +120,10 @@ Ort::Env& shared_ort_env() {
 
 BaseModel::PreparedImage::PreparedImage(
     cv::Mat tensor,
-    vision_common::OpenClImagePreprocessor* preprocessor)
-    : tensor_(std::move(tensor)), preprocessor_(preprocessor)
+    std::shared_ptr<
+        vision_common::OpenClImagePreprocessor> preprocessor)
+    : tensor_(std::move(tensor)),
+        preprocessor_(std::move(preprocessor))
 {
 }
 
@@ -133,9 +135,8 @@ BaseModel::PreparedImage::~PreparedImage()
 BaseModel::PreparedImage::PreparedImage(
     PreparedImage&& other) noexcept
     : tensor_(std::move(other.tensor_)),
-        preprocessor_(other.preprocessor_)
+        preprocessor_(std::move(other.preprocessor_))
 {
-    other.preprocessor_ = nullptr;
 }
 
 BaseModel::PreparedImage& BaseModel::PreparedImage::operator=(
@@ -144,8 +145,7 @@ BaseModel::PreparedImage& BaseModel::PreparedImage::operator=(
     if (this != &other) {
         finish();
         tensor_ = std::move(other.tensor_);
-        preprocessor_ = other.preprocessor_;
-        other.preprocessor_ = nullptr;
+        preprocessor_ = std::move(other.preprocessor_);
     }
     return *this;
 }
@@ -157,7 +157,7 @@ void BaseModel::PreparedImage::finish() noexcept
         preprocessor_->finish_cpu_read();
     } catch (...) {
     }
-    preprocessor_ = nullptr;
+    preprocessor_.reset();
 }
 
 BaseModel::BaseModel(const std::string& model_path, bool lazy_load)
@@ -437,14 +437,14 @@ BaseModel::PreparedImage BaseModel::prepare_image(
             !same_preprocess_spec(
                 opencl_preprocess_spec_, spec)) {
             opencl_preprocessor_ =
-                std::make_unique<
+                std::make_shared<
                     vision_common::OpenClImagePreprocessor>(spec);
             opencl_preprocess_spec_ = spec;
             has_opencl_preprocess_spec_ = true;
         }
         return PreparedImage(
             opencl_preprocessor_->process(input),
-            opencl_preprocessor_.get());
+            opencl_preprocessor_);
     }
 
     if (input.format == ImagePixelFormat::kNv12) {

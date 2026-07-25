@@ -637,6 +637,9 @@ public:
             host_memory = ScopedClMemory(input_memory);
         }
 
+        // Only clImportMemoryARM objects participate in external-memory
+        // ownership transitions. CL_MEM_USE_HOST_PTR input is intentionally
+        // excluded; the output slot is always an imported DMA-BUF.
         std::vector<cl_mem> external;
         if (dma_input) external.push_back(input_memory);
         external.push_back(output.memory.get());

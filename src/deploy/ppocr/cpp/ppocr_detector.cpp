@@ -512,12 +512,25 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
         1.0F / (0.225F * 255.0F)};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            int height = 0;
-            int width = 0;
+        [this, net_h, net_w](const cv::Mat& bgr) {
+            int actual_height = 0;
+            int actual_width = 0;
             std::vector<float> values =
-                det_preprocess(bgr, &height, &width);
-            const int shape[] = {1, 3, height, width};
+                det_preprocess(
+                    bgr, &actual_height, &actual_width);
+            if (actual_height != net_h || actual_width != net_w) {
+                throw std::runtime_error(
+                    "PPOCRDetector: CPU preprocessing shape "
+                    "does not match the detection input shape");
+            }
+            const size_t expected_elements =
+                static_cast<size_t>(3) * net_h * net_w;
+            if (values.size() != expected_elements) {
+                throw std::runtime_error(
+                    "PPOCRDetector: CPU preprocessing tensor "
+                    "has an unexpected element count");
+            }
+            const int shape[] = {1, 3, net_h, net_w};
             cv::Mat tensor(4, shape, CV_32F);
             std::copy(
                 values.begin(), values.end(),

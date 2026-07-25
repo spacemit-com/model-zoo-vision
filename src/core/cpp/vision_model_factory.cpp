@@ -128,18 +128,34 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
         }
     }
 
+    std::string preprocess_backend = "cpu";
+    if (dp && !dp.IsMap()) {
+        throw std::runtime_error(
+            "default_params must be a map in config file: " +
+            config_path);
+    }
+    if (dp) {
+        const YAML::Node preprocess = dp["preprocess"];
+        if (preprocess && !preprocess.IsMap()) {
+            throw std::runtime_error(
+                "default_params.preprocess must be a map in "
+                "config file: " + config_path);
+        }
+        if (preprocess) {
+            const YAML::Node backend = preprocess["backend"];
+            if (backend && !backend.IsScalar()) {
+                throw std::runtime_error(
+                    "default_params.preprocess.backend must be "
+                    "a scalar in config file: " + config_path);
+            }
+            if (backend) {
+                preprocess_backend = backend.as<std::string>();
+            }
+        }
+    }
+
     std::unique_ptr<BaseModel> model =
         it->second(config, lazy_load);
-    std::string preprocess_backend = "cpu";
-    const YAML::Node preprocess =
-        config["default_params"] &&
-            config["default_params"]["preprocess"]
-        ? config["default_params"]["preprocess"]
-        : config["preprocess"];
-    if (preprocess && preprocess["backend"]) {
-        preprocess_backend =
-            preprocess["backend"].as<std::string>();
-    }
     model->configure_preprocess_backend(preprocess_backend);
     return model;
 }

@@ -216,6 +216,8 @@ void BaseModel::init_session(int num_threads, const std::string& provider) {
             provider_options["SPACEMIT_EP_DISABLE_OP_TYPE_FILTER"] = "Transpose";
             status = Ort::SessionOptionsSpaceMITEnvInit(session_options, provider_options);
         } else {
+            std::unordered_map<std::string, std::string> provider_options;
+            provider_options["SPACEMIT_EP_DISABLE_OP_TYPE_FILTER"] = "Hardswish";
             status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
         }
         if (!status.IsOK()) {

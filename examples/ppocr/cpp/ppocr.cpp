@@ -2,7 +2,7 @@
  * Copyright (C) 2026 SpacemiT (Hangzhou) Technology Co. Ltd.
  * SPDX-License-Identifier: Apache-2.0
  *
- * PP-OCRv5 text detection + recognition example.
+ * PP-OCRv6 text detection + recognition example.
  */
 
 #include <cstdio>

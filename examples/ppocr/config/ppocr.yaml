@@ -1,19 +1,17 @@
-# PP-OCRv5 text detection + recognition (two-stage OCR).
-# det: DBNet -> quadrilateral text boxes; rec: CRNN/CTC -> text string.
-model_path: ~/.cache/models/vision/ppocr/PP-OCRv5_mobile_det.onnx
+model_path: ~/.cache/models/vision/ppocr/PP-OCRv6_tiny_det_640x640.fp16.onnx
 test_image: ~/.cache/assets/image/015_ocr.jpg
 class: deploy.ppocr.PPOCRDetector
 default_params:
-  rec_model_path: ~/.cache/models/vision/ppocr/PP-OCRv5_mobile_rec.onnx
-  # Character dictionary (one char per line). Ships with the repo under assets/;
-  # index 0 is the CTC blank, entries map to model output classes.
-  dict_path: assets/labels/ppocr_keys.txt
+  rec_model_path: ~/.cache/models/vision/ppocr/PP-OCRv6_tiny_rec_48x320.dynq.onnx
+  dict_path: assets/labels/ppocrv6_tiny_dict.txt
+  det_input_h: 640
+  det_input_w: 640
   det_limit_side_len: 960
   det_db_thresh: 0.3
   det_db_box_thresh: 0.6
-  det_db_unclip_ratio: 2.0
+  det_db_unclip_ratio: 1.4
   rec_img_h: 48
   rec_img_w_max: 320
   num_threads: 4
   providers:
-    - CPUExecutionProvider
+    - SpaceMITExecutionProvider

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Download PP-OCRv5 models to ~/.cache/models/vision/ppocr/
+# Download PP-OCRv6 models to ~/.cache/models/vision/ppocr/
 # Remote: https://archive.spacemit.com/spacemit-ai/model_zoo/vision/ppocr/
 # Run: bash examples/ppocr/scripts/download_models.sh
 
@@ -23,9 +23,15 @@ download() {
   fi
 }
 
-download "PP-OCRv5_mobile_det.onnx"
-download "PP-OCRv5_mobile_rec.onnx"
+# PP-OCRv6 tiny (default in config/ppocr.yaml)
+download "PP-OCRv6_tiny_det_640x640.fp16.onnx"
+download "PP-OCRv6_tiny_rec_48x320.dynq.onnx"
+
+# PP-OCRv6 small
+download "PP-OCRv6_small_det_640x640.fp16.onnx"
+download "PP-OCRv6_small_rec_48x320.dynq.onnx"
 
 echo "Done. Models in $MODEL_DIR"
-echo "note: character dict ships in the repo at assets/labels/ppocr_keys.txt (no download)."
-echo "      line 0 is 'blank' (CTC blank); it matches PP-OCRv5 rec output classes."
+echo "note: character dicts ship in the repo (no download):"
+echo "      assets/labels/ppocrv6_tiny_dict.txt  (tiny rec)"
+echo "      assets/labels/ppocrv6_small_dict.txt (small rec)"

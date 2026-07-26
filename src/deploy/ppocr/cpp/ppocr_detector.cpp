@@ -49,18 +49,21 @@ std::unique_ptr<vision_core::BaseModel> PPOCRDetector::create(const YAML::Node& 
     }
 
     int det_limit_side_len = vision_core::yaml_utils::getInt(default_params, "det_limit_side_len", 960);
+    int det_input_h = vision_core::yaml_utils::getInt(default_params, "det_input_h", 0);
+    int det_input_w = vision_core::yaml_utils::getInt(default_params, "det_input_w", 0);
     float det_db_thresh = vision_core::yaml_utils::getFloat(default_params, "det_db_thresh", 0.3f);
     float det_db_box_thresh = vision_core::yaml_utils::getFloat(default_params, "det_db_box_thresh", 0.6f);
     float det_db_unclip_ratio = vision_core::yaml_utils::getFloat(default_params, "det_db_unclip_ratio", 2.0f);
+    float det_box_nms_thresh = vision_core::yaml_utils::getFloat(default_params, "det_box_nms_thresh", 0.5f);
     int rec_img_h = vision_core::yaml_utils::getInt(default_params, "rec_img_h", 48);
     int rec_img_w_max = vision_core::yaml_utils::getInt(default_params, "rec_img_w_max", 320);
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 
     return std::make_unique<PPOCRDetector>(
-        model_path, rec_model_path, dict_path, det_limit_side_len, det_db_thresh,
-        det_db_box_thresh, det_db_unclip_ratio, rec_img_h, rec_img_w_max, num_threads,
-        lazy_load, provider);
+        model_path, rec_model_path, dict_path, det_limit_side_len, det_input_h, det_input_w,
+        det_db_thresh, det_db_box_thresh, det_db_unclip_ratio, det_box_nms_thresh,
+        rec_img_h, rec_img_w_max, num_threads, lazy_load, provider);
 }
 
 PPOCRDetector::PPOCRDetector(
@@ -68,9 +71,12 @@ PPOCRDetector::PPOCRDetector(
     const std::string& rec_model_path,
     const std::string& dict_path,
     int det_limit_side_len,
+    int det_input_h,
+    int det_input_w,
     float det_db_thresh,
     float det_db_box_thresh,
     float det_db_unclip_ratio,
+    float det_box_nms_thresh,
     int rec_img_h,
     int rec_img_w_max,
     int num_threads,
@@ -80,9 +86,12 @@ PPOCRDetector::PPOCRDetector(
         rec_model_path_(rec_model_path),
         dict_path_(dict_path),
         det_limit_side_len_(det_limit_side_len),
+        det_input_h_(det_input_h),
+        det_input_w_(det_input_w),
         det_db_thresh_(det_db_thresh),
         det_db_box_thresh_(det_db_box_thresh),
         det_db_unclip_ratio_(det_db_unclip_ratio),
+        det_box_nms_thresh_(det_box_nms_thresh),
         rec_img_h_(rec_img_h),
         rec_img_w_max_(rec_img_w_max),
         num_threads_(num_threads),
@@ -97,9 +106,9 @@ void PPOCRDetector::load_dict(const std::string& dict_path) {
     if (!f.is_open()) {
         throw std::runtime_error("PPOCRDetector: cannot open dict file: " + dict_path);
     }
-    // PP-OCRv5 dict already has "blank" at line 0 (index 0 == CTC blank). Read
-    // lines verbatim; do NOT insert an extra blank (that would shift every index
-    // and produce garbage text).
+    // Read character lines. CTC blank is index 0:
+    // - PP-OCRv5 keys already start with "blank"
+    // - PP-OCRv6 tiny dict starts with the first printable char; prepend blank
     dict_.clear();
     std::string line;
     while (std::getline(f, line)) {
@@ -112,6 +121,9 @@ void PPOCRDetector::load_dict(const std::string& dict_path) {
     f.close();
     if (dict_.size() <= 1) {
         throw std::runtime_error("PPOCRDetector: dict file is empty: " + dict_path);
+    }
+    if (dict_.front() != "blank") {
+        dict_.insert(dict_.begin(), "blank");
     }
     // use_space_char: PaddleOCR appends a trailing space class after dict entries.
     dict_.push_back(" ");
@@ -131,7 +143,7 @@ void PPOCRDetector::validate_dict_size() {
         throw std::runtime_error(
             "PPOCRDetector: dict size mismatch (dict has " + std::to_string(dict_.size()) +
             " classes including blank/space, rec model expects " + std::to_string(expected) +
-            "). Check dict_path matches PP-OCRv5 rec.");
+            "). Check dict_path matches the rec model (blank + chars + space).");
     }
 }
 
@@ -142,18 +154,20 @@ void PPOCRDetector::load_model() {
     // Detection session (BaseModel::session_). Input is dynamic HxW, so
     // input_shape_ from init_session is unreliable; detect_text builds the shape
     // per image and calls session_->Run directly.
+    // Det and rec both honor yaml default_params.providers (via provider_).
     init_session(num_threads_, provider_);
 
-    // Self-managed recognition session.
     Ort::SessionOptions rec_opts;
     rec_opts.SetIntraOpNumThreads(num_threads_);
     rec_opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     if (provider_ == "SpaceMITExecutionProvider") {
         Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(rec_opts);
         if (!status.IsOK()) {
-            std::cerr << "SpaceMIT EP init failed (rec): " << status.GetErrorMessage() << std::endl;
+            throw std::runtime_error(
+                std::string("SpaceMIT EP init failed (rec): ") + status.GetErrorMessage());
         }
     }
+    std::cout << provider_ << " (rec): " << rec_model_path_ << std::endl;
     // rec_model_path_ / dict_path_ arrive already resolved: the factory expands
     // any default_params key ending in "_path" via resolveResourcePath before create().
     rec_session_ = std::make_unique<Ort::Session>(
@@ -189,75 +203,125 @@ std::vector<float> PPOCRDetector::det_preprocess(const cv::Mat& image, int* net_
     const int ori_h = image.rows;
     const int ori_w = image.cols;
 
-    // Resize keeping aspect ratio so the longer side <= det_limit_side_len,
-    // then align each side up to a multiple of 32 (DBNet stride requirement).
-    float ratio = static_cast<float>(std::max(ori_h, ori_w)) /
-        static_cast<float>(det_limit_side_len_);
-    int rh = ori_h;
-    int rw = ori_w;
-    if (ratio > 1.0f) {
-        rh = static_cast<int>(ori_h / ratio);
-        rw = static_cast<int>(ori_w / ratio);
+    int rh = 0;
+    int rw = 0;
+    int canvas_h = 0;
+    int canvas_w = 0;
+    if (det_input_h_ > 0 && det_input_w_ > 0) {
+        // Fixed-shape det (NPU): keep aspect ratio (bilinear), then pad to HxW.
+        // Content is placed at top-left; pad is zeros on the right/bottom.
+        const float scale = std::min(
+            static_cast<float>(det_input_w_) / static_cast<float>(ori_w),
+            static_cast<float>(det_input_h_) / static_cast<float>(ori_h));
+        rw = std::max(1, static_cast<int>(std::round(ori_w * scale)));
+        rh = std::max(1, static_cast<int>(std::round(ori_h * scale)));
+        rw = std::min(rw, det_input_w_);
+        rh = std::min(rh, det_input_h_);
+        canvas_h = det_input_h_;
+        canvas_w = det_input_w_;
+    } else {
+        // Dynamic det: keep aspect ratio so the longer side <= det_limit_side_len,
+        // then align each side up to a multiple of 32 (DBNet stride requirement).
+        float ratio = static_cast<float>(std::max(ori_h, ori_w)) /
+            static_cast<float>(det_limit_side_len_);
+        rh = ori_h;
+        rw = ori_w;
+        if (ratio > 1.0f) {
+            rh = static_cast<int>(ori_h / ratio);
+            rw = static_cast<int>(ori_w / ratio);
+        }
+        rh = (rh + 31) / 32 * 32;
+        rw = (rw + 31) / 32 * 32;
+        canvas_h = rh;
+        canvas_w = rw;
     }
-    rh = (rh + 31) / 32 * 32;
-    rw = (rw + 31) / 32 * 32;
-    *net_h = rh;
-    *net_w = rw;
+    det_resize_h_ = rh;
+    det_resize_w_ = rw;
+    *net_h = canvas_h;
+    *net_w = canvas_w;
 
-    // BGR->RGB (PaddleOCR trains on RGB), resize, then (x/255 - mean) / std.
-    cv::Mat rgb;
-    cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB);
+    // Resize+pad on uint8 first (cheaper than float), then blobFromImage for
+    // BGR->RGB /255 / HWC->CHW, then ImageNet mean/std on CHW.
     cv::Mat resized;
-    cv::resize(rgb, resized, cv::Size(rw, rh));
-    cv::Mat float_img;
-    resized.convertTo(float_img, CV_32FC3, 1.0f / 255.0f);
+    cv::resize(image, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
+    cv::Mat padded;
+    if (canvas_h == rh && canvas_w == rw) {
+        padded = resized;
+    } else {
+        padded = cv::Mat::zeros(canvas_h, canvas_w, CV_8UC3);
+        resized.copyTo(padded(cv::Rect(0, 0, rw, rh)));
+    }
+
+    cv::Mat blob = cv::dnn::blobFromImage(
+        padded, 1.0 / 255.0, cv::Size(), cv::Scalar(),
+        /*swapRB=*/true, /*crop=*/false, CV_32F);
 
     static const float mean[3] = {0.485f, 0.456f, 0.406f};
     static const float std_val[3] = {0.229f, 0.224f, 0.225f};
-    std::vector<cv::Mat> channels(3);
-    cv::split(float_img, channels);
-    std::vector<float> input_data(static_cast<size_t>(3) * rh * rw);
-    const int plane = rh * rw;
+    const int plane = canvas_h * canvas_w;
+    float* blob_data = blob.ptr<float>();
     for (int c = 0; c < 3; ++c) {
-        float* dst = input_data.data() + static_cast<size_t>(c) * plane;
-        const float* src = reinterpret_cast<float*>(channels[c].data);
+        float* ch = blob_data + static_cast<size_t>(c) * plane;
+        const float inv_std = 1.0f / std_val[c];
         for (int i = 0; i < plane; ++i) {
-            dst[i] = (src[i] - mean[c]) / std_val[c];
+            ch[i] = (ch[i] - mean[c]) * inv_std;
         }
     }
-    return input_data;
+
+    return std::vector<float>(blob_data, blob_data + static_cast<size_t>(3) * plane);
 }
 
 std::vector<cv::Point> PPOCRDetector::unclip(const std::vector<cv::Point>& poly) {
-    // Expand the polygon outward by distance = area * unclip_ratio / perimeter,
-    // offsetting each edge along its outward normal, then take the convex hull.
-    const double area = cv::contourArea(poly);
+    // Expand polygon outward by distance = |area| * unclip_ratio / perimeter
+    // (PaddleOCR DBPostProcess / pyclipper offset).
+    //
+    // Image coordinates have y pointing down, so the mathematical left-hand
+    // edge normal points *inward* for the usual CCW (positive contourArea)
+    // winding from OpenCV boxPoints. Choose the normal that points away from
+    // the polygon centroid so expansion is always outward.
+    const double area = std::abs(cv::contourArea(poly));
     const double length = cv::arcLength(poly, true);
-    if (length < 1e-6) {
+    if (length < 1e-6 || area < 1e-6) {
         return poly;
     }
     const double dist = area * det_db_unclip_ratio_ / length;
 
+    cv::Point2f center(0.f, 0.f);
+    for (const cv::Point& p : poly) {
+        center.x += static_cast<float>(p.x);
+        center.y += static_cast<float>(p.y);
+    }
+    center.x /= static_cast<float>(poly.size());
+    center.y /= static_cast<float>(poly.size());
+
     const size_t n = poly.size();
-    std::vector<cv::Point> hull_in;
+    std::vector<cv::Point2f> hull_in;
     hull_in.reserve(n * 2);
     for (size_t i = 0; i < n; ++i) {
-        cv::Point2f p1(poly[i].x, poly[i].y);
-        cv::Point2f p2(poly[(i + 1) % n].x, poly[(i + 1) % n].y);
+        cv::Point2f p1(static_cast<float>(poly[i].x), static_cast<float>(poly[i].y));
+        cv::Point2f p2(static_cast<float>(poly[(i + 1) % n].x),
+            static_cast<float>(poly[(i + 1) % n].y));
         cv::Point2f edge = p2 - p1;
         const float len = std::sqrt(edge.x * edge.x + edge.y * edge.y);
         if (len < 1e-6f) {
             continue;
         }
         cv::Point2f normal(-edge.y / len, edge.x / len);
-        cv::Point2f e1 = p1 + normal * static_cast<float>(dist);
-        cv::Point2f e2 = p2 + normal * static_cast<float>(dist);
-        hull_in.emplace_back(static_cast<int>(e1.x), static_cast<int>(e1.y));
-        hull_in.emplace_back(static_cast<int>(e2.x), static_cast<int>(e2.y));
+        const cv::Point2f mid = (p1 + p2) * 0.5f;
+        if (normal.dot(mid - center) < 0.f) {
+            normal = -normal;
+        }
+        hull_in.push_back(p1 + normal * static_cast<float>(dist));
+        hull_in.push_back(p2 + normal * static_cast<float>(dist));
     }
     std::vector<cv::Point> hull;
     if (!hull_in.empty()) {
-        cv::convexHull(hull_in, hull);
+        std::vector<cv::Point2f> hull_f;
+        cv::convexHull(hull_in, hull_f);
+        hull.reserve(hull_f.size());
+        for (const cv::Point2f& p : hull_f) {
+            hull.emplace_back(cv::Point(cvRound(p.x), cvRound(p.y)));
+        }
     }
     return hull;
 }
@@ -313,8 +377,12 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::db_postprocess(
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(dilated, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
 
-    const float scale_x = static_cast<float>(ori_w) / static_cast<float>(net_w);
-    const float scale_y = static_cast<float>(ori_h) / static_cast<float>(net_h);
+    // Map boxes from network space back to the original image. For letterbox
+    // (fixed det_input_*), scale uses the content size before pad, not net HxW.
+    const int map_h = (det_resize_h_ > 0) ? det_resize_h_ : net_h;
+    const int map_w = (det_resize_w_ > 0) ? det_resize_w_ : net_w;
+    const float scale_x = static_cast<float>(ori_w) / static_cast<float>(map_w);
+    const float scale_y = static_cast<float>(ori_h) / static_cast<float>(map_h);
 
     std::vector<TextBox> boxes;
     for (const auto& contour : contours) {
@@ -361,6 +429,52 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::db_postprocess(
     return boxes;
 }
 
+std::vector<PPOCRDetector::TextBox> PPOCRDetector::nms_boxes(
+    std::vector<TextBox> boxes, float nms_thresh) {
+    if (boxes.size() <= 1 || nms_thresh <= 0.0f) {
+        return boxes;
+    }
+
+    std::sort(boxes.begin(), boxes.end(),
+        [](const TextBox& a, const TextBox& b) { return a.score > b.score; });
+
+    auto aabb = [](const std::vector<cv::Point>& pts) {
+        cv::Rect r = cv::boundingRect(pts);
+        return r;
+    };
+    auto iou = [](const cv::Rect& a, const cv::Rect& b) {
+        const int x1 = std::max(a.x, b.x);
+        const int y1 = std::max(a.y, b.y);
+        const int x2 = std::min(a.x + a.width, b.x + b.width);
+        const int y2 = std::min(a.y + a.height, b.y + b.height);
+        const int inter_w = std::max(0, x2 - x1);
+        const int inter_h = std::max(0, y2 - y1);
+        const int inter = inter_w * inter_h;
+        const int uni = a.width * a.height + b.width * b.height - inter;
+        return uni > 0 ? static_cast<float>(inter) / static_cast<float>(uni) : 0.0f;
+    };
+
+    std::vector<TextBox> kept;
+    kept.reserve(boxes.size());
+    std::vector<char> suppressed(boxes.size(), 0);
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        if (suppressed[i]) {
+            continue;
+        }
+        kept.push_back(boxes[i]);
+        const cv::Rect ri = aabb(boxes[i].points);
+        for (size_t j = i + 1; j < boxes.size(); ++j) {
+            if (suppressed[j]) {
+                continue;
+            }
+            if (iou(ri, aabb(boxes[j].points)) > nms_thresh) {
+                suppressed[j] = 1;
+            }
+        }
+    }
+    return kept;
+}
+
 // ---------------------------------------------------------------------------
 // Recognition (CRNN + CTC)
 // ---------------------------------------------------------------------------
@@ -394,52 +508,24 @@ cv::Mat PPOCRDetector::crop_text_box(const cv::Mat& image, const std::vector<cv:
     return crop;
 }
 
-std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
-    *out_score = 0.0f;
-    if (crop.empty()) {
-        return "";
+cv::Mat PPOCRDetector::rec_make_canvas(const cv::Mat& crop) const {
+    // Keep aspect ratio, pad to [rec_img_h_ x rec_img_w_max_] with gray 127
+    // (PaddleOCR RecResizeImg).
+    cv::Mat canvas(rec_img_h_, rec_img_w_max_, CV_8UC3, cv::Scalar(127, 127, 127));
+    if (crop.empty() || crop.rows <= 0 || crop.cols <= 0) {
+        return canvas;
     }
-    // BGR->RGB, resize keeping aspect ratio, then pad to a fixed
-    // [rec_img_h_ x rec_img_w_max_] canvas with gray (127) (PaddleOCR RecResizeImg).
-    cv::Mat rgb;
-    cv::cvtColor(crop, rgb, cv::COLOR_BGR2RGB);
     int target_w = std::max(1, static_cast<int>(
-        static_cast<float>(rgb.cols) / rgb.rows * rec_img_h_));
+        static_cast<float>(crop.cols) / static_cast<float>(crop.rows) * rec_img_h_));
     target_w = std::min(target_w, rec_img_w_max_);
     cv::Mat resized;
-    cv::resize(rgb, resized, cv::Size(target_w, rec_img_h_));
-    cv::Mat canvas(rec_img_h_, rec_img_w_max_, CV_8UC3, cv::Scalar(127, 127, 127));
+    cv::resize(crop, resized, cv::Size(target_w, rec_img_h_), 0, 0, cv::INTER_LINEAR);
     resized.copyTo(canvas(cv::Rect(0, 0, target_w, rec_img_h_)));
+    return canvas;
+}
 
-    // Normalize to [-1, 1]: x/127.5 - 1  (gray 127 -> ~0).
-    cv::Mat float_img;
-    canvas.convertTo(float_img, CV_32FC3, 1.0f / 127.5f, -1.0f);
-    const int plane = rec_img_h_ * rec_img_w_max_;
-    std::vector<float> input_data(static_cast<size_t>(3) * plane);
-    std::vector<cv::Mat> channels(3);
-    cv::split(float_img, channels);
-    for (int c = 0; c < 3; ++c) {
-        float* dst = input_data.data() + static_cast<size_t>(c) * plane;
-        const float* src = reinterpret_cast<float*>(channels[c].data);
-        std::copy(src, src + plane, dst);
-    }
-
-    const std::vector<int64_t> shape = {1, 3, rec_img_h_, rec_img_w_max_};
-    Ort::Value input = Ort::Value::CreateTensor<float>(
-        memory_info_, input_data.data(), input_data.size(), shape.data(), shape.size());
-    std::vector<Ort::Value> outs = rec_session_->Run(
-        Ort::RunOptions{nullptr}, rec_input_names_.data(), &input, 1,
-        rec_output_names_.data(), rec_output_names_.size());
-
-    // Output [1, T, num_classes]; CTC greedy decode (blank == index 0).
-    const float* logits = outs[0].GetTensorData<float>();
-    std::vector<int64_t> dims = outs[0].GetTensorTypeAndShapeInfo().GetShape();
-    if (dims.size() != 3) {
-        return "";
-    }
-    const int seq_len = static_cast<int>(dims[1]);
-    const int num_classes = static_cast<int>(dims[2]);
-
+std::string PPOCRDetector::ctc_decode(
+    const float* logits, int seq_len, int num_classes, float* out_score) const {
     std::string text;
     float score_sum = 0.0f;
     int score_cnt = 0;
@@ -456,8 +542,40 @@ std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
         }
         last_idx = best;
     }
-    *out_score = score_cnt > 0 ? score_sum / static_cast<float>(score_cnt) : 0.0f;
+    if (out_score) {
+        *out_score = score_cnt > 0 ? score_sum / static_cast<float>(score_cnt) : 0.0f;
+    }
     return text;
+}
+
+std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
+    *out_score = 0.0f;
+    if (crop.empty()) {
+        return "";
+    }
+
+    cv::Mat canvas = rec_make_canvas(crop);
+    // (x - 127.5) / 127.5; mean order is (R,G,B) with swapRB.
+    cv::Mat blob = cv::dnn::blobFromImage(
+        canvas, 1.0 / 127.5, cv::Size(), cv::Scalar(127.5, 127.5, 127.5),
+        /*swapRB=*/true, /*crop=*/false, CV_32F);
+
+    const int plane = rec_img_h_ * rec_img_w_max_;
+    const std::vector<int64_t> shape = {1, 3, rec_img_h_, rec_img_w_max_};
+    Ort::Value input = Ort::Value::CreateTensor<float>(
+        memory_info_, blob.ptr<float>(), static_cast<size_t>(3) * plane,
+        shape.data(), shape.size());
+    std::vector<Ort::Value> outs = rec_session_->Run(
+        Ort::RunOptions{nullptr}, rec_input_names_.data(), &input, 1,
+        rec_output_names_.data(), rec_output_names_.size());
+
+    // Output [1, T, num_classes]; CTC greedy decode (blank == index 0).
+    const float* logits = outs[0].GetTensorData<float>();
+    std::vector<int64_t> dims = outs[0].GetTensorTypeAndShapeInfo().GetShape();
+    if (dims.size() != 3) {
+        return "";
+    }
+    return ctc_decode(logits, static_cast<int>(dims[1]), static_cast<int>(dims[2]), out_score);
 }
 
 // ---------------------------------------------------------------------------
@@ -477,7 +595,8 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
     int net_h = 0, net_w = 0;
     std::vector<float> det_input = det_preprocess(image, &net_h, &net_w);
     const auto t_pre1 = std::chrono::steady_clock::now();
-    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+    set_runtime_preprocess_ms(
+        std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_inf0 = std::chrono::steady_clock::now();
     const std::vector<int64_t> det_shape = {1, 3, net_h, net_w};
@@ -487,7 +606,8 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
         Ort::RunOptions{nullptr}, input_node_names_.data(), &det_in, 1,
         output_node_names_.data(), output_node_names_.size());
     const auto t_inf1 = std::chrono::steady_clock::now();
-    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
+    set_runtime_model_infer_ms(
+        std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
     float* prob = det_out[0].GetTensorMutableData<float>();
@@ -497,6 +617,7 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
     const int prob_w = static_cast<int>(pdims[pdims.size() - 1]);
     cv::Mat prob_map(prob_h, prob_w, CV_32FC1, prob);
     std::vector<TextBox> boxes = db_postprocess(prob_map, image.rows, image.cols, net_h, net_w);
+    boxes = nms_boxes(std::move(boxes), det_box_nms_thresh_);
 
     // --- recognition per box ---
     vision_common::TextResultList results;
@@ -522,11 +643,11 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
         tr.label = -1;
         results.push_back(std::move(tr));
     }
-    const auto t_post1 = std::chrono::steady_clock::now();
-    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
-
     const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(
+        std::chrono::duration<double, std::milli>(t1 - t_post0).count());
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
+
     return results;
 }
 

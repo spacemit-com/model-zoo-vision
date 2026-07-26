@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-PP-OCRv5 text detection + recognition example using spacemit_vision.
+PP-OCRv6 text detection + recognition example using spacemit_vision.
 
 --config 指定 yaml → VisionServiceNative.create(config) 创建模型 → infer_image 出文本。
 每个结果带 .text（识别文字）、.polygon（文本框四点）、.score（识别置信度）。
@@ -24,7 +24,7 @@ def resolve_path(path_value, project_root):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="PP-OCRv5 OCR Example")
+    parser = argparse.ArgumentParser(description="PP-OCRv6 OCR Example")
     parser.add_argument("--config", type=str, default=None,
                         help="Config yaml path (default: examples/ppocr/config/ppocr.yaml)")
     parser.add_argument("--model-path", type=str, default=None, help="Override det model_path in yaml")

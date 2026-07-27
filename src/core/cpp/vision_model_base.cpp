@@ -13,7 +13,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <filesystem>  // NOLINT(build/c++17)
@@ -209,17 +208,7 @@ void BaseModel::init_session(int num_threads, const std::string& provider) {
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
     if (provider == "SpaceMITExecutionProvider") {
-        Ort::Status status;
-        // Keep det_10g behavior aligned with buffalo_l demo tuning.
-        if (model_path_.find("det_10g") != std::string::npos) {
-            std::unordered_map<std::string, std::string> provider_options;
-            provider_options["SPACEMIT_EP_DISABLE_OP_TYPE_FILTER"] = "Transpose";
-            status = Ort::SessionOptionsSpaceMITEnvInit(session_options, provider_options);
-        } else {
-            std::unordered_map<std::string, std::string> provider_options;
-            provider_options["SPACEMIT_EP_DISABLE_OP_TYPE_FILTER"] = "Hardswish";
-            status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
-        }
+        Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
         if (!status.IsOK()) {
             std::cerr << "SpaceMIT EP init failed: " << status.GetErrorMessage() << std::endl;
         }

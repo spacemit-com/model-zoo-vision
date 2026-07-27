@@ -5,4 +5,4 @@ default_params:
   # If buffalo embedding mismatches reference demo, try norm_std: 128
   # norm_std: 128
   providers:
-    - CPUExecutionProvider
+    - SpaceMITExecutionProvider

@@ -45,8 +45,10 @@ using vision_common::draw_keypoints;
 
 namespace {
 
-// COCO 17 keypoint indices -> TSSTG 13 (same as Python COCO17_TO_TSTSGO13)
-static constexpr int COCO17_TO_TSSTG13[] = {0, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4};
+// COCO 17 -> TSSTG 13 (coco_cut): drop eyes/ears (1-4), keep nose + limbs (0, 5-16).
+static constexpr int COCO17_TO_TSSTG13[] = {
+    0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+};
 static constexpr int STGCN_SEQUENCE_LENGTH = 30;
 
 struct StgcnResult {

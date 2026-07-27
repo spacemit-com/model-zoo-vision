@@ -19,8 +19,8 @@ import numpy as np
 
 from spacemit_vision import VisionServiceNative, VisionServiceStatus
 
-# STGCN/TSSTG：30 帧、13 关键点（COCO 子集）
-COCO17_TO_TSTSGO13 = [0, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4]
+# STGCN/TSSTG：30 帧、13 关键点（coco_cut：去掉 COCO 1-4 眼/耳，保留 0 与 5-16）
+COCO17_TO_TSSTG13 = [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 STGCN_SEQUENCE_LENGTH = 30
 
 # COCO17 骨架连线（关键点索引对），用于手动绘制 skeleton
@@ -90,7 +90,7 @@ def keypoint_buffer_to_tsstg_pts(keypoint_buffer, image_size):
     """将 keypoint_buffer（每帧 17 点 (x,y,vis)）转为 TSSTG 输入 pts (t, 13, 3)，像素坐标。"""
     w, h = image_size[0], image_size[1]
     arr = np.array(keypoint_buffer, dtype=np.float32)
-    pts = arr[:, COCO17_TO_TSTSGO13, :].copy()
+    pts = arr[:, COCO17_TO_TSSTG13, :].copy()
     if w > 0 and h > 0 and np.all(pts[:, :, :2] <= 1.0 + 1e-5) and np.all(pts[:, :, :2] >= -1e-5):
         pts[:, :, 0] *= w
         pts[:, :, 1] *= h

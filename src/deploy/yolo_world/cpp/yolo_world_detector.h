@@ -76,6 +76,12 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
 private:
+    vision_common::DetectionResultList detect_input_with_prompts(
+        const vision_core::ImageInput& input,
+        const std::vector<std::string>& prompts,
+        float conf_threshold,
+        float iou_threshold);
+
     // Lazily (re)compute cached text features for the given prompts.
     void ensure_text_features(const std::vector<std::string>& prompts);
 

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "opencl_image_preprocessor.h"
 #include "vision_model_base.h"
 #include "vision_task_interfaces.h"
 
@@ -33,9 +34,10 @@ public:
                     float iou_threshold = 0.45f,
                     int num_threads = 4,
                     bool lazy_load = false,
-                    const std::string& provider = "SpaceMITExecutionProvider");
+                    const std::string& provider = "SpaceMITExecutionProvider",
+                    const std::string& preprocess_backend = "cpu");
 
-    virtual ~YOLOv8Detector() = default;
+    ~YOLOv8Detector() override;
 
     /**
      * @brief Load YOLOv8 ONNX model
@@ -53,6 +55,11 @@ public:
         const cv::Mat& image,
         float conf_threshold = -1.0f,
         float iou_threshold = -1.0f) override;
+
+    vision_common::DetectionResultList detect_input(
+        const vision_core::ImageInput& image,
+        float conf_threshold = -1.0f,
+        float iou_threshold = -1.0f);
 
     vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
 

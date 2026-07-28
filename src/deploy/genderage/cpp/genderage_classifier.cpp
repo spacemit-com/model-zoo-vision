@@ -89,17 +89,43 @@ cv::Mat GenderAgeClassifier::preprocess(const cv::Mat& image) {
 }
 
 vision_common::ClassificationResultList GenderAgeClassifier::classify(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return classify_input(input);
+}
+
+vision_common::ClassificationResultList
+GenderAgeClassifier::classify_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image);
+    const float safe_std =
+        std::abs(input_std_) > 1.0e-6F
+        ? input_std_
+        : 1.0F;
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = target_size_.width;
+    spec.output_height = target_size_.height;
+    spec.output_rgb = true;
+    spec.mean = {input_mean_, input_mean_, input_mean_};
+    spec.scale = {
+        1.0F / safe_std,
+        1.0F / safe_std,
+        1.0F / safe_std};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(input_tensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -127,7 +153,8 @@ vision_core::InferResponse GenderAgeClassifier::Run(const vision_core::InferRequ
         return response;
     }
 
-    vision_common::ClassificationResultList task_results = classify(image_input->image);
+    vision_common::ClassificationResultList task_results =
+        classify_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {

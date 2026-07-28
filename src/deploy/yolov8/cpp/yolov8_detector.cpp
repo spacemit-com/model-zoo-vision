@@ -23,6 +23,7 @@
 #include "common.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
+#include "opencl_image_preprocessor.h"
 
 namespace vision_deploy {
 
@@ -287,9 +288,15 @@ std::unique_ptr<vision_core::BaseModel> YOLOv8Detector::create(const YAML::Node&
     float iou_threshold = vision_core::yaml_utils::getFloat(default_params, "iou_threshold", 0.45f);
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
+    std::string preprocess_backend = "cpu";
+    const YAML::Node preprocess = default_params["preprocess"];
+    if (preprocess && preprocess["backend"]) {
+        preprocess_backend = preprocess["backend"].as<std::string>();
+    }
 
     return std::make_unique<YOLOv8Detector>(
-        model_path, conf_threshold, iou_threshold, num_threads, lazy_load, provider);
+        model_path, conf_threshold, iou_threshold, num_threads,
+        lazy_load, provider, preprocess_backend);
 }
 
 YOLOv8Detector::YOLOv8Detector(const std::string& model_path,
@@ -297,17 +304,21 @@ YOLOv8Detector::YOLOv8Detector(const std::string& model_path,
                                 float iou_threshold,
                                 int num_threads,
                                 bool lazy_load,
-                                const std::string& provider)
+                                const std::string& provider,
+                                const std::string& preprocess_backend)
     : BaseModel(model_path, lazy_load),
         conf_threshold_(conf_threshold),
         iou_threshold_(iou_threshold),
         num_threads_(num_threads),
         num_classes_(0),
         provider_(provider) {
+    configure_preprocess_backend(preprocess_backend);
     if (!lazy_load) {
         load_model();
     }
 }
+
+YOLOv8Detector::~YOLOv8Detector() = default;
 
 void YOLOv8Detector::load_model() {
     if (model_loaded_) {
@@ -383,6 +394,67 @@ vision_common::DetectionResultList YOLOv8Detector::detect(
     return results;
 }
 
+vision_common::DetectionResultList YOLOv8Detector::detect_input(
+    const vision_core::ImageInput& image,
+    float conf_threshold,
+    float iou_threshold) {
+    ensure_model_loaded();
+    reset_runtime_profile();
+    const auto t0 = std::chrono::steady_clock::now();
+    const float use_conf =
+        conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
+    const float use_iou =
+        iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
+    const cv::Size original_size(
+        image.image.cols,
+        image.format == vision_core::ImagePixelFormat::kNv12
+            ? image.image.rows * 2 / 3
+            : image.image.rows);
+
+    const auto t_pre0 = std::chrono::steady_clock::now();
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    spec.resize_mode =
+        vision_common::PreprocessResizeMode::kLetterbox;
+    spec.output_rgb = true;
+    spec.scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    spec.padding = {114.0F, 114.0F, 114.0F};
+    auto prepared = prepare_image(
+        image, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
+    const auto t_pre1 = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(
+        std::chrono::duration<double, std::milli>(
+            t_pre1 - t_pre0).count());
+
+    const auto t_infer0 = std::chrono::steady_clock::now();
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
+    const auto t_infer1 = std::chrono::steady_clock::now();
+    set_runtime_model_infer_ms(
+        std::chrono::duration<double, std::milli>(
+            t_infer1 - t_infer0).count());
+
+    const auto t_post0 = std::chrono::steady_clock::now();
+    vision_common::DetectionResultList results =
+        postprocess(outputs, original_size, use_conf, use_iou);
+    const auto t_post1 = std::chrono::steady_clock::now();
+    set_runtime_postprocess_ms(
+        std::chrono::duration<double, std::milli>(
+            t_post1 - t_post0).count());
+    const auto t1 = std::chrono::steady_clock::now();
+    set_runtime_total_ms(
+        std::chrono::duration<double, std::milli>(
+            t1 - t0).count());
+    return results;
+}
+
 std::vector<vision_core::InferIntent> YOLOv8Detector::supported_intents() const {
     return {vision_core::InferIntent::kDetect};
 }
@@ -397,8 +469,20 @@ vision_core::InferResponse YOLOv8Detector::Run(const vision_core::InferRequest& 
         return response;
     }
 
-    vision_common::DetectionResultList detections =
-        detect(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_common::DetectionResultList detections;
+    if (uses_opencl_preprocess() ||
+        image_input->format ==
+            vision_core::ImagePixelFormat::kNv12) {
+        detections = detect_input(
+            *image_input,
+            request.params.conf_threshold,
+            request.params.iou_threshold);
+    } else {
+        detections = detect(
+            image_input->image,
+            request.params.conf_threshold,
+            request.params.iou_threshold);
+    }
 
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
@@ -508,4 +592,3 @@ vision_common::DetectionResultList YOLOv8Detector::postprocess(
 static vision_core::ModelRegistrar<YOLOv8Detector> registrar("YOLOv8Detector");
 
 }  // namespace vision_deploy
-

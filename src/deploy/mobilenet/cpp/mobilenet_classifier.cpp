@@ -146,17 +146,47 @@ cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image) {
 }
 
 vision_common::ClassificationResultList MobileNetV1Classifier::classify(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return classify_input(input);
+}
+
+vision_common::ClassificationResultList
+MobileNetV1Classifier::classify_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    if (center_crop_) {
+        spec.crop_mode =
+            vision_common::PreprocessCropMode::
+                kResizeShortSideCenterCrop;
+        spec.resize_width = resize_size_.width;
+        spec.resize_height = resize_size_.height;
+    }
+    spec.output_rgb = true;
+    for (int channel = 0; channel < 3; ++channel) {
+        spec.mean[channel] =
+            static_cast<float>(mean_[channel]);
+        spec.scale[channel] =
+            1.0F / static_cast<float>(std_[channel]);
+    }
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -185,7 +215,8 @@ vision_core::InferResponse MobileNetV1Classifier::Run(const vision_core::InferRe
         return response;
     }
 
-    vision_common::ClassificationResultList task_results = classify(image_input->image);
+    vision_common::ClassificationResultList task_results =
+        classify_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -219,4 +250,3 @@ vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(std::
 static vision_core::ModelRegistrar<MobileNetV1Classifier> registrar("MobileNetV1Classifier");
 
 }  // namespace vision_deploy
-

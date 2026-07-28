@@ -173,19 +173,54 @@ cv::Mat ResNetClassifier::preprocess(const cv::Mat& image) {
 }
 
 vision_common::ClassificationResultList ResNetClassifier::classify(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return classify_input(input);
+}
+
+vision_common::ClassificationResultList
+ResNetClassifier::classify_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
+    if (uses_opencl_preprocess() &&
+        !input_shape_.empty() && input_shape_[0] > 1) {
+        throw std::runtime_error(
+            "OpenCL preprocessing does not support batched image input");
+    }
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    if (center_crop_) {
+        spec.crop_mode =
+            vision_common::PreprocessCropMode::
+                kResizeShortSideCenterCrop;
+        spec.resize_width = resize_size_.width;
+        spec.resize_height = resize_size_.height;
+    }
+    spec.output_rgb = true;
+    for (int channel = 0; channel < 3; ++channel) {
+        spec.mean[channel] =
+            static_cast<float>(mean_[channel]);
+        spec.scale[channel] =
+            1.0F / static_cast<float>(std_[channel]);
+    }
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     // Run inference using base class method
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -216,7 +251,8 @@ vision_core::InferResponse ResNetClassifier::Run(const vision_core::InferRequest
         return response;
     }
 
-    vision_common::ClassificationResultList task_results = classify(image_input->image);
+    vision_common::ClassificationResultList task_results =
+        classify_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -248,4 +284,3 @@ vision_common::ClassificationResultList ResNetClassifier::postprocess(std::vecto
 static vision_core::ModelRegistrar<ResNetClassifier> registrar("ResNetClassifier");
 
 }  // namespace vision_deploy
-

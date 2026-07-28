@@ -54,6 +54,9 @@ public:
     vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs, const cv::Size& face_size);
 
 private:
+    vision_common::PoseResultList estimate_pose_input(
+        const vision_core::ImageInput& input);
+
     int num_threads_;
     std::string provider_;
     float input_mean_ = 127.5f;

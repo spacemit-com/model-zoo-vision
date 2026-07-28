@@ -81,17 +81,41 @@ cv::Mat AdaFaceRecognizer::preprocess(const cv::Mat& image) {
 }
 
 vision_common::EmbeddingResult AdaFaceRecognizer::infer_embedding(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return infer_embedding_input(input);
+}
+
+vision_common::EmbeddingResult
+AdaFaceRecognizer::infer_embedding_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image);
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    spec.crop_mode =
+        vision_common::PreprocessCropMode::kCenterSquare;
+    spec.output_rgb = true;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.scale = {
+        1.0F / 127.5F,
+        1.0F / 127.5F,
+        1.0F / 127.5F};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(input_tensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -123,7 +147,8 @@ vision_core::InferResponse AdaFaceRecognizer::Run(const vision_core::InferReques
         return response;
     }
     vision_core::InferResponse response;
-    response.results.emplace_back(infer_embedding(image_input->image));
+    response.results.emplace_back(
+        infer_embedding_input(*image_input));
     return response;
 }
 

@@ -18,8 +18,15 @@
 
 namespace vision_core {
 
+enum class ImagePixelFormat {
+    kBgr8,
+    kNv12,
+};
+
 struct ImageInput {
     cv::Mat image;
+    ImagePixelFormat format = ImagePixelFormat::kBgr8;
+    int dma_fd = -1;
 };
 
 struct SequenceInput {

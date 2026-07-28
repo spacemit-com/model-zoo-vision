@@ -63,6 +63,8 @@ __all__ = [
     "VisionServiceKeypoint",
     "VisionServiceInferParams",
     "VisionServiceResponse",
+    "VisionServiceProfile",
+    "VisionServiceProfileEntry",
     "VisionServiceTiming",
     "VisionServiceTimingOptions",
     "VisionServiceStatus",
@@ -94,6 +96,8 @@ VisionServiceResult = None  # type: ignore[assignment,misc]
 VisionServiceKeypoint = None  # type: ignore[assignment,misc]
 VisionServiceInferParams = None  # type: ignore[assignment,misc]
 VisionServiceResponse = None  # type: ignore[assignment,misc]
+VisionServiceProfile = None  # type: ignore[assignment,misc]
+VisionServiceProfileEntry = None  # type: ignore[assignment,misc]
 VisionServiceTiming = None  # type: ignore[assignment,misc]
 VisionServiceTimingOptions = None  # type: ignore[assignment,misc]
 
@@ -103,6 +107,8 @@ if _ext is not None:
     VisionServiceKeypoint = _ext.VisionServiceKeypoint
     VisionServiceInferParams = _ext.VisionServiceInferParams
     VisionServiceResponse = _ext.VisionServiceResponse
+    VisionServiceProfile = _ext.VisionServiceProfile
+    VisionServiceProfileEntry = _ext.VisionServiceProfileEntry
     VisionServiceTiming = _ext.VisionServiceTiming
     VisionServiceTimingOptions = _ext.VisionServiceTimingOptions
 
@@ -300,6 +306,9 @@ class VisionServiceNative:
 
     def get_last_timing(self) -> object:
         return self._svc.get_last_timing()
+
+    def get_last_profile(self) -> object:
+        return self._svc.get_last_profile()
 
     def get_default_image(self) -> str:
         return self._svc.get_default_image()

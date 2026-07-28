@@ -187,6 +187,24 @@ void BaseModel::set_runtime_total_ms(double ms) {
     runtime_profile_.total_ms = ms;
 }
 
+void BaseModel::add_runtime_component_timing(
+    const std::string& name, double elapsed_ms, uint64_t calls) {
+    if (name.empty() || elapsed_ms < 0.0 || calls == 0) {
+        return;
+    }
+    // A name identifies one logical component within this profile. Repeated
+    // calls intentionally accumulate; callers must disambiguate distinct
+    // roles/model instances in the name.
+    for (auto& entry : runtime_profile_.components) {
+        if (entry.name == name) {
+            entry.total_ms += elapsed_ms;
+            entry.calls += calls;
+            return;
+        }
+    }
+    runtime_profile_.components.push_back({name, elapsed_ms, calls});
+}
+
 void BaseModel::ensure_model_loaded() {
     if (!model_loaded_) {
         load_model();

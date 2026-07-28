@@ -6,6 +6,7 @@
 #ifndef VISION_MODEL_BASE_H
 #define VISION_MODEL_BASE_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,6 +23,14 @@
 
 namespace vision_core {
 
+struct RuntimeProfileEntry {
+    // The same logical model instance may accumulate repeated calls under one
+    // name. Different roles or model instances must use distinct names.
+    std::string name;
+    double total_ms = 0.0;
+    uint64_t calls = 0;
+};
+
 struct RuntimeProfile {
     double preprocess_ms = 0.0;
     double model_infer_ms = 0.0;
@@ -29,6 +38,7 @@ struct RuntimeProfile {
     double detect_ms = 0.0;
     double track_ms = 0.0;
     double total_ms = 0.0;
+    std::vector<RuntimeProfileEntry> components;
 };
 
 enum class ModelCapability {
@@ -179,6 +189,10 @@ protected:
     void set_runtime_detect_ms(double ms);
     void set_runtime_track_ms(double ms);
     void set_runtime_total_ms(double ms);
+    void add_runtime_component_timing(
+        const std::string& name,
+        double elapsed_ms,
+        uint64_t calls = 1);
 
 #ifdef DEBUG
     /**

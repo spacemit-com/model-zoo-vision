@@ -6,6 +6,7 @@
 #ifndef PPOCR_DETECTOR_H
 #define PPOCR_DETECTOR_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -87,7 +88,11 @@ private:
     static cv::Mat crop_text_box(const cv::Mat& image, const std::vector<cv::Point>& box);
     cv::Mat rec_make_canvas(const cv::Mat& crop) const;
     std::string ctc_decode(const float* logits, int seq_len, int num_classes, float* out_score) const;
-    std::string rec_run(const cv::Mat& crop, float* out_score);
+    std::string rec_run(
+        const cv::Mat& crop,
+        float* out_score,
+        double* model_infer_ms,
+        uint64_t* model_infer_calls);
 
     void load_dict(const std::string& dict_path);
     void validate_dict_size();

@@ -68,7 +68,16 @@ endmacro()
 
 configure_vision_cpp_test(vision_cpp_functional cpp_functional.cpp)
 configure_vision_cpp_test(vision_cpp_invalid_input cpp_invalid_input.cpp)
+configure_vision_cpp_test(vision_cpp_runtime_profile cpp_runtime_profile.cpp)
 
-install(TARGETS vision_cpp_functional vision_cpp_invalid_input
+target_include_directories(vision_cpp_runtime_profile PRIVATE
+    ${VISION_ROOT}/src
+    ${VISION_ROOT}/src/core/cpp
+    ${VISION_ROOT}/src/common/cpp
+)
+
+add_test(NAME vision_cpp_runtime_profile COMMAND vision_cpp_runtime_profile)
+
+install(TARGETS vision_cpp_functional vision_cpp_invalid_input vision_cpp_runtime_profile
     RUNTIME DESTINATION bin
 )

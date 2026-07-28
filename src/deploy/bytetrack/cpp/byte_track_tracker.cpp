@@ -107,7 +107,17 @@ vision_common::TrackingResultList ByteTrackTracker::track(
     const auto t_det0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList detections = detector_->detect(image, conf_threshold, iou_threshold);
     const auto t_det1 = std::chrono::steady_clock::now();
+    // detector_->detect() resets and completes the child instance's profile.
+    // Snapshot it immediately: detect_ms below covers the full detector
+    // pipeline, while detector.infer is pure ONNX execution.
+    const vision_core::RuntimeProfile detector_profile =
+        detector_->get_runtime_profile();
     set_runtime_detect_ms(std::chrono::duration<double, std::milli>(t_det1 - t_det0).count());
+    set_runtime_preprocess_ms(detector_profile.preprocess_ms);
+    set_runtime_model_infer_ms(detector_profile.model_infer_ms);
+    set_runtime_postprocess_ms(detector_profile.postprocess_ms);
+    add_runtime_component_timing(
+        "detector.infer", detector_profile.model_infer_ms);
 
     // Convert to Object format for tracker
     const auto t_track0 = std::chrono::steady_clock::now();
@@ -225,4 +235,3 @@ vision_common::TrackingResultList ByteTrackTracker::convert_stracks_to_results(
 static vision_core::ModelRegistrar<ByteTrackTracker> registrar("ByteTrackTracker");
 
 }  // namespace vision_deploy
-

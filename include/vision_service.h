@@ -211,6 +211,18 @@ struct VisionServiceResponse {
     std::string error_message;
 };
 
+struct VisionServiceProfileEntry {
+    // Naming contract: repeated calls to the same logical model instance use
+    // the same name; different roles or model instances use distinct names.
+    std::string name;
+    double total_ms = 0.0;
+    uint64_t calls = 0;
+};
+
+struct VisionServiceProfile {
+    std::vector<VisionServiceProfileEntry> components;
+};
+
 struct VisionServiceTiming {
     // Generic image pipeline stages (most models)
     double preprocess_ms = 0.0;
@@ -355,6 +367,14 @@ public:
      * @thread_safety NOT thread-safe. Only call from the same thread that ran inference.
      */
     VisionServiceTiming GetLastTiming() const;
+
+    /**
+     * @brief Get named component timings from the last inference
+     * Returns an empty component list when timing is disabled or when the
+     * model only reports the legacy scalar timing fields.
+     * @thread_safety NOT thread-safe. Only call from the same thread that ran inference.
+     */
+    VisionServiceProfile GetLastProfile() const;
 
     /**
      * @brief Get default image path from config

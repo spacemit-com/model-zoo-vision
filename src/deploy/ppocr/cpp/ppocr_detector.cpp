@@ -548,8 +548,14 @@ std::string PPOCRDetector::ctc_decode(
     return text;
 }
 
-std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
+std::string PPOCRDetector::rec_run(
+    const cv::Mat& crop,
+    float* out_score,
+    double* model_infer_ms,
+    uint64_t* model_infer_calls) {
     *out_score = 0.0f;
+    *model_infer_ms = 0.0;
+    *model_infer_calls = 0;
     if (crop.empty()) {
         return "";
     }
@@ -565,9 +571,15 @@ std::string PPOCRDetector::rec_run(const cv::Mat& crop, float* out_score) {
     Ort::Value input = Ort::Value::CreateTensor<float>(
         memory_info_, blob.ptr<float>(), static_cast<size_t>(3) * plane,
         shape.data(), shape.size());
+    const auto t_rec_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outs = rec_session_->Run(
         Ort::RunOptions{nullptr}, rec_input_names_.data(), &input, 1,
         rec_output_names_.data(), rec_output_names_.size());
+    const auto t_rec_infer1 = std::chrono::steady_clock::now();
+    *model_infer_calls = 1;
+    *model_infer_ms =
+        std::chrono::duration<double, std::milli>(
+            t_rec_infer1 - t_rec_infer0).count();
 
     // Output [1, T, num_classes]; CTC greedy decode (blank == index 0).
     const float* logits = outs[0].GetTensorData<float>();
@@ -606,8 +618,9 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
         Ort::RunOptions{nullptr}, input_node_names_.data(), &det_in, 1,
         output_node_names_.data(), output_node_names_.size());
     const auto t_inf1 = std::chrono::steady_clock::now();
-    set_runtime_model_infer_ms(
-        std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
+    const double detector_infer_ms =
+        std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count();
+    add_runtime_component_timing("detector.infer", detector_infer_ms);
 
     const auto t_post0 = std::chrono::steady_clock::now();
     float* prob = det_out[0].GetTensorMutableData<float>();
@@ -622,10 +635,24 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
     // --- recognition per box ---
     vision_common::TextResultList results;
     results.reserve(boxes.size());
+    double recognizer_infer_total_ms = 0.0;
     for (const TextBox& box : boxes) {
         cv::Mat crop = crop_text_box(image, box.points);
         float rec_score = 0.0f;
-        std::string text = rec_run(crop, &rec_score);
+        double recognizer_infer_ms = 0.0;
+        uint64_t recognizer_infer_calls = 0;
+        std::string text = rec_run(
+            crop,
+            &rec_score,
+            &recognizer_infer_ms,
+            &recognizer_infer_calls);
+        if (recognizer_infer_calls > 0) {
+            add_runtime_component_timing(
+                "recognizer.infer",
+                recognizer_infer_ms,
+                recognizer_infer_calls);
+            recognizer_infer_total_ms += recognizer_infer_ms;
+        }
         if (text.empty()) {
             continue;
         }
@@ -644,8 +671,12 @@ vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
         results.push_back(std::move(tr));
     }
     const auto t1 = std::chrono::steady_clock::now();
-    set_runtime_postprocess_ms(
-        std::chrono::duration<double, std::milli>(t1 - t_post0).count());
+    set_runtime_model_infer_ms(
+        detector_infer_ms + recognizer_infer_total_ms);
+    const double postprocess_with_rec_infer_ms =
+        std::chrono::duration<double, std::milli>(t1 - t_post0).count();
+    set_runtime_postprocess_ms(std::max(
+        0.0, postprocess_with_rec_infer_ms - recognizer_infer_total_ms));
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
 
     return results;

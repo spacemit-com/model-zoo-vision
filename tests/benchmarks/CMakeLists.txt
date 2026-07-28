@@ -16,7 +16,10 @@ function(link_vision_with_registration target_name)
     target_link_libraries(${target_name} PRIVATE vision)
 endfunction()
 
-add_executable(vision_infer_benchmark infer_benchmark.cpp)
+add_executable(vision_infer_benchmark
+    infer_benchmark.cpp
+    benchmark_stats.cpp
+)
 
 # OpenCV Configuration
 if(NOT OpenCV_FOUND)
@@ -45,6 +48,17 @@ set(LIBS
 )
 link_vision_with_registration(vision_infer_benchmark)
 target_link_libraries(vision_infer_benchmark PRIVATE ${LIBS})
+
+add_executable(vision_benchmark_stats_test
+    benchmark_stats_test.cpp
+    benchmark_stats.cpp
+)
+target_link_libraries(vision_benchmark_stats_test PRIVATE ${OpenCV_LIBS})
+target_include_directories(vision_benchmark_stats_test PRIVATE
+    ${VISION_ROOT}/include
+    ${OpenCV_INCLUDE_DIRS}
+)
+add_test(NAME vision_benchmark_stats COMMAND vision_benchmark_stats_test)
 
 # Installed binary: global CMAKE_INSTALL_RPATH only has $ORIGIN paths; OpenCV and
 # SpaceMIT libs live under fixed prefixes (e.g. /opt/opencv-spacemit/lib), so

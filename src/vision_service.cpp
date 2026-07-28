@@ -39,6 +39,7 @@ struct VisionService::Impl {
     std::string last_config_path_value;
     VisionServiceTimingOptions timing_options;
     VisionServiceTiming last_timing;
+    VisionServiceProfile last_profile;
     uint64_t timed_tracking_frame_count = 0;
     uint64_t timed_tracking_object_sum = 0;
 };
@@ -79,15 +80,26 @@ void FillTimingFromRuntimeProfile(const vision_core::RuntimeProfile& profile,
     if (timing == nullptr) {
         return;
     }
+    timing->preprocess_ms = profile.preprocess_ms;
+    timing->model_infer_ms = profile.model_infer_ms;
+    timing->postprocess_ms = profile.postprocess_ms;
+    timing->infer_ms = profile.total_ms;
     if (is_tracking) {
         timing->detect_ms = profile.detect_ms;
         timing->track_ms = profile.track_ms;
-        timing->infer_ms = profile.total_ms;
-    } else {
-        timing->preprocess_ms = profile.preprocess_ms;
-        timing->model_infer_ms = profile.model_infer_ms;
-        timing->postprocess_ms = profile.postprocess_ms;
-        timing->infer_ms = profile.total_ms;
+    }
+}
+
+void CopyRuntimeComponents(const vision_core::RuntimeProfile& profile,
+                            VisionServiceProfile* service_profile) {
+    if (service_profile == nullptr) {
+        return;
+    }
+    service_profile->components.clear();
+    service_profile->components.reserve(profile.components.size());
+    for (const auto& entry : profile.components) {
+        service_profile->components.push_back(
+            {entry.name, entry.total_ms, entry.calls});
     }
 }
 
@@ -223,6 +235,7 @@ void VisionService::Release() {
     impl_->default_image_path.clear();
     impl_->last_config_path_value.clear();
     ResetAllTiming(&impl_->last_timing);
+    impl_->last_profile.components.clear();
     impl_->timed_tracking_frame_count = 0;
     impl_->timed_tracking_object_sum = 0;
 }
@@ -325,6 +338,7 @@ VisionServiceStatus VisionService::Infer(
         std::chrono::steady_clock::time_point t0;
         if (timing_enabled) {
             ResetAllTiming(&impl_->last_timing);
+            impl_->last_profile.components.clear();
             t0 = std::chrono::steady_clock::now();
         }
 
@@ -408,6 +422,7 @@ VisionServiceStatus VisionService::Infer(
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
+            CopyRuntimeComponents(profile, &impl_->last_profile);
             if (intent == vision_core::InferIntent::kEmbed ||
                 intent == vision_core::InferIntent::kEmbedText) {
                 impl_->last_timing.preprocess_ms = profile.preprocess_ms;
@@ -523,6 +538,7 @@ VisionServiceStatus VisionService::EncodeText(const std::string& text,
         std::chrono::steady_clock::time_point t0;
         if (timing_enabled) {
             ResetAllTiming(&impl_->last_timing);
+            impl_->last_profile.components.clear();
             t0 = std::chrono::steady_clock::now();
         }
 
@@ -551,6 +567,7 @@ VisionServiceStatus VisionService::EncodeText(const std::string& text,
         if (timing_enabled) {
             const auto t1 = std::chrono::steady_clock::now();
             const auto profile = model->get_runtime_profile();
+            CopyRuntimeComponents(profile, &impl_->last_profile);
             impl_->last_timing.preprocess_ms = profile.preprocess_ms;
             impl_->last_timing.model_infer_ms = profile.model_infer_ms;
             impl_->last_timing.postprocess_ms = profile.postprocess_ms;
@@ -640,10 +657,12 @@ void VisionService::SetTimingOptions(const VisionServiceTimingOptions& options) 
     impl_->timing_options = options;
     if (!options.enabled) {
         ResetAllTiming(&impl_->last_timing);
+        impl_->last_profile.components.clear();
         impl_->timed_tracking_frame_count = 0;
         impl_->timed_tracking_object_sum = 0;
     } else if (!was_enabled) {
         ResetAllTiming(&impl_->last_timing);
+        impl_->last_profile.components.clear();
         impl_->timed_tracking_frame_count = 0;
         impl_->timed_tracking_object_sum = 0;
     }
@@ -654,6 +673,13 @@ VisionServiceTiming VisionService::GetLastTiming() const {
         return VisionServiceTiming{};
     }
     return impl_->last_timing;
+}
+
+VisionServiceProfile VisionService::GetLastProfile() const {
+    if (impl_ == nullptr) {
+        return VisionServiceProfile{};
+    }
+    return impl_->last_profile;
 }
 
 std::string VisionService::GetDefaultImage() {

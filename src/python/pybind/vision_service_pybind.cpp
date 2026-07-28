@@ -259,6 +259,14 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             "results",
             [](const VisionServiceResponse& r) { return FlattenResults(r.results); });
 
+    py::class_<VisionServiceProfileEntry>(m, "VisionServiceProfileEntry")
+        .def_readonly("name", &VisionServiceProfileEntry::name)
+        .def_readonly("total_ms", &VisionServiceProfileEntry::total_ms)
+        .def_readonly("calls", &VisionServiceProfileEntry::calls);
+
+    py::class_<VisionServiceProfile>(m, "VisionServiceProfile")
+        .def_readonly("components", &VisionServiceProfile::components);
+
     py::class_<VisionServiceTiming>(m, "VisionServiceTiming")
         .def_readwrite("preprocess_ms", &VisionServiceTiming::preprocess_ms)
         .def_readwrite("model_infer_ms", &VisionServiceTiming::model_infer_ms)
@@ -443,6 +451,7 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def("release", &VisionService::Release)
         .def("set_timing_options", &VisionService::SetTimingOptions)
         .def("get_last_timing", &VisionService::GetLastTiming)
+        .def("get_last_profile", &VisionService::GetLastProfile)
         .def("get_default_image", &VisionService::GetDefaultImage)
         .def("get_config_path_value", &VisionService::GetConfigPathValue, py::arg("config_key"))
         .def("last_error", [](const VisionService& self) { return self.LastError(); });

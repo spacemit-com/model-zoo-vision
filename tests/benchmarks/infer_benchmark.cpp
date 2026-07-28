@@ -12,6 +12,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "benchmark_stats.h"
 #include "vision_service.h"
 
 namespace {
@@ -183,6 +184,7 @@ int main(int argc, char** argv) {
     int draw_skipped_runs = 0;
     int draw_executed_runs = 0;
     const bool draw_supported = service->SupportsDraw();
+    vision_benchmark::ComponentTimingAccumulator component_stats;
 
     cv::Mat drawn;
 
@@ -203,6 +205,7 @@ int main(int argc, char** argv) {
         service_postprocess_total += timing_after_infer.postprocess_ms;
         service_detect_total += timing_after_infer.detect_ms;
         service_track_total += timing_after_infer.track_ms;
+        component_stats.Add(service->GetLastProfile().components);
 
         if (mode == BenchMode::kEmbeddingInfer) {
             ++draw_skipped_runs;
@@ -244,18 +247,16 @@ int main(int argc, char** argv) {
         << "Image: " << args.image_path << "\n"
         << "Runs: " << args.runs << ", warmup " << args.warmup << "\n"
         << "Avg infer: " << avg_infer << " ms\n";
-    if (is_embedding_mode) {
-        std::cout << "Avg preprocess: " << avg_service_preprocess << " ms\n"
-            << "Avg model infer: " << avg_service_model_infer << " ms\n"
-            << "Avg postprocess: " << avg_service_postprocess << " ms\n";
-    } else if (looks_like_tracking) {
-        std::cout << "Avg detect: " << avg_service_detect << " ms\n"
-            << "Avg track: " << avg_service_track << " ms\n";
-    } else {
-        std::cout << "Avg preprocess: " << avg_service_preprocess << " ms\n"
-            << "Avg model infer: " << avg_service_model_infer << " ms\n"
-            << "Avg postprocess: " << avg_service_postprocess << " ms\n";
-    }
+    vision_benchmark::PrintBenchmarkTimingSummary(
+        std::cout,
+        avg_service_preprocess,
+        avg_service_model_infer,
+        avg_service_postprocess,
+        looks_like_tracking,
+        avg_service_detect,
+        avg_service_track);
+    vision_benchmark::PrintComponentTimings(
+        std::cout, component_stats.Averages(args.runs));
     std::cout
         << "Draw executed/skipped: " << draw_executed_runs << "/" << draw_skipped_runs << "\n"
         << "Avg draw: " << avg_draw << " ms\n"

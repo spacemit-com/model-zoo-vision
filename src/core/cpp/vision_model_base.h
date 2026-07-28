@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <functional>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -16,6 +17,7 @@
 
 #include "spacemit_ort_env.h"
 #include "vision_infer_types.h"
+#include "opencl_image_preprocessor.h"
 
 #ifdef DEBUG
 #include <thread>
@@ -67,6 +69,29 @@ Ort::Env& shared_ort_env();
  */
 class BaseModel {
 public:
+    class PreparedImage {
+    public:
+        PreparedImage(
+            cv::Mat tensor,
+            std::shared_ptr<
+                vision_common::OpenClImagePreprocessor> preprocessor);
+        ~PreparedImage();
+
+        PreparedImage(const PreparedImage&) = delete;
+        PreparedImage& operator=(const PreparedImage&) = delete;
+        PreparedImage(PreparedImage&& other) noexcept;
+        PreparedImage& operator=(PreparedImage&& other) noexcept;
+
+        const cv::Mat& tensor() const { return tensor_; }
+
+    private:
+        void finish() noexcept;
+
+        cv::Mat tensor_;
+        std::shared_ptr<vision_common::OpenClImagePreprocessor>
+            preprocessor_;
+    };
+
     explicit BaseModel(const std::string& model_path, bool lazy_load = false);
     virtual ~BaseModel();
 
@@ -156,6 +181,14 @@ public:
      */
     virtual std::vector<std::string> get_dynamic_class_names() const;
 
+    /**
+     * @brief Select image preprocessing backend.
+     *
+     * "cpu" preserves the existing behavior. "opencl" is explicit and never
+     * silently falls back to CPU.
+     */
+    virtual void configure_preprocess_backend(const std::string& backend);
+
 protected:
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;
@@ -172,7 +205,9 @@ protected:
 
     void ensure_model_loaded();
 
-    void init_session(int num_threads = 4, const std::string& provider = "SpaceMITExecutionProvider");
+    void init_session(
+        int num_threads = 4,
+        const std::string& provider = "SpaceMITExecutionProvider");
 
     /**
      * @brief Run ONNX Runtime inference
@@ -180,8 +215,20 @@ protected:
      */
     std::vector<Ort::Value> run_session(const cv::Mat& input_blob);
 
+    PreparedImage prepare_image(
+        const ImageInput& input,
+        const vision_common::OpenClPreprocessSpec& spec,
+        const std::function<cv::Mat(const cv::Mat&)>& cpu_preprocess);
+
+    bool uses_opencl_preprocess() const;
+
     Ort::MemoryInfo memory_info_{nullptr};
     RuntimeProfile runtime_profile_;
+    std::string preprocess_backend_{"cpu"};
+    std::shared_ptr<vision_common::OpenClImagePreprocessor>
+        opencl_preprocessor_;
+    vision_common::OpenClPreprocessSpec opencl_preprocess_spec_;
+    bool has_opencl_preprocess_spec_{false};
 
     void set_runtime_preprocess_ms(double ms);
     void set_runtime_model_infer_ms(double ms);

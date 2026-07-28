@@ -89,18 +89,47 @@ cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
 vision_common::PoseResultList Landmark2d106::estimate_pose(const cv::Mat& image,
                                                             float /*conf_threshold*/,
                                                             float /*iou_threshold*/) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return estimate_pose_input(input);
+}
+
+vision_common::PoseResultList Landmark2d106::estimate_pose_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size face_size = image.size();
+    const cv::Size face_size(
+        input.image.cols,
+        input.format == vision_core::ImagePixelFormat::kNv12
+            ? input.image.rows * 2 / 3
+            : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image);
+    const float safe_std =
+        std::abs(input_std_) > 1.0e-6F
+        ? input_std_
+        : 1.0F;
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = input_size_;
+    spec.output_height = input_size_;
+    spec.output_rgb = true;
+    spec.mean = {input_mean_, input_mean_, input_mean_};
+    spec.scale = {
+        1.0F / safe_std,
+        1.0F / safe_std,
+        1.0F / safe_std};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(input_tensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -128,7 +157,8 @@ vision_core::InferResponse Landmark2d106::Run(const vision_core::InferRequest& r
         return response;
     }
 
-    vision_common::PoseResultList task_results = estimate_pose(image_input->image);
+    vision_common::PoseResultList task_results =
+        estimate_pose_input(*image_input);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {

@@ -21,6 +21,28 @@ namespace vision_core {
 
 namespace fs = std::filesystem;
 
+namespace {
+
+bool same_preprocess_spec(
+    const vision_common::OpenClPreprocessSpec& left,
+    const vision_common::OpenClPreprocessSpec& right)
+{
+    return left.output_width == right.output_width &&
+        left.output_height == right.output_height &&
+        left.crop_mode == right.crop_mode &&
+        left.resize_mode == right.resize_mode &&
+        left.resize_width == right.resize_width &&
+        left.resize_height == right.resize_height &&
+        left.output_rgb == right.output_rgb &&
+        left.interpolation == right.interpolation &&
+        left.output_type == right.output_type &&
+        left.mean == right.mean &&
+        left.scale == right.scale &&
+        left.padding == right.padding;
+}
+
+}  // namespace
+
 static bool is_url(const std::string& path) {
     return path.rfind("http://", 0) == 0 || path.rfind("https://", 0) == 0;
 }
@@ -95,6 +117,48 @@ Ort::Env& shared_ort_env() {
     return env;
 }
 
+BaseModel::PreparedImage::PreparedImage(
+    cv::Mat tensor,
+    std::shared_ptr<
+        vision_common::OpenClImagePreprocessor> preprocessor)
+    : tensor_(std::move(tensor)),
+        preprocessor_(std::move(preprocessor))
+{
+}
+
+BaseModel::PreparedImage::~PreparedImage()
+{
+    finish();
+}
+
+BaseModel::PreparedImage::PreparedImage(
+    PreparedImage&& other) noexcept
+    : tensor_(std::move(other.tensor_)),
+        preprocessor_(std::move(other.preprocessor_))
+{
+}
+
+BaseModel::PreparedImage& BaseModel::PreparedImage::operator=(
+    PreparedImage&& other) noexcept
+{
+    if (this != &other) {
+        finish();
+        tensor_ = std::move(other.tensor_);
+        preprocessor_ = std::move(other.preprocessor_);
+    }
+    return *this;
+}
+
+void BaseModel::PreparedImage::finish() noexcept
+{
+    if (!preprocessor_) return;
+    try {
+        preprocessor_->finish_cpu_read();
+    } catch (...) {
+    }
+    preprocessor_.reset();
+}
+
 BaseModel::BaseModel(const std::string& model_path, bool lazy_load)
     : model_path_(model_path), model_loaded_(false), lazy_load_(lazy_load) {
 #ifdef DEBUG
@@ -115,6 +179,8 @@ void BaseModel::warmup() {
 }
 
 void BaseModel::release() {
+    opencl_preprocessor_.reset();
+    has_opencl_preprocess_spec_ = false;
     session_.reset();
     input_shape_.clear();
     input_node_names_.clear();
@@ -212,7 +278,9 @@ void BaseModel::ensure_model_loaded() {
     }
 }
 
-void BaseModel::init_session(int num_threads, const std::string& provider) {
+void BaseModel::init_session(
+    int num_threads,
+    const std::string& provider) {
     // Idempotent: composite wrappers (e.g. ByteTrack) may call load_model() on an
     // eager-loaded sub-model; skip re-creating the ONNX session and re-acquiring EP cores.
     if (session_) {
@@ -345,6 +413,55 @@ std::vector<std::string> BaseModel::get_sequence_class_names() const {
 
 std::vector<std::string> BaseModel::get_dynamic_class_names() const {
     return {};
+}
+
+void BaseModel::configure_preprocess_backend(
+    const std::string& backend)
+{
+    if (backend != "cpu" && backend != "opencl") {
+        throw std::runtime_error(
+            "preprocess.backend must be cpu or opencl");
+    }
+    preprocess_backend_ = backend;
+    if (backend == "cpu") {
+        opencl_preprocessor_.reset();
+        has_opencl_preprocess_spec_ = false;
+    }
+}
+
+bool BaseModel::uses_opencl_preprocess() const
+{
+    return preprocess_backend_ == "opencl";
+}
+
+BaseModel::PreparedImage BaseModel::prepare_image(
+    const ImageInput& input,
+    const vision_common::OpenClPreprocessSpec& spec,
+    const std::function<cv::Mat(const cv::Mat&)>& cpu_preprocess)
+{
+    if (uses_opencl_preprocess()) {
+        if (!opencl_preprocessor_ ||
+            !has_opencl_preprocess_spec_ ||
+            !same_preprocess_spec(
+                opencl_preprocess_spec_, spec)) {
+            opencl_preprocessor_ =
+                std::make_shared<
+                    vision_common::OpenClImagePreprocessor>(spec);
+            opencl_preprocess_spec_ = spec;
+            has_opencl_preprocess_spec_ = true;
+        }
+        return PreparedImage(
+            opencl_preprocessor_->process(input),
+            opencl_preprocessor_);
+    }
+
+    if (input.format == ImagePixelFormat::kNv12) {
+        return PreparedImage(
+            cpu_preprocess(
+                vision_common::nv12_dma_to_bgr_cpu(input)),
+            nullptr);
+    }
+    return PreparedImage(cpu_preprocess(input.image), nullptr);
 }
 
 }  // namespace vision_core

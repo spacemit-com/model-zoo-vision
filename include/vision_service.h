@@ -184,10 +184,19 @@ struct VisionServiceInferParams {
     int max_det = -1;
 };
 
+enum class VisionPixelFormat : std::uint8_t {
+    BGR8 = 0,
+    NV12 = 1,
+};
+
 // Unified inference input. Image models fill `image`; sequence models
 // (e.g. STGCN) fill the skeleton point buffer + frame size.
 struct VisionServiceRequest {
+    // Host memory must remain readable and unmodified until Infer() returns.
+    // With image_dma_fd >= 0, image describes the mapped DMA-BUF layout.
     cv::Mat image;                        // image-based models
+    VisionPixelFormat image_format = VisionPixelFormat::BGR8;
+    int image_dma_fd = -1;                // >= 0 imports DMA-BUF; otherwise host memory
 
     const float* sequence_pts = nullptr;  // sequence models: skeleton points
     int sequence_count = 0;               // length of sequence_pts; if > 0 it is

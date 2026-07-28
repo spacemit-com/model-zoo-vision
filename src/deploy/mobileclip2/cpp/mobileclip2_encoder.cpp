@@ -180,17 +180,40 @@ std::vector<float> Mobileclip2Encoder::run_text(const std::vector<int64_t>& ids)
 }
 
 vision_common::EmbeddingResult Mobileclip2Encoder::infer_embedding(const cv::Mat& image) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return infer_embedding_input(input);
+}
+
+vision_common::EmbeddingResult
+Mobileclip2Encoder::infer_embedding_input(
+    const vision_core::ImageInput& input) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat blob = preprocess(image);
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    spec.output_rgb = true;
+    for (int channel = 0; channel < 3; ++channel) {
+        spec.mean[channel] =
+            static_cast<float>(kClipMean[channel]);
+        spec.scale[channel] =
+            1.0F / static_cast<float>(kClipStd[channel]);
+    }
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<float> embedding = run_vision(blob);
+    std::vector<float> embedding =
+        run_vision(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -237,7 +260,8 @@ vision_core::InferResponse Mobileclip2Encoder::Run(const vision_core::InferReque
             response.error_message = "Mobileclip2Encoder expects ImageInput for kEmbed";
             return response;
         }
-        response.results.emplace_back(infer_embedding(image_input->image));
+        response.results.emplace_back(
+            infer_embedding_input(*image_input));
         return response;
     }
     if (request.intent == vision_core::InferIntent::kEmbedText) {

@@ -37,6 +37,7 @@ modelzoo_vision.egg-info/
 .idea/
 .DS_Store
 *.swp
+.shaders/
 
 # Legacy per-example/per-app model dirs (no longer used; models go to ~/.cache/models/vision/)
 examples/*/model/

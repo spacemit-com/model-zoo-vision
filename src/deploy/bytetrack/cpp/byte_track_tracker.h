@@ -78,7 +78,15 @@ public:
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
+    void configure_preprocess_backend(
+        const std::string& backend) override;
+
 private:
+    vision_common::TrackingResultList track_input(
+        const vision_core::ImageInput& input,
+        float conf_threshold,
+        float iou_threshold);
+
     float conf_threshold_;
     float iou_threshold_;
     int frame_rate_;

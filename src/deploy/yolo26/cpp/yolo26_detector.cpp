@@ -88,6 +88,15 @@ vision_common::DetectionResultList YOLO26Detector::detect(
     const cv::Mat& image,
     float conf_threshold,
     float iou_threshold) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return detect_input(input, conf_threshold, iou_threshold);
+}
+
+vision_common::DetectionResultList YOLO26Detector::detect_input(
+    const vision_core::ImageInput& input,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -95,14 +104,34 @@ vision_common::DetectionResultList YOLO26Detector::detect(
     const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
     const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
-    const cv::Size orig_size = image.size();
+    const cv::Size orig_size(
+        input.image.cols,
+        input.format == vision_core::ImagePixelFormat::kNv12
+            ? input.image.rows * 2 / 3
+            : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image);
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = static_cast<int>(input_shape_[3]);
+    spec.output_height = static_cast<int>(input_shape_[2]);
+    spec.resize_mode =
+        vision_common::PreprocessResizeMode::kLetterbox;
+    spec.output_rgb = true;
+    spec.scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    spec.padding = {114.0F, 114.0F, 114.0F};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            return preprocess(bgr);
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(input_tensor);
+    std::vector<Ort::Value> outputs =
+        run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -126,7 +155,10 @@ vision_core::InferResponse YOLO26Detector::Run(const vision_core::InferRequest& 
         return response;
     }
     vision_common::DetectionResultList detections =
-        detect(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+        detect_input(
+            *image_input,
+            request.params.conf_threshold,
+            request.params.iou_threshold);
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
     for (auto& detection : detections) {

@@ -66,6 +66,9 @@ public:
     vision_common::ClassificationResultList postprocess(std::vector<Ort::Value>& outputs);
 
 private:
+    vision_common::ClassificationResultList classify_input(
+        const vision_core::ImageInput& input);
+
     int num_threads_;
     cv::Size resize_size_;
     cv::Scalar mean_;

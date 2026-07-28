@@ -430,7 +430,19 @@ vision_common::SegmentationResultList YoloeSegmentor::segment(
 vision_common::SegmentationResultList YoloeSegmentor::segment_with_prompts(
     const cv::Mat& image, const std::vector<std::string>& prompts,
     float conf_threshold, float iou_threshold) {
-    if (image.empty()) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return segment_input_with_prompts(
+        input, prompts, conf_threshold, iou_threshold);
+}
+
+vision_common::SegmentationResultList
+YoloeSegmentor::segment_input_with_prompts(
+    const vision_core::ImageInput& input,
+    const std::vector<std::string>& prompts,
+    float conf_threshold,
+    float iou_threshold) {
+    if (input.image.empty()) {
         throw std::runtime_error("YoloeSegmentor: input image is empty");
     }
     ensure_model_loaded();
@@ -443,8 +455,42 @@ vision_common::SegmentationResultList YoloeSegmentor::segment_with_prompts(
     ensure_text_features(prompts);
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat image_blob;
-    preprocess(image, image_blob);
+    const cv::Size original_size(
+        input.image.cols,
+        input.format == vision_core::ImagePixelFormat::kNv12
+            ? input.image.rows * 2 / 3
+            : input.image.rows);
+    const int dst_h = static_cast<int>(input_image_dims_[2]);
+    const int dst_w = static_cast<int>(input_image_dims_[3]);
+    letterbox_scale_ = std::min(
+        static_cast<float>(dst_h) / original_size.height,
+        static_cast<float>(dst_w) / original_size.width);
+    const int resized_width = static_cast<int>(
+        std::round(original_size.width * letterbox_scale_));
+    const int resized_height = static_cast<int>(
+        std::round(original_size.height * letterbox_scale_));
+    letterbox_ox_ = static_cast<int>(std::round(
+        (dst_w - resized_width) / 2.0F - 0.1F));
+    letterbox_oy_ = static_cast<int>(std::round(
+        (dst_h - resized_height) / 2.0F - 0.1F));
+    vision_common::OpenClPreprocessSpec spec;
+    spec.output_width = dst_w;
+    spec.output_height = dst_h;
+    spec.resize_mode =
+        vision_common::PreprocessResizeMode::kLetterbox;
+    spec.output_rgb = true;
+    spec.scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    spec.padding = {114.0F, 114.0F, 114.0F};
+    auto prepared = prepare_image(
+        input, spec,
+        [this](const cv::Mat& bgr) {
+            cv::Mat blob;
+            preprocess(bgr, blob);
+            return blob;
+        });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
@@ -453,7 +499,9 @@ vision_common::SegmentationResultList YoloeSegmentor::segment_with_prompts(
 
     // Ort::Value is move-only; place each tensor at its declared input index.
     Ort::Value image_tensor = Ort::Value::CreateTensor<float>(
-        memory_info_, image_blob.ptr<float>(), image_blob.total(),
+        memory_info_,
+        const_cast<float*>(prepared.tensor().ptr<float>()),
+        prepared.tensor().total(),
         image_shape.data(), image_shape.size());
     Ort::Value text_tensor = Ort::Value::CreateTensor<float>(
         memory_info_, text_feature_data_.data(), text_feature_data_.size(),
@@ -481,9 +529,13 @@ vision_common::SegmentationResultList YoloeSegmentor::segment_with_prompts(
     if (is_segment_) {
         const float* proto = outputs[1].GetTensorMutableData<float>();
         std::vector<int64_t> proto_dims = outputs[1].GetTensorTypeAndShapeInfo().GetShape();
-        results = postprocess_seg(det, offset, anchors, proto, proto_dims, image.size(), use_conf, use_iou);
+        results = postprocess_seg(
+            det, offset, anchors, proto, proto_dims,
+            original_size, use_conf, use_iou);
     } else {
-        results = postprocess_det(det, offset, anchors, image.size(), use_conf, use_iou);
+        results = postprocess_det(
+            det, offset, anchors, original_size,
+            use_conf, use_iou);
     }
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -511,8 +563,9 @@ vision_core::InferResponse YoloeSegmentor::Run(const vision_core::InferRequest& 
         return response;
     }
 
-    vision_common::SegmentationResultList task_results = segment_with_prompts(
-        image_input->image, request.params.prompts,
+    vision_common::SegmentationResultList task_results =
+        segment_input_with_prompts(
+        *image_input, request.params.prompts,
         request.params.conf_threshold, request.params.iou_threshold);
 
     vision_core::InferResponse response;

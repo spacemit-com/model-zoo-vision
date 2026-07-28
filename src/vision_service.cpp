@@ -327,9 +327,31 @@ VisionServiceStatus VisionService::Infer(
             response->error_message = "image must not be empty";
             return SetError(VISION_SERVICE_INVALID_ARGUMENT, response->error_message);
         }
-        if (request.image.channels() != 3) {
-            response->error_message = "image must be 3-channel BGR";
-            return SetError(VISION_SERVICE_INVALID_ARGUMENT, response->error_message);
+        if (request.image_format == VisionPixelFormat::BGR8) {
+            if (request.image.type() != CV_8UC3) {
+                response->error_message =
+                    "BGR8 image must have type CV_8UC3";
+                return SetError(
+                    VISION_SERVICE_INVALID_ARGUMENT,
+                    response->error_message);
+            }
+        } else if (request.image_format == VisionPixelFormat::NV12) {
+            if (request.image.type() != CV_8UC1 ||
+                request.image.rows <= 0 ||
+                request.image.rows % 3 != 0 ||
+                request.image.cols <= 0 ||
+                (request.image.cols & 1) != 0) {
+                response->error_message =
+                    "NV12 image must be CV_8UC1 H*3/2 x W";
+                return SetError(
+                    VISION_SERVICE_INVALID_ARGUMENT,
+                    response->error_message);
+            }
+        } else {
+            response->error_message = "unsupported image pixel format";
+            return SetError(
+                VISION_SERVICE_INVALID_ARGUMENT,
+                response->error_message);
         }
     }
 
@@ -399,7 +421,14 @@ VisionServiceStatus VisionService::Infer(
             seq.pts.assign(request.sequence_pts, request.sequence_pts + seq_size);
             input = std::move(seq);
         } else {
-            input = vision_core::ImageInput{request.image};
+            vision_core::ImageInput image;
+            image.image = request.image;
+            image.format =
+                request.image_format == VisionPixelFormat::NV12
+                    ? vision_core::ImagePixelFormat::kNv12
+                    : vision_core::ImagePixelFormat::kBgr8;
+            image.dma_fd = request.image_dma_fd;
+            input = std::move(image);
         }
 
         vision_core::InferRequest internal_request{std::move(input), intent, infer_params};

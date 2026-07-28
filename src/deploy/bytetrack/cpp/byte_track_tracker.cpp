@@ -99,13 +99,24 @@ vision_common::TrackingResultList ByteTrackTracker::track(
     const cv::Mat& image,
     float conf_threshold,
     float iou_threshold) {
+    vision_core::ImageInput input;
+    input.image = image;
+    return track_input(input, conf_threshold, iou_threshold);
+}
+
+vision_common::TrackingResultList ByteTrackTracker::track_input(
+    const vision_core::ImageInput& input,
+    float conf_threshold,
+    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
     // Run detection
     const auto t_det0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList detections = detector_->detect(image, conf_threshold, iou_threshold);
+    vision_common::DetectionResultList detections =
+        detector_->detect_input(
+            input, conf_threshold, iou_threshold);
     const auto t_det1 = std::chrono::steady_clock::now();
     // detector_->detect() resets and completes the child instance's profile.
     // Snapshot it immediately: detect_ms below covers the full detector
@@ -152,7 +163,11 @@ vision_core::InferResponse ByteTrackTracker::Run(const vision_core::InferRequest
         return response;
     }
 
-    vision_common::TrackingResultList task_results = track(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+    vision_common::TrackingResultList task_results =
+        track_input(
+            *image_input,
+            request.params.conf_threshold,
+            request.params.iou_threshold);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -163,6 +178,13 @@ vision_core::InferResponse ByteTrackTracker::Run(const vision_core::InferRequest
 
 std::vector<vision_core::ModelCapability> ByteTrackTracker::get_capabilities() const {
     return {vision_core::ModelCapability::kDraw};
+}
+
+void ByteTrackTracker::configure_preprocess_backend(
+    const std::string& backend)
+{
+    BaseModel::configure_preprocess_backend(backend);
+    detector_->configure_preprocess_backend(backend);
 }
 
 std::vector<Object> ByteTrackTracker::convert_results_to_objects(

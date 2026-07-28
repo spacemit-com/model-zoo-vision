@@ -8,7 +8,8 @@
   <system_depend arch="riscv64">python3-spacemit-ort</system_depend>
   <system_depend>libeigen3-dev</system_depend>
   <system_depend arch="riscv64">spacemit-onnxruntime</system_depend>
-
+  <system_depend arch="riscv64">ocl-icd-opencl-dev</system_depend>
+  <system_depend arch="riscv64">img-gpu-powervr</system_depend>
 
   <export>
     <build_type>cmake</build_type>

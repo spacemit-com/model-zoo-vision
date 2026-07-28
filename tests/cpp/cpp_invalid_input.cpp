@@ -39,6 +39,28 @@ std::string make_bad_yaml_path() {
     return bad_yaml;
 }
 
+void check_invalid_preprocess_config(
+    const std::string& default_params,
+    const std::string& expected_error) {
+    const std::string path =
+        "tests/output/invalid_preprocess_config.yaml";
+    std::ofstream out(path);
+    out << "class: deploy.yolov8.YOLOv8Detector\n"
+        << "model_path: /no/such/model.onnx\n"
+        << "default_params:\n"
+        << default_params;
+    out.close();
+
+    auto service = VisionService::Create(path);
+    check(service == nullptr, "expected invalid preprocess config to fail");
+    const std::string error = VisionService::LastCreateError();
+    check(
+        error.find(expected_error) != std::string::npos,
+        "expected '" + expected_error + "' in LastCreateError, got: " +
+            error);
+    std::remove(path.c_str());
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -82,6 +104,17 @@ int main(int argc, char** argv) {
             "expected non-empty LastCreateError for bad yaml, got empty");
 
     std::remove(bad_yaml.c_str());
+
+    check_invalid_preprocess_config(
+        "  - invalid\n",
+        "default_params must be a map");
+    check_invalid_preprocess_config(
+        "  preprocess: opencl\n",
+        "default_params.preprocess must be a map");
+    check_invalid_preprocess_config(
+        "  preprocess:\n"
+        "    backend: [opencl]\n",
+        "default_params.preprocess.backend must be a scalar");
 
     if (g_failures > 0) {
         std::cerr << g_failures << " assertion(s) failed" << std::endl;

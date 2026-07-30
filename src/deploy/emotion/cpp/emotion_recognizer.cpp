@@ -89,12 +89,12 @@ vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Ma
 vision_core::BaseModel::PreparedImage
 EmotionRecognizer::prepare_input(
     const vision_core::ImageInput& input) {
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = target_size_.width;
     spec.output_height = target_size_.height;
     spec.output_rgb = false;
     spec.interpolation =
-        vision_common::PreprocessInterpolation::kNearest;
+        vision_operators::PreprocessInterpolation::kNearest;
     spec.mean = {91.4953F, 103.8827F, 131.0912F};
     return prepare_image(
         input, spec,

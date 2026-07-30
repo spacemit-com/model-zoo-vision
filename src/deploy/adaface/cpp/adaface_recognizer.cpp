@@ -94,11 +94,11 @@ AdaFaceRecognizer::infer_embedding_input(
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = static_cast<int>(input_shape_[3]);
     spec.output_height = static_cast<int>(input_shape_[2]);
     spec.crop_mode =
-        vision_common::PreprocessCropMode::kCenterSquare;
+        vision_operators::PreprocessCropMode::kCenterSquare;
     spec.output_rgb = true;
     spec.mean = {127.5F, 127.5F, 127.5F};
     spec.scale = {

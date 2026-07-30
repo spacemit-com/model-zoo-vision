@@ -13,6 +13,35 @@
 
 namespace vision_mpp {
 
+enum class MppFramePixelFormat {
+    kBgr8,
+    kNv12,
+};
+
+class MppFrame {
+public:
+    MppFrame();
+    ~MppFrame();
+
+    MppFrame(const MppFrame&) = delete;
+    MppFrame& operator=(const MppFrame&) = delete;
+    MppFrame(MppFrame&&) noexcept;
+    MppFrame& operator=(MppFrame&&) noexcept;
+
+    bool empty() const noexcept;
+    const cv::Mat& image() const noexcept;
+    MppFramePixelFormat pixel_format() const noexcept;
+    int dma_fd() const noexcept;
+    void reset() noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+
+    friend struct MppFrameBuilder;
+    friend class MppFrameSource;
+};
+
 struct MppFrameSourceConfig {
     bool        use_mpp    = false;
     bool        use_vi     = false;
@@ -37,7 +66,9 @@ public:
     ~MppFrameSource();
 
     bool open();
+    bool read(MppFrame* frame);
     bool read(cv::Mat* out_bgr);
+    bool to_bgr(const MppFrame& frame, cv::Mat* out_bgr);
     void close();
 
 private:

@@ -110,7 +110,7 @@ vision_common::PoseResultList Landmark2d106::estimate_pose_input(
         std::abs(input_std_) > 1.0e-6F
         ? input_std_
         : 1.0F;
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = input_size_;
     spec.output_height = input_size_;
     spec.output_rgb = true;

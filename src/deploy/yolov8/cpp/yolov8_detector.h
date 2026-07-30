@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "opencl_image_preprocessor.h"
 #include "vision_model_base.h"
 #include "vision_task_interfaces.h"
 

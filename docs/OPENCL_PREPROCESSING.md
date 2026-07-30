@@ -1,7 +1,8 @@
 # OpenCL Image Preprocessing
 
-VisionService keeps CPU preprocessing as the default. To select the OpenCL
-backend for an image model, add:
+VisionService keeps CPU preprocessing as the default. Models that explicitly
+opt in to the backend-neutral preprocessing dispatcher can select a backend
+with:
 
 ```yaml
 default_params:
@@ -9,39 +10,92 @@ default_params:
     backend: opencl
 ```
 
+The shared dispatcher accepts three policies:
+
+| Policy | Behavior |
+| --- | --- |
+| `cpu` | Always uses the existing CPU preprocessing path. |
+| `auto` | Opted-in models use OpenCL for NV12 DMA-BUF input and CPU for host/BGR input; non-opted-in models remain on CPU. |
+| `opencl` | Opted-in models require OpenCL and NV12 DMA-BUF input; non-opted-in models reject the configuration. |
+
+`auto` emits one warning when OpenCL is disabled. If execution fails after
+external memory has been acquired or a kernel has been enqueued, the current
+request fails; only subsequent requests fall back to CPU. Invalid input never
+falls back.
+
+Runtime profiling records the implementation actually used as
+`image_preprocess.cpu` or `image_preprocess.opencl`, so an `auto` fallback is
+visible in benchmark output.
+
+The common preprocessing path is currently enabled for the following
+detection, tracking, pose, segmentation, and open-vocabulary models:
+
+- YOLOv5, YOLOv5-Face, YOLOv5-Gesture, and YOLO26;
+- YOLOv8, YOLOv11, and YOLOv12 through `YOLOv8Detector`;
+- YOLOv8 Pose and YOLOv8 Seg;
+- YOLO-World and YOLOE;
+- ByteTrack and OCSort through their internal YOLOv8 detector.
+
+SCRFD, PPOCR, PP-LiteSeg, and classification, embedding, face-attribute,
+landmark, and other image-text encoder models remain CPU-only in this
+delivery. `auto` keeps these models on CPU and strict `opencl` rejects their
+configuration.
+YOLO-World and YOLOE retain their existing request-local geometry and text or
+prompt state; their OpenCL image result remains alive until the synchronous
+multi-input ONNX Runtime call completes.
+
 The existing `VisionServiceRequest` fields select pixel format and memory
 without introducing separate APIs:
 
 | `image_format` | `image_dma_fd` | OpenCL input |
 | --- | ---: | --- |
-| `BGR8` | `< 0` | `CL_MEM_USE_HOST_PTR` BGR |
-| `NV12` | `< 0` | `CL_MEM_USE_HOST_PTR` NV12 |
-| `BGR8` | `>= 0` | imported DMA-BUF BGR |
+| `BGR8` | `< 0` | CPU in `auto`; rejected by strict `opencl` |
+| `NV12` | `< 0` | CPU in `auto`; rejected by strict `opencl` |
+| `BGR8` | `>= 0` | CPU in `auto`; rejected by strict `opencl` |
 | `NV12` | `>= 0` | imported DMA-BUF NV12 images |
 
-`CL_MEM_USE_HOST_PTR` is a host-memory interoperability mode, not a zero-copy
-guarantee. The driver may copy the input. DMA-BUF import is the zero-copy input
-path on supported SpacemiT platforms.
+The OpenCL backend deliberately has no BGR or host-buffer path. DMA-BUF import
+is the zero-copy input path on supported SpacemiT platforms. The fd, mapped
+layout, and MPP frame lease must remain valid for the duration of synchronous
+`Infer()`.
 
-For host inputs, the caller owns the `cv::Mat` storage and must not write to it
-while `Infer()` is running. Inference is synchronous: the OpenCL queue has
-finished reading the host pointer before `Infer()` returns. For DMA inputs,
-the fd and its mapped layout must remain valid for the duration of `Infer()`.
+`MppFrameSource` exposes a move-only native frame lease for camera/video
+examples that use it. A compatible MPP NV12 frame remains owned until synchronous
+`Infer()` returns, then it may be converted to BGR for drawing and display.
+Capture selection (`--use-mpp`) and preprocessing policy remain independent;
+the dispatcher only observes pixel format and DMA fd. Split-plane or otherwise
+incompatible MPP layouts are converted to owned BGR instead of being exposed as
+NV12 DMA input.
 
-The common backend performs crop, bilinear or nearest resize, letterbox or
-top-left padding, BGR/NV12 conversion, channel ordering, per-channel
-normalization, and NCHW packing in one kernel. It supports FP32 and FP16 output;
-the current ONNX image models request FP32 tensors. Output tensors use a
-three-slot DMA-BUF ring. DMA input imports are retained in a bounded 32-entry
-cache keyed by DMA-BUF identity and layout, which prevents fd-number reuse from
-returning stale images.
+The OpenCL backend performs crop, bilinear or nearest resize, letterbox or
+top-left padding, NV12 conversion, channel ordering, per-channel
+normalization, and NCHW packing in one fused kernel enqueue. It supports FP32
+and FP16 output; current model preprocess specs request FP32 tensors and batch
+size 1. In `auto`, a model whose input tensor has a larger fixed batch stays on
+CPU; strict `opencl` rejects it. NV12 conversion follows OpenCV's BT.601
+limited-range baseline, and bilinear interpolation preserves the CPU operation
+order of conversion before resize. Output tensors use a three-slot DMA-BUF
+ring. DMA input imports are retained in a bounded 32-entry cache keyed by
+DMA-BUF identity and layout, which prevents fd-number reuse from returning
+stale images.
 
-Explicit `backend: opencl` never silently falls back to CPU. Missing OpenCL,
-DMA-BUF, image-view, or FP16 capabilities are reported as inference errors.
-Omitting `preprocess.backend`, or setting it to `cpu`, preserves the existing
-CPU preprocessing behavior.
+Kernel sources are maintained as `.cl` and `.clh` files under
+`src/backends/opencl/kernels`. CMake embeds them into the library at build
+time, so deployment does not depend on kernel source paths.
 
-Direct image model classes are supported. Sequence-only ST-GCN and
-Emotion-LSTM do not have an image preprocessing stage. PP-OCR moves its DBNet
-input preprocessing to OpenCL; result-driven perspective crops and recognition
-of those dynamic small images remain on CPU.
+OpenCL support is optional and defaults to off:
+
+```bash
+cmake -S . -B build -DVISION_WITH_OPENCL=ON
+cmake --build build -j
+```
+
+With `VISION_WITH_OPENCL=OFF`, CMake does not discover or link OpenCL.
+`auto` remains on CPU, while explicit `opencl` is rejected during
+configuration. The OpenCL implementation is isolated under
+`src/backends/opencl/{runtime,memory,operators,kernels}` and built as the
+independent `vision_opencl_backend` target.
+
+MPP capture and preprocessing backend selection remain independent:
+`--use-mpp` chooses the input transport, while `preprocess.backend` chooses
+how an opted-in model consumes that input.

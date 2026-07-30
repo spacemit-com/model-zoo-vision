@@ -10,6 +10,7 @@ default_params:
   iou_threshold: 0.45
   point_confidence_threshold: 0.2
   num_threads: 8
+  preprocess:
+    backend: auto
   providers:
     - SpaceMITExecutionProvider
-

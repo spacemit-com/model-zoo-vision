@@ -96,11 +96,19 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        auto read_frame = [&](cv::Mat* f) -> bool {
-            return use_mpp ? mpp_cap->read(f) : cap.read(*f);
-        };
+        vision_mpp::MppFrame mpp_frame;
+        VisionServiceTimingOptions first_frame_timing;
+        if (use_mpp) {
+            first_frame_timing.enabled = true;
+            service->SetTimingOptions(first_frame_timing);
+        }
         auto close_cap = [&]() {
-            if (use_mpp) { mpp_cap->close(); } else { cap.release(); }
+            if (use_mpp) {
+                mpp_frame.reset();
+                mpp_cap->close();
+            } else {
+                cap.release();
+            }
         };
 
         std::cout << "Real-time detection. Press 'q' to quit, 's' to save current frame..." << std::endl;
@@ -108,16 +116,62 @@ int main(int argc, char* argv[]) {
         int frame_count = 0;
         double t_prev = static_cast<double>(cv::getTickCount()) / cv::getTickFrequency();
         double fps = 0.0;
-        while (read_frame(&frame)) {
-            frame_count++;
+        while (true) {
             VisionServiceResponse response;
-            VisionServiceStatus ret = service->Infer(frame, &response);
+            VisionServiceStatus ret = VISION_SERVICE_OK;
+            if (use_mpp) {
+                if (!mpp_cap->read(&mpp_frame)) break;
+                VisionServiceRequest request;
+                if (!vision_mpp::BuildVisionRequest(
+                        mpp_frame, &request)) {
+                    std::cerr
+                        << "Error: Could not build MPP inference request"
+                        << std::endl;
+                    close_cap();
+                    cv::destroyAllWindows();
+                    return 1;
+                }
+                if (frame_count == 0) {
+                    std::cout
+                        << "MPP frame input: "
+                        << (request.image_format ==
+                                VisionPixelFormat::NV12
+                            ? "NV12 DMA"
+                            : "BGR fallback")
+                        << std::endl;
+                }
+                ret = service->Infer(request, &response);
+            } else {
+                if (!cap.read(frame)) break;
+                ret = service->Infer(frame, &response);
+            }
             if (ret != VISION_SERVICE_OK) {
                 std::cerr << "Error: " << service->LastError() << std::endl;
                 close_cap();
                 cv::destroyAllWindows();
                 return 1;
             }
+            if (use_mpp && frame_count == 0) {
+                const std::string backend =
+                    vision_mpp::FindImagePreprocessBackend(
+                        service->GetLastProfile());
+                std::cout
+                    << "Image preprocess backend: "
+                    << (backend.empty() ? "unknown" : backend)
+                    << std::endl;
+                first_frame_timing.enabled = false;
+                service->SetTimingOptions(first_frame_timing);
+            }
+            if (use_mpp &&
+                !mpp_cap->to_bgr(mpp_frame, &frame)) {
+                std::cerr
+                    << "Error: Could not convert MPP frame for display"
+                    << std::endl;
+                close_cap();
+                cv::destroyAllWindows();
+                return 1;
+            }
+            frame_count++;
             cv::Mat vis;
             if (!response.results.empty()) {
                 if (frame_count <= 5 || frame_count % 30 == 0) {

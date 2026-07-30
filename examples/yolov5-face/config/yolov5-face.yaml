@@ -8,5 +8,7 @@ default_params:
   conf_threshold: 0.25   # C++ 使用
   iou_threshold: 0.45   # C++ 使用
   num_threads: 4
+  preprocess:
+    backend: auto
   providers:
     - SpaceMITExecutionProvider

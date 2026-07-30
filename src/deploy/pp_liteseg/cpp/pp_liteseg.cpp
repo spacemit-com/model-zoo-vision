@@ -23,6 +23,7 @@
 
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
+#include "operators/image_preprocess/image_preprocess_geometry.h"
 
 namespace vision_deploy {
 
@@ -104,8 +105,8 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
     // Compute scale and valid region on original uint8 image
     const int h = image.rows;
     const int w = image.cols;
-    const vision_common::FitResizeDimensions dimensions =
-        vision_common::calculate_fit_resize_dimensions(
+    const vision_operators::FitResizeDimensions dimensions =
+        vision_operators::calculate_fit_resize_dimensions(
             static_cast<float>(w), static_cast<float>(h),
             in_w, in_h);
     const int new_h = dimensions.height;
@@ -306,19 +307,19 @@ vision_common::SegmentationResultList PPLiteSeg::segment_input(
 
     const int in_h = positive_dim(input_shape_[2], 512);
     const int in_w = positive_dim(input_shape_[3], 1024);
-    const vision_common::FitResizeDimensions valid_dimensions =
-        vision_common::calculate_fit_resize_dimensions(
+    const vision_operators::FitResizeDimensions valid_dimensions =
+        vision_operators::calculate_fit_resize_dimensions(
             static_cast<float>(origin_w),
             static_cast<float>(origin_h),
             in_w, in_h);
     int valid_h = valid_dimensions.height;
     int valid_w = valid_dimensions.width;
     const auto t_pre0 = std::chrono::steady_clock::now();
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = in_w;
     spec.output_height = in_h;
     spec.resize_mode =
-        vision_common::PreprocessResizeMode::kFitTopLeft;
+        vision_operators::PreprocessResizeMode::kFitTopLeft;
     spec.output_rgb = true;
     spec.mean = {
         mean_val_ * 255.0F,

@@ -144,6 +144,13 @@ vision_common::TrackingResultList OCSortTracker::track_input(
     set_runtime_preprocess_ms(detector_profile.preprocess_ms);
     set_runtime_model_infer_ms(detector_profile.model_infer_ms);
     set_runtime_postprocess_ms(detector_profile.postprocess_ms);
+    for (const auto& component :
+        detector_profile.components) {
+        add_runtime_component_timing(
+            component.name,
+            component.total_ms,
+            component.calls);
+    }
     add_runtime_component_timing(
         "detector.infer", detector_profile.model_infer_ms);
 
@@ -200,7 +207,6 @@ std::vector<vision_core::ModelCapability> OCSortTracker::get_capabilities() cons
 void OCSortTracker::configure_preprocess_backend(
     const std::string& backend)
 {
-    BaseModel::configure_preprocess_backend(backend);
     detector_->configure_preprocess_backend(backend);
 }
 

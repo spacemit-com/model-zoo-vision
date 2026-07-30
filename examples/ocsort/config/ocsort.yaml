@@ -8,6 +8,8 @@ default_params:
   conf_threshold: 0.25
   iou_threshold: 0.45
   num_threads: 8
+  preprocess:
+    backend: auto
   providers:
     - SpaceMITExecutionProvider
   # tracker params
@@ -19,4 +21,3 @@ default_params:
   asso_func: "iou"
   inertia: 0.2
   use_byte: false
-

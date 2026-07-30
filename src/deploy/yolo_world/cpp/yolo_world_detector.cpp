@@ -104,6 +104,7 @@ YoloWorldDetector::YoloWorldDetector(
         iou_threshold_(iou_threshold),
         num_threads_(num_threads),
         provider_(provider) {
+    enable_accelerated_image_preprocess();
     if (!lazy_load) {
         load_model();
     }
@@ -310,11 +311,11 @@ YoloWorldDetector::detect_input_with_prompts(
         (dst_w - resized_width) / 2.0F - 0.1F));
     letterbox_oy_ = static_cast<int>(std::round(
         (dst_h - resized_height) / 2.0F - 0.1F));
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = dst_w;
     spec.output_height = dst_h;
     spec.resize_mode =
-        vision_common::PreprocessResizeMode::kLetterbox;
+        vision_operators::PreprocessResizeMode::kLetterbox;
     spec.output_rgb = true;
     spec.scale = {
         1.0F / 255.0F,
@@ -357,6 +358,7 @@ YoloWorldDetector::detect_input_with_prompts(
         Ort::RunOptions{nullptr}, input_node_names_.data(), inputs.data(), inputs.size(),
         output_node_names_.data(), output_node_names_.size());
     const auto t_inf1 = std::chrono::steady_clock::now();
+    prepared.complete();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();

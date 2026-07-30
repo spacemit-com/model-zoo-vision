@@ -11,4 +11,5 @@ default_params:
   num_threads: 8
   providers:
     - SpaceMITExecutionProvider
-
+  preprocess:
+    backend: auto

@@ -13,6 +13,8 @@
 #include <filesystem>  // NOLINT(build/c++17)
 #include <yaml-cpp/yaml.h>  // NOLINT(build/include_order)
 
+#include "operators/image_preprocess/image_preprocess_backend.h"
+
 namespace vision_core {
 
 ModelFactory& ModelFactory::getInstance() {
@@ -150,6 +152,9 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
             }
             if (backend) {
                 preprocess_backend = backend.as<std::string>();
+                (void)vision_operators::
+                    parse_preprocess_backend_policy(
+                        preprocess_backend);
             }
         }
     }

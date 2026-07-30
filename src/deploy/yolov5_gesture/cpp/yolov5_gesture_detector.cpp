@@ -54,6 +54,7 @@ YOLOv5GestureDetector::YOLOv5GestureDetector(const std::string& model_path,
         iou_threshold_(iou_threshold),
         num_threads_(num_threads),
         provider_(provider) {
+    enable_accelerated_image_preprocess();
     if (!lazy_load) {
         load_model();
     }
@@ -115,11 +116,11 @@ YOLOv5GestureDetector::detect_input(
             ? input.image.rows * 2 / 3
             : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = static_cast<int>(input_shape_[3]);
     spec.output_height = static_cast<int>(input_shape_[2]);
     spec.resize_mode =
-        vision_common::PreprocessResizeMode::kLetterbox;
+        vision_operators::PreprocessResizeMode::kLetterbox;
     spec.output_rgb = true;
     spec.scale = {
         1.0F / 255.0F,
@@ -138,6 +139,7 @@ YOLOv5GestureDetector::detect_input(
     std::vector<Ort::Value> outputs =
         run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
+    prepared.complete();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();

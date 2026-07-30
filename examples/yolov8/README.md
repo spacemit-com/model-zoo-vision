@@ -42,8 +42,13 @@ bash scripts/download_assets.sh
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |
 | `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
 | `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
+
+`auto` 不与 MPP 绑定：普通 BGR 图片仍走 CPU；当调用方提供
+`NV12 + DMA-BUF` 时尝试 OpenCL。显式 `opencl` 用于强制验证，
+只接受 `NV12 + DMA-BUF`，OpenCL 不可用或输入不兼容时均不会回退。
 
 ## 3. 命令行 / API 参数（与本模块相关）
 
@@ -81,6 +86,31 @@ python yolov8.py --config ../config/yolov8.yaml --use-camera --camera-id 0
 ./examples/yolov8 examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg --output result.jpg
 ./examples/yolov8 examples/yolov8/config/yolov8.yaml --use-camera
 ```
+
+启用 MPP 原生 NV12 DMA 输入：
+
+```bash
+./examples/yolov8 examples/yolov8/config/yolov8.yaml \
+  --use-camera --use-mpp --mpp-vi
+```
+
+MPP 只负责采集并持有原生帧，`auto` 根据帧的 `NV12 + DMA-BUF`
+属性选择 OpenCL。两者配置保持独立。用于显示和画框的 BGR 转换在
+推理结束后执行，不作为模型预处理输入。C++ 示例会在首帧分别打印
+MPP 帧输入类型和实际选择的 `opencl` / `cpu` 预处理后端。
+
+OpenCL 和 MPP 都是可选构建项，开发板上启用两者的示例：
+
+```bash
+cmake -S . -B build \
+  -DVISION_WITH_OPENCL=ON \
+  -DVISION_WITH_MPP=ON \
+  -DSTAGING_DIR=/path/to/output/staging
+cmake --build build -j
+```
+
+只启用 OpenCL 并不会自动启用 MPP；只启用 MPP 也不会改变
+`preprocess.backend` 的策略。
 
 ## 5. 故障排查
 

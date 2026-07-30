@@ -650,12 +650,12 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
     }
     det_resize_h_ = resize_h;
     det_resize_w_ = resize_w;
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = net_w;
     spec.output_height = net_h;
     if (resize_h != net_h || resize_w != net_w) {
         spec.resize_mode =
-            vision_common::PreprocessResizeMode::kFitTopLeft;
+            vision_operators::PreprocessResizeMode::kFitTopLeft;
     }
     spec.output_rgb = true;
     spec.mean = {
@@ -727,7 +727,7 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
     // --- recognition per box ---
     cv::Mat source_bgr =
         input.format == vision_core::ImagePixelFormat::kNv12
-        ? vision_common::nv12_dma_to_bgr_cpu(input)
+        ? vision_operators::image_input_to_bgr_cpu(input)
         : input.image;
     vision_common::TextResultList results;
     results.reserve(boxes.size());

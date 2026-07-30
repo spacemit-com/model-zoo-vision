@@ -35,6 +35,7 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings (_vision_service_cpp) for the spacemit_vision wheel" ON)
 option(BUILD_PYTHON_WHEEL "Also build the spacemit_vision wheel as part of the default build (needs python -m build)" ON)
 option(VISION_WITH_MPP "Enable MPP camera capture backend (UVC/VI) in examples" OFF)
+option(VISION_WITH_OPENCL "Enable OpenCL preprocessing backend" OFF)
 
 # ============================================================================
 # Dependencies Configuration
@@ -71,8 +72,6 @@ if(Eigen3_FOUND)
     message(STATUS "Eigen3 found: ${Eigen3_VERSION}")
 endif()
 
-find_package(OpenCL REQUIRED)
-
 # yaml-cpp Configuration
 find_package(yaml-cpp REQUIRED)
 if(yaml-cpp_FOUND)
@@ -89,7 +88,6 @@ set(LIBS
     onnxruntime
     spacemit_ep
     yaml-cpp
-    OpenCL::OpenCL
 )
 
 # OpenCV 5 moved contour/hull/perspective APIs out of imgproc into the new
@@ -143,6 +141,18 @@ set(VISION_SERVICE_SOURCES
     src/vision_service.cpp
 )
 file(GLOB_RECURSE CV_COMMON_SOURCES "src/common/cpp/*.cpp")
+file(GLOB_RECURSE VISION_OPERATOR_SOURCES CONFIGURE_DEPENDS
+    "src/operators/*.cpp"
+)
+set(OPENCL_PREPROCESS_STUB
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/operators/image_preprocess/opencl_image_preprocessor_stub.cpp"
+)
+list(REMOVE_ITEM VISION_OPERATOR_SOURCES "${OPENCL_PREPROCESS_STUB}")
+if(VISION_WITH_OPENCL)
+    add_subdirectory(src/backends/opencl)
+else()
+    list(APPEND VISION_OPERATOR_SOURCES "${OPENCL_PREPROCESS_STUB}")
+endif()
 file(GLOB DEPLOY_TOP_SOURCES CONFIGURE_DEPENDS
     "src/deploy/*/cpp/*.cpp"
     "src/deploy/*/cpp/*.cc"
@@ -160,6 +170,7 @@ add_library(vision SHARED
     ${VISION_SERVICE_SOURCES}
     ${VISION_CORE_SOURCES}
     ${CV_COMMON_SOURCES}
+    ${VISION_OPERATOR_SOURCES}
     ${DEPLOY_TOP_SOURCES}
     ${DEPLOY_NESTED_SOURCES}
 )
@@ -168,6 +179,13 @@ target_link_libraries(vision
     ${LIBS}
     Eigen3::Eigen
 )
+
+if(VISION_WITH_OPENCL)
+    target_link_libraries(vision vision_opencl_backend)
+    target_compile_definitions(vision PRIVATE VISION_WITH_OPENCL=1)
+else()
+    target_compile_definitions(vision PRIVATE VISION_WITH_OPENCL=0)
+endif()
 
 # ONNX Runtime float16: use __fp16 if available, else define for dependency headers
 include(CheckCXXSourceCompiles)
@@ -195,6 +213,7 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/common/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/deploy
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${DEPLOY_CPP_DIRS}
     ${DEPLOY_INTERNAL_INCLUDE_DIRS}
     Eigen3::Eigen

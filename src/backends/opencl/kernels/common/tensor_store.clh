@@ -1,0 +1,21 @@
+inline void store_float_output(
+    __global float* output,
+    int index,
+    int plane,
+    float3 value)
+{
+    output[index] = value.x;
+    output[index + plane] = value.y;
+    output[index + plane * 2] = value.z;
+}
+
+inline void store_half_output(
+    __global half* output,
+    int index,
+    int plane,
+    float3 value)
+{
+    vstore_half(value.x, 0, output + index);
+    vstore_half(value.y, 0, output + index + plane);
+    vstore_half(value.z, 0, output + index + plane * 2);
+}

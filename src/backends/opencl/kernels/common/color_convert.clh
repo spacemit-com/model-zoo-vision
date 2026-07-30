@@ -1,0 +1,12 @@
+inline float3 yuv_to_rgb(float y, float u, float v)
+{
+    float c = y - 16.0f;
+    float d = u - 128.0f;
+    float e = v - 128.0f;
+    return clamp(
+        (float3)(
+            1.16438356f * c + 1.59602678f * e,
+            1.16438356f * c - 0.39176229f * d - 0.81296765f * e,
+            1.16438356f * c + 2.01723214f * d),
+        0.0f, 255.0f);
+}

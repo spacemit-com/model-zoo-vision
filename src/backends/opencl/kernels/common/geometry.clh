@@ -1,0 +1,18 @@
+inline float2 source_coordinate(
+    int x,
+    int y,
+    int dst_x,
+    int dst_y,
+    int dst_width,
+    int dst_height,
+    float src_x,
+    float src_y,
+    float src_width,
+    float src_height)
+{
+    return (float2)(
+        src_x + ((float)(x - dst_x) + 0.5f) * src_width /
+            (float)dst_width - 0.5f,
+        src_y + ((float)(y - dst_y) + 0.5f) * src_height /
+            (float)dst_height - 0.5f);
+}

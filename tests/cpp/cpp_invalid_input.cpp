@@ -115,6 +115,10 @@ int main(int argc, char** argv) {
         "  preprocess:\n"
         "    backend: [opencl]\n",
         "default_params.preprocess.backend must be a scalar");
+    check_invalid_preprocess_config(
+        "  preprocess:\n"
+        "    backend: vulkan\n",
+        "preprocess.backend must be cpu, auto, or opencl");
 
     if (g_failures > 0) {
         std::cerr << g_failures << " assertion(s) failed" << std::endl;

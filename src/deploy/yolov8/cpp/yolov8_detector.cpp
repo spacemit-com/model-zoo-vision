@@ -23,7 +23,6 @@
 #include "common.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
-#include "opencl_image_preprocessor.h"
 
 namespace vision_deploy {
 
@@ -312,6 +311,7 @@ YOLOv8Detector::YOLOv8Detector(const std::string& model_path,
         num_threads_(num_threads),
         num_classes_(0),
         provider_(provider) {
+    enable_accelerated_image_preprocess();
     configure_preprocess_backend(preprocess_backend);
     if (!lazy_load) {
         load_model();
@@ -366,32 +366,10 @@ vision_common::DetectionResultList YOLOv8Detector::detect(
     const cv::Mat& image,
     float conf_threshold,
     float iou_threshold) {
-    ensure_model_loaded();
-    reset_runtime_profile();
-    const auto t0 = std::chrono::steady_clock::now();
-
-    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
-    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
-
-    cv::Size orig_size = image.size();
-    const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat inputTensor = preprocess(image);
-    const auto t_pre1 = std::chrono::steady_clock::now();
-    set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
-
-    const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs = run_session(inputTensor);
-    const auto t_infer1 = std::chrono::steady_clock::now();
-    set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
-
-    const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
-    const auto t_post1 = std::chrono::steady_clock::now();
-    set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
-
-    const auto t1 = std::chrono::steady_clock::now();
-    set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
-    return results;
+    vision_core::ImageInput input;
+    input.image = image;
+    return detect_input(
+        input, conf_threshold, iou_threshold);
 }
 
 vision_common::DetectionResultList YOLOv8Detector::detect_input(
@@ -412,11 +390,11 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
             : image.image.rows);
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = static_cast<int>(input_shape_[3]);
     spec.output_height = static_cast<int>(input_shape_[2]);
     spec.resize_mode =
-        vision_common::PreprocessResizeMode::kLetterbox;
+        vision_operators::PreprocessResizeMode::kLetterbox;
     spec.output_rgb = true;
     spec.scale = {
         1.0F / 255.0F,
@@ -429,14 +407,16 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
             return preprocess(bgr);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
-    set_runtime_preprocess_ms(
+    const double preprocess_ms =
         std::chrono::duration<double, std::milli>(
-            t_pre1 - t_pre0).count());
+            t_pre1 - t_pre0).count();
+    set_runtime_preprocess_ms(preprocess_ms);
 
     const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs =
         run_session(prepared.tensor());
     const auto t_infer1 = std::chrono::steady_clock::now();
+    prepared.complete();
     set_runtime_model_infer_ms(
         std::chrono::duration<double, std::milli>(
             t_infer1 - t_infer0).count());
@@ -469,20 +449,10 @@ vision_core::InferResponse YOLOv8Detector::Run(const vision_core::InferRequest& 
         return response;
     }
 
-    vision_common::DetectionResultList detections;
-    if (uses_opencl_preprocess() ||
-        image_input->format ==
-            vision_core::ImagePixelFormat::kNv12) {
-        detections = detect_input(
-            *image_input,
-            request.params.conf_threshold,
-            request.params.iou_threshold);
-    } else {
-        detections = detect(
-            image_input->image,
-            request.params.conf_threshold,
-            request.params.iou_threshold);
-    }
+    vision_common::DetectionResultList detections = detect_input(
+        *image_input,
+        request.params.conf_threshold,
+        request.params.iou_threshold);
 
     vision_core::InferResponse response;
     response.results.reserve(detections.size());

@@ -1,0 +1,16 @@
+/*
+ * Generated at configure time. Do not edit.
+ */
+
+#ifndef GENERATED_OPENCL_KERNEL_SOURCE_INC
+#define GENERATED_OPENCL_KERNEL_SOURCE_INC
+
+namespace vision_opencl_embedded {
+
+inline constexpr char @OPENCL_VARIABLE@[] = R"OPENCL_SOURCE(
+@OPENCL_SOURCE@
+)OPENCL_SOURCE";
+
+}  // namespace vision_opencl_embedded
+
+#endif  // GENERATED_OPENCL_KERNEL_SOURCE_INC

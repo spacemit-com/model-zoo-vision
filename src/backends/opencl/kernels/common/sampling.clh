@@ -1,0 +1,56 @@
+__constant sampler_t nv12_nearest_sampler =
+    CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+
+inline float3 read_nv12_pixel(
+    read_only image2d_t y_image,
+    read_only image2d_t uv_image,
+    int2 coordinate)
+{
+    float yy = read_imagef(
+        y_image,
+        nv12_nearest_sampler,
+        coordinate).x * 255.0f;
+    float2 uv = read_imagef(
+        uv_image,
+        nv12_nearest_sampler,
+        coordinate >> 1).xy * 255.0f;
+    return yuv_to_rgb(yy, uv.x, uv.y);
+}
+
+inline float3 sample_nv12_images(
+    read_only image2d_t y_image,
+    read_only image2d_t uv_image,
+    float x,
+    float y,
+    int interpolation)
+{
+    if (interpolation == 1) {
+        const int2 y_coordinate = (int2)(
+            convert_int_rte(x),
+            convert_int_rte(y));
+        return read_nv12_pixel(
+            y_image, uv_image, y_coordinate);
+    }
+
+    // The CPU baseline converts NV12 to full-resolution BGR first and then
+    // resizes that image. Interpolate four converted pixels so chroma remains
+    // constant inside each 2x2 NV12 block and conversion clamping happens
+    // before resize, matching that operation order.
+    const int x0 = convert_int_rtn(x);
+    const int y0 = convert_int_rtn(y);
+    const float x_weight = x - (float)x0;
+    const float y_weight = y - (float)y0;
+    const float3 top = mix(
+        read_nv12_pixel(
+            y_image, uv_image, (int2)(x0, y0)),
+        read_nv12_pixel(
+            y_image, uv_image, (int2)(x0 + 1, y0)),
+        x_weight);
+    const float3 bottom = mix(
+        read_nv12_pixel(
+            y_image, uv_image, (int2)(x0, y0 + 1)),
+        read_nv12_pixel(
+            y_image, uv_image, (int2)(x0 + 1, y0 + 1)),
+        x_weight);
+    return mix(top, bottom, y_weight);
+}

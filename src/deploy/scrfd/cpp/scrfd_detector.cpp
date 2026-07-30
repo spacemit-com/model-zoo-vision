@@ -155,15 +155,6 @@ cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
 vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
                                                             float conf_threshold,
                                                             float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return estimate_pose_input(input, conf_threshold, iou_threshold);
-}
-
-vision_common::PoseResultList ScrfdDetector::estimate_pose_input(
-    const vision_core::ImageInput& input,
-    float conf_threshold,
-    float iou_threshold) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -171,38 +162,15 @@ vision_common::PoseResultList ScrfdDetector::estimate_pose_input(
     const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
     const float use_nms = iou_threshold > 0.0f ? iou_threshold : nms_threshold_;
 
-    const cv::Size orig_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
+    const cv::Size orig_size = image.size();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    last_det_scale_ = std::min(
-        static_cast<float>(input_width_) / orig_size.width,
-        static_cast<float>(input_height_) / orig_size.height);
-    vision_common::OpenClPreprocessSpec spec;
-    spec.output_width = input_width_;
-    spec.output_height = input_height_;
-    spec.resize_mode =
-        vision_common::PreprocessResizeMode::kFitTopLeft;
-    spec.output_rgb = true;
-    spec.mean = {127.5F, 127.5F, 127.5F};
-    spec.scale = {
-        1.0F / 128.0F,
-        1.0F / 128.0F,
-        1.0F / 128.0F};
-    auto prepared = prepare_image(
-        input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
-        });
+    cv::Mat input_tensor = preprocess(image);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<Ort::Value> outputs =
-        run_session(prepared.tensor());
+    std::vector<Ort::Value> outputs = run_session(input_tensor);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
@@ -232,10 +200,7 @@ vision_core::InferResponse ScrfdDetector::Run(const vision_core::InferRequest& r
     }
 
     vision_common::PoseResultList task_results =
-        estimate_pose_input(
-            *image_input,
-            request.params.conf_threshold,
-            request.params.iou_threshold);
+        estimate_pose(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {

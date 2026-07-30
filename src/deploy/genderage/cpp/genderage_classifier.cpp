@@ -106,7 +106,7 @@ GenderAgeClassifier::classify_input(
         std::abs(input_std_) > 1.0e-6F
         ? input_std_
         : 1.0F;
-    vision_common::OpenClPreprocessSpec spec;
+    vision_operators::ImagePreprocessSpec spec;
     spec.output_width = target_size_.width;
     spec.output_height = target_size_.height;
     spec.output_rgb = true;

@@ -5,8 +5,13 @@
 
 #include "mpp_frame_source.h"
 
+#include "mpp_nv12_layout.h"
+
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <utility>
+#include <vector>
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -28,6 +33,116 @@ extern "C" {
 #endif  // VISION_HAS_MPP
 
 namespace vision_mpp {
+
+#ifdef VISION_HAS_MPP
+enum class MppFrameReleaseKind {
+    kUvc,
+    kVi,
+    kVdec,
+};
+
+struct NativeMppFrame {
+    VideoFrameInfo frame{};
+    MppFrameReleaseKind release_kind =
+        MppFrameReleaseKind::kUvc;
+    S32 device = 0;
+    S32 channel = 0;
+
+    ~NativeMppFrame()
+    {
+        S32 result = 0;
+        switch (release_kind) {
+        case MppFrameReleaseKind::kUvc:
+            result = UVC_ReleaseFrame(
+                static_cast<UVC_DEV>(device),
+                static_cast<UVC_CHN>(channel),
+                &frame);
+            break;
+        case MppFrameReleaseKind::kVi:
+            result = VI_ReleaseChnFrame(
+                static_cast<VI_DEV>(device),
+                static_cast<VI_CHN>(channel),
+                &frame);
+            break;
+        case MppFrameReleaseKind::kVdec:
+            result = VDEC_ReleaseFrame(channel, frame.ulBufferId);
+            break;
+        }
+        if (result != 0) {
+            std::cerr
+                << "MppFrame: failed to release native frame: "
+                << result << '\n';
+        }
+    }
+};
+#endif
+
+struct MppFrame::Impl {
+    cv::Mat image;
+    MppFramePixelFormat pixel_format =
+        MppFramePixelFormat::kBgr8;
+    int dma_fd = -1;
+#ifdef VISION_HAS_MPP
+    std::shared_ptr<NativeMppFrame> native;
+#endif
+};
+
+struct MppFrameBuilder {
+    static void set_bgr(MppFrame* frame, cv::Mat image)
+    {
+        auto impl = std::make_unique<MppFrame::Impl>();
+        impl->image = std::move(image);
+        frame->impl_ = std::move(impl);
+    }
+
+#ifdef VISION_HAS_MPP
+    static void set_nv12(
+        MppFrame* frame,
+        cv::Mat image,
+        int dma_fd,
+        std::shared_ptr<NativeMppFrame> native)
+    {
+        auto impl = std::make_unique<MppFrame::Impl>();
+        impl->image = std::move(image);
+        impl->pixel_format = MppFramePixelFormat::kNv12;
+        impl->dma_fd = dma_fd;
+        impl->native = std::move(native);
+        frame->impl_ = std::move(impl);
+    }
+#endif
+};
+
+MppFrame::MppFrame() = default;
+MppFrame::~MppFrame() = default;
+MppFrame::MppFrame(MppFrame&&) noexcept = default;
+MppFrame& MppFrame::operator=(MppFrame&&) noexcept = default;
+
+bool MppFrame::empty() const noexcept
+{
+    return !impl_ || impl_->image.empty();
+}
+
+const cv::Mat& MppFrame::image() const noexcept
+{
+    static const cv::Mat empty_image;
+    return impl_ ? impl_->image : empty_image;
+}
+
+MppFramePixelFormat MppFrame::pixel_format() const noexcept
+{
+    return impl_ ? impl_->pixel_format :
+        MppFramePixelFormat::kBgr8;
+}
+
+int MppFrame::dma_fd() const noexcept
+{
+    return impl_ ? impl_->dma_fd : -1;
+}
+
+void MppFrame::reset() noexcept
+{
+    impl_.reset();
+}
 
 namespace {
 
@@ -102,6 +217,87 @@ void normalize_vdec_nv12_frame(VideoFrameInfo* frame) {
     if (frame->stCommFrameInfo.ePixelFormat == MPP_PIXEL_FORMAT_UNKNOWN) {
         frame->stCommFrameInfo.ePixelFormat = MPP_PIXEL_FORMAT_NV12;
     }
+}
+
+std::shared_ptr<NativeMppFrame> own_native_frame(
+    const VideoFrameInfo& frame,
+    MppFrameReleaseKind release_kind,
+    S32 device,
+    S32 channel)
+{
+    auto native = std::make_shared<NativeMppFrame>();
+    native->frame = frame;
+    native->release_kind = release_kind;
+    native->device = device;
+    native->channel = channel;
+    return native;
+}
+
+bool expose_native_nv12(
+    const std::shared_ptr<NativeMppFrame>& native,
+    MppFrame* output)
+{
+    if (!native || output == nullptr) return false;
+    const VideoFrameInfo& frame = native->frame;
+    const CommonFrameInfo& common = frame.stCommFrameInfo;
+    if (common.ePixelFormat != MPP_PIXEL_FORMAT_NV12 ||
+        common.eCompressMode != COMPRESS_MODE_NONE ||
+        frame.stVFrame.u32PlaneNum < 2) {
+        return false;
+    }
+
+    const UL raw_y_fd = frame.stVFrame.u32Fd[0];
+    const UL raw_uv_fd = frame.stVFrame.u32Fd[1];
+    if (raw_y_fd >
+            static_cast<UL>(std::numeric_limits<int>::max()) ||
+        raw_uv_fd >
+            static_cast<UL>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    const size_t y_plane_size =
+        static_cast<size_t>(frame.stVFrame.u32PlaneSize[0]);
+    const size_t uv_plane_size =
+        static_cast<size_t>(frame.stVFrame.u32PlaneSize[1]);
+    size_t total_size =
+        static_cast<size_t>(frame.stVFrame.u32TotalSize);
+    if (total_size == 0) {
+        if (y_plane_size >
+            std::numeric_limits<size_t>::max() -
+                uv_plane_size) {
+            return false;
+        }
+        total_size = y_plane_size + uv_plane_size;
+    }
+
+    MppNv12Layout layout;
+    layout.width = static_cast<int>(common.u32Width);
+    layout.height = static_cast<int>(common.u32Height);
+    layout.y_stride =
+        static_cast<int>(frame.stVFrame.u32PlaneStride[0]);
+    layout.uv_stride =
+        static_cast<int>(frame.stVFrame.u32PlaneStride[1]);
+    layout.y_plane_size = y_plane_size;
+    layout.uv_plane_size = uv_plane_size;
+    layout.total_size = total_size;
+    layout.y_address = static_cast<uintptr_t>(
+        frame.stVFrame.ulPlaneVirAddr[0]);
+    layout.uv_address = static_cast<uintptr_t>(
+        frame.stVFrame.ulPlaneVirAddr[1]);
+    layout.y_dma_fd = static_cast<int>(raw_y_fd);
+    layout.uv_dma_fd = static_cast<int>(raw_uv_fd);
+    if (!is_importable_nv12_dma_layout(layout)) {
+        return false;
+    }
+
+    cv::Mat image(
+        layout.height * 3 / 2,
+        layout.width,
+        CV_8UC1,
+        reinterpret_cast<void*>(layout.y_address),
+        static_cast<size_t>(layout.y_stride));
+    MppFrameBuilder::set_nv12(
+        output, std::move(image), layout.y_dma_fd, native);
+    return true;
 }
 
 bool prepare_vb_bgr_frame(U32 width, U32 height, UL* pool_id, VideoFrameInfo* frame) {
@@ -306,9 +502,12 @@ struct MppFrameSource::Impl {
             vdec_created = true;
             if (VDEC_EnableChn(vdec_chn) != 0) { std::cerr << "MPP UVC: VDEC_EnableChn failed\n"; return false; }
             vdec_enabled = true;
-            std::cout << "MPP pipeline: UVC(MJPEG) -> VDEC -> NV12 -> BGR\n";
+            std::cout
+                << "MPP pipeline: UVC(MJPEG) -> VDEC -> NV12 DMA\n";
         } else {
-            std::cout << "MPP pipeline: UVC(" << cfg.format << ") -> NV12/YUYV -> BGR\n";
+            std::cout
+                << "MPP pipeline: UVC(" << cfg.format
+                << ") -> native frame\n";
         }
 
         if (pixel_format != MPP_PIXEL_FORMAT_YUYV) {
@@ -316,23 +515,25 @@ struct MppFrameSource::Impl {
         }
 
         for (int i = 0; i < 15; ++i) {
-            cv::Mat discard;
+            MppFrame discard;
             (void)read_uvc(&discard);
         }
         return true;
     }
 
-    bool read_uvc(cv::Mat* out_bgr) {
-        if (out_bgr == nullptr || !chn_enabled) return false;
+    bool read_uvc(MppFrame* output) {
+        if (output == nullptr || !chn_enabled) return false;
+        output->reset();
 
         VideoFrameInfo uvc_frame;
         std::memset(&uvc_frame, 0, sizeof(uvc_frame));
         if (UVC_GetFrame(0, 0, &uvc_frame, static_cast<S32>(cfg.timeout_ms)) != 0) return false;
+        auto native = own_native_frame(
+            uvc_frame, MppFrameReleaseKind::kUvc, 0, 0);
 
         const auto fmt = uvc_frame.stCommFrameInfo.ePixelFormat;
         const int w = static_cast<int>(uvc_frame.stCommFrameInfo.u32Width);
         const int h = static_cast<int>(uvc_frame.stCommFrameInfo.u32Height);
-        bool ok = false;
 
         if (fmt == MPP_PIXEL_FORMAT_MJPEG && vdec_enabled &&
             uvc_frame.stVFrame.ulPlaneVirAddr[0] != 0) {
@@ -358,20 +559,31 @@ struct MppFrameSource::Impl {
             stream.u64PTS = uvc_frame.stVFrame.u64PTS;
 
             const S32 send_ret = VDEC_SendStream(vdec_chn, &stream, static_cast<U32>(cfg.timeout_ms));
-            (void)UVC_ReleaseFrame(0, 0, &uvc_frame);
+            native.reset();
             if (send_ret != 0 && send_ret != ERR_VDEC_EOS) return false;
 
             VideoFrameInfo dec_frame;
             std::memset(&dec_frame, 0, sizeof(dec_frame));
             const S32 dec_ret = VDEC_GetFrame(vdec_chn, &dec_frame, static_cast<U32>(cfg.timeout_ms));
             if (dec_ret != ERR_VDEC_OK) return false;
-            ok = nv12_to_bgr(dec_frame, out_bgr);
-            (void)VDEC_ReleaseFrame(vdec_chn, dec_frame.ulBufferId);
-            return ok;
+            normalize_vdec_nv12_frame(&dec_frame);
+            auto decoded = own_native_frame(
+                dec_frame,
+                MppFrameReleaseKind::kVdec,
+                0,
+                vdec_chn);
+            if (expose_native_nv12(decoded, output)) {
+                return true;
+            }
+            cv::Mat bgr;
+            if (!nv12_to_bgr(decoded->frame, &bgr)) {
+                return false;
+            }
+            MppFrameBuilder::set_bgr(output, std::move(bgr));
+            return true;
         }
 
         if (fmt == MPP_PIXEL_FORMAT_MJPEG) {
-            (void)UVC_ReleaseFrame(0, 0, &uvc_frame);
             std::cerr << "MPP UVC: MJPEG requires VDEC; channel not decoding\n";
             return false;
         }
@@ -383,18 +595,26 @@ struct MppFrameSource::Impl {
             if (yuyv_stride <= 0) yuyv_stride = w * 2;
             void* yuyv_ptr = reinterpret_cast<void*>(uvc_frame.stVFrame.ulPlaneVirAddr[0]);
             cv::Mat yuyv(h, w, CV_8UC2, yuyv_ptr, static_cast<size_t>(yuyv_stride));
-            cv::cvtColor(yuyv, *out_bgr, cv::COLOR_YUV2BGR_YUYV);
-            ok = !out_bgr->empty();
+            cv::Mat bgr;
+            cv::cvtColor(yuyv, bgr, cv::COLOR_YUV2BGR_YUYV);
+            if (bgr.empty()) return false;
+            MppFrameBuilder::set_bgr(output, std::move(bgr));
+            return true;
         } else if (fmt == MPP_PIXEL_FORMAT_NV12 || fmt == MPP_PIXEL_FORMAT_NV21) {
             const bool has_planes = uvc_frame.stVFrame.u32PlaneNum >= 2 &&
                 uvc_frame.stVFrame.ulPlaneVirAddr[0] != 0 &&
                 uvc_frame.stVFrame.ulPlaneVirAddr[1] != 0;
-            if (has_planes) {
-                ok = nv12_to_bgr(uvc_frame, out_bgr);
+            if (!has_planes) return false;
+            if (fmt == MPP_PIXEL_FORMAT_NV12 &&
+                expose_native_nv12(native, output)) {
+                return true;
             }
+            cv::Mat bgr;
+            if (!nv12_to_bgr(native->frame, &bgr)) return false;
+            MppFrameBuilder::set_bgr(output, std::move(bgr));
+            return true;
         }
-        (void)UVC_ReleaseFrame(0, 0, &uvc_frame);
-        return ok;
+        return false;
     }
 
     bool open_vi() {
@@ -440,21 +660,33 @@ struct MppFrameSource::Impl {
         vi_dev_enabled = true;
         if (VI_EnableChn(0, static_cast<VI_CHN>(cfg.vi_chn)) != 0) { std::cerr << "MPP VI: EnableChn failed\n"; return false; }
         vi_chn_enabled = true;
-        std::cout << "MPP pipeline: VI/ISP -> NV12 -> BGR\n";
+        std::cout << "MPP pipeline: VI/ISP -> NV12 DMA\n";
         maybe_init_v2d(cfg.width, cfg.height);
         return true;
     }
 
-    bool read_vi(cv::Mat* out_bgr) {
-        if (out_bgr == nullptr || !vi_chn_enabled) return false;
+    bool read_vi(MppFrame* output) {
+        if (output == nullptr || !vi_chn_enabled) return false;
+        output->reset();
         VideoFrameInfo frame;
         std::memset(&frame, 0, sizeof(frame));
         if (VI_GetChnFrame(0, static_cast<VI_CHN>(cfg.vi_chn), &frame, static_cast<S32>(cfg.timeout_ms)) != 0) {
             return false;
         }
-        const bool ok = nv12_to_bgr(frame, out_bgr);
-        (void)VI_ReleaseChnFrame(0, static_cast<VI_CHN>(cfg.vi_chn), &frame);
-        return ok;
+        auto native = own_native_frame(
+            frame,
+            MppFrameReleaseKind::kVi,
+            0,
+            static_cast<S32>(cfg.vi_chn));
+        if (expose_native_nv12(native, output)) {
+            return true;
+        }
+        cv::Mat bgr;
+        if (!nv12_to_bgr(native->frame, &bgr)) {
+            return false;
+        }
+        MppFrameBuilder::set_bgr(output, std::move(bgr));
+        return true;
     }
 
     void close_mpp() {
@@ -507,12 +739,41 @@ bool MppFrameSource::open() {
 
 bool MppFrameSource::read(cv::Mat* out_bgr) {
     if (out_bgr == nullptr) return false;
+    MppFrame frame;
+    return read(&frame) && to_bgr(frame, out_bgr);
+}
+
+bool MppFrameSource::read(MppFrame* frame) {
+    if (frame == nullptr) return false;
+    frame->reset();
 #ifdef VISION_HAS_MPP
     if (impl_->mpp_active) {
-        return impl_->cfg.use_vi ? impl_->read_vi(out_bgr) : impl_->read_uvc(out_bgr);
+        return impl_->cfg.use_vi ?
+            impl_->read_vi(frame) :
+            impl_->read_uvc(frame);
     }
 #endif
-    return impl_->read_opencv(out_bgr);
+    cv::Mat bgr;
+    if (!impl_->read_opencv(&bgr)) return false;
+    MppFrameBuilder::set_bgr(frame, std::move(bgr));
+    return true;
+}
+
+bool MppFrameSource::to_bgr(
+    const MppFrame& frame,
+    cv::Mat* out_bgr) {
+    if (out_bgr == nullptr || frame.empty()) return false;
+    if (frame.pixel_format() == MppFramePixelFormat::kBgr8) {
+        *out_bgr = frame.image();
+        return true;
+    }
+#ifdef VISION_HAS_MPP
+    if (frame.impl_ && frame.impl_->native) {
+        return impl_->nv12_to_bgr(
+            frame.impl_->native->frame, out_bgr);
+    }
+#endif
+    return false;
 }
 
 void MppFrameSource::close() {

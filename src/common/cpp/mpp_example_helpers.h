@@ -10,8 +10,37 @@
 #include <string>
 
 #include "mpp_frame_source.h"
+#include "vision_service.h"
 
 namespace vision_mpp {
+
+inline bool BuildVisionRequest(
+    const MppFrame& frame,
+    VisionServiceRequest* request)
+{
+    if (request == nullptr || frame.empty()) return false;
+    request->image = frame.image();
+    request->image_format =
+        frame.pixel_format() == MppFramePixelFormat::kNv12
+        ? VisionPixelFormat::NV12
+        : VisionPixelFormat::BGR8;
+    request->image_dma_fd = frame.dma_fd();
+    return true;
+}
+
+inline std::string FindImagePreprocessBackend(
+    const VisionServiceProfile& profile)
+{
+    for (const auto& component : profile.components) {
+        if (component.name == "image_preprocess.opencl") {
+            return "opencl";
+        }
+        if (component.name == "image_preprocess.cpu") {
+            return "cpu";
+        }
+    }
+    return {};
+}
 
 inline bool ParseMppArgs(int argc, char** argv, int camera_id, MppFrameSourceConfig* cfg) {
     if (cfg == nullptr) return false;

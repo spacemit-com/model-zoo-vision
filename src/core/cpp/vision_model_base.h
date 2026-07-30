@@ -17,7 +17,10 @@
 
 #include "spacemit_ort_env.h"
 #include "vision_infer_types.h"
-#include "opencl_image_preprocessor.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "operators/image_preprocess/image_preprocess_dispatcher.h"
+#include "operators/image_preprocess/image_preprocess_result.h"
+#include "operators/image_preprocess/image_preprocess_spec.h"
 
 #ifdef DEBUG
 #include <thread>
@@ -69,28 +72,8 @@ Ort::Env& shared_ort_env();
  */
 class BaseModel {
 public:
-    class PreparedImage {
-    public:
-        PreparedImage(
-            cv::Mat tensor,
-            std::shared_ptr<
-                vision_common::OpenClImagePreprocessor> preprocessor);
-        ~PreparedImage();
-
-        PreparedImage(const PreparedImage&) = delete;
-        PreparedImage& operator=(const PreparedImage&) = delete;
-        PreparedImage(PreparedImage&& other) noexcept;
-        PreparedImage& operator=(PreparedImage&& other) noexcept;
-
-        const cv::Mat& tensor() const { return tensor_; }
-
-    private:
-        void finish() noexcept;
-
-        cv::Mat tensor_;
-        std::shared_ptr<vision_common::OpenClImagePreprocessor>
-            preprocessor_;
-    };
+    using PreparedImage =
+        vision_operators::ImagePreprocessResult;
 
     explicit BaseModel(const std::string& model_path, bool lazy_load = false);
     virtual ~BaseModel();
@@ -217,18 +200,13 @@ protected:
 
     PreparedImage prepare_image(
         const ImageInput& input,
-        const vision_common::OpenClPreprocessSpec& spec,
+        const vision_operators::ImagePreprocessSpec& spec,
         const std::function<cv::Mat(const cv::Mat&)>& cpu_preprocess);
 
-    bool uses_opencl_preprocess() const;
+    void enable_accelerated_image_preprocess() noexcept;
 
     Ort::MemoryInfo memory_info_{nullptr};
     RuntimeProfile runtime_profile_;
-    std::string preprocess_backend_{"cpu"};
-    std::shared_ptr<vision_common::OpenClImagePreprocessor>
-        opencl_preprocessor_;
-    vision_common::OpenClPreprocessSpec opencl_preprocess_spec_;
-    bool has_opencl_preprocess_spec_{false};
 
     void set_runtime_preprocess_ms(double ms);
     void set_runtime_model_infer_ms(double ms);
@@ -241,6 +219,11 @@ protected:
         double elapsed_ms,
         uint64_t calls = 1);
 
+private:
+    bool accelerated_image_preprocess_enabled_{false};
+    vision_operators::ImagePreprocessDispatcher
+        image_preprocess_dispatcher_;
+
 #ifdef DEBUG
     /**
      * @brief Check thread safety in debug mode
@@ -248,7 +231,6 @@ protected:
      */
     void check_thread_safety(const char* method_name) const;
 
-private:
     mutable std::thread::id owner_thread_;
 #else
     void check_thread_safety(const char* method_name) const {}

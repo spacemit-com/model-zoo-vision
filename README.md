@@ -63,62 +63,26 @@ bash scripts/download_all_models.sh
 
 该脚本会遍历常见 examples/applications 下的 `download_models.sh`；若某模型（例如 **STGCN**）未包含在脚本列表中，请到对应 `examples/<name>/scripts/` 单独执行下载脚本。
 
-全部下载完成后模型如下：
+全部下载完成后，目录大致如下（示意，实际模型更多）：
 
 ```bash
-bianbu@k3:~/.cache/models/vision# tree
-.
-├── arcface
-│   └── arcface_mobilefacenet_cut.q.onnx
-├── adaface
-│   └── adaface_ir101_webface12m_merged.dynq.onnx
-├── siglip2
-│   ├── siglip2_vision_encoder_fp16_proj.dynq.onnx
-│   ├── siglip2_text_encoder.dynq.onnx
-│   └── tokenizer.bin
-├── mobileclip2
-│   └── s3
-│       ├── image_encoder.fp16.onnx
-│       └── text_encoder.onnx
-├── buffalo_l
-│   ├── det_10g.q.onnx
-│   ├── det_10g_fixed.q.onnx
-│   ├── w600k_r50.q.onnx
-│   ├── genderage.q.onnx
-│   └── 2d106det.onnx
-├── ocsort
-│   ├── ocsort_yoloxs_sim.fp32.onnx
-│   └── yolov8n_no_dfl.q.onnx
-├── emotion
-│   ├── emotion_lstm_affwild2_final.q.onnx
-│   ├── emotion_resnet50_features.dynq.onnx
-│   └── emotion_resnet50_final.q.onnx
-├── resnet
-│   └── resnet50.q.onnx
-├── stgcn
-│   ├── stgcn.dynq.onnx
-│   └── stgcn.fp32.onnx
-├── yolov11
-│   ├── yolo11m.q.onnx
-│   ├── yolo11n.q.onnx
-│   └── yolo11s.q.onnx
-├── yolov5
-│   └── yolov5_gesture.q.onnx
-├── yolov5-face
-│   └── yolov5n-face_cut.q.onnx
-├── yolov8
-│   ├── yolov8_fire.q.onnx
-│   ├── yolov8m_no_dfl.q.onnx
-│   ├── yolov8n_no_dfl.q.onnx
-│   └── yolov8s_no_dfl.q.onnx
-├── yolov8_pose
-│   ├── yolov8m-pose.q.onnx
-│   ├── yolov8n-pose.q.onnx
-│   └── yolov8s-pose.q.onnx
-└── yolov8_seg
-    ├── yolov8m-seg.q.onnx
-    ├── yolov8n-seg.q.onnx
-    └── yolov8s-seg.q.onnx
+~/.cache/models/vision/
+├── arcface/
+│   └── arcface_mobilefacenet_cut.q.onnx
+├── adaface/
+│   └── adaface_ir101_webface12m_merged.dynq.onnx
+├── yolov8/
+│   ├── yolov8n_no_dfl.q.onnx
+│   ├── yolov8s_no_dfl.q.onnx
+│   └── ...
+├── yolov11/
+│   ├── yolo11n.q.onnx
+│   └── ...
+├── buffalo_l/
+│   ├── det_10g_fixed.q.onnx
+│   ├── w600k_r50.q.onnx
+│   └── ...
+└── ...
 ```
 
 ### 2.3. 下载资源（图片、视频）
@@ -375,54 +339,66 @@ score = VisionServiceNative.embedding_similarity(image_emb, text_emb)
 
 **包含前后处理：**
 
-> 说明：以下数据基于K1/ K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+> 说明：以下数据基于 K1/K3 平台实测（推理引擎 2.0.6），为阶段性信息，持续优化中，请以最新文档为准。
 
 K1:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: |
-|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   26.2    |
-|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   31.3    |
-| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    5.5    |
-|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   11.8    |
-|             |        yolov8s        | [1,3,640,640] |   int8   |    6.6    |
-|             |        yolov8m        | [1,3,640,640] |   int8   |    3.4    |
-| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   10.0    |
-|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    5.9    |
-|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.2    |
-| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |    2.0    |
-|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    1.5    |
-|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    1.1    |
-|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |    5.4    |
-|             |        yolo11s        | [1,3,640,640] |   int8   |    3.0    |
-|             |        yolo11m        | [1,3,640,640] |   int8   |    1.2    |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   23.7    |
+|  mobilenet  |     mobilenet_v1      | [1,3,224,224] |   int8   |   58.2    |
+|             |     mobilenet_v2      | [1,3,224,224] |   int8   |   48.5    |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   110.8   |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    6.8    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   11.0    |
+|             |        yolov8s        | [1,3,640,640] |   int8   |    5.9    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |    3.1    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   11.0    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    5.7    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.1    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |    5.0    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    3.1    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    2.0    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   11.2    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |    5.9    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |    2.3    |
+|   yolo26    |        yolo26n        | [1,3,640,640] |   int8   |   18.1    |
 
 K3:
 
-|      模型大类       |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
-| :-----------------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
-|       resnet        |       resnet50        | [1,3,224,224] |   int8   |   117.4   |   152.5   |
-|       arcface       | arcface_mobilefacenet | [1,3,112,112] |   int8   |   322.0   |   455.9   |
-|     yolov5-face     |     yolov5n-face      | [1,3,640,640] |   int8   |   28.5    |   35.4    |
-|       yolov8        |        yolov8n        | [1,3,640,640] |   int8   |   44.0    |   60.2    |
-|                     |        yolov8s        | [1,3,640,640] |   int8   |   29.5    |   41.9    |
-|                     |        yolov8m        | [1,3,640,640] |   int8   |   16.6    |   25.7    |
-|     yolov8-pose     |     yolov8n-pose      | [1,3,640,640] |   int8   |   52.4    |   71.9    |
-|                     |     yolov8s-pose      | [1,3,640,640] |   int8   |   32.3    |   46.3    |
-|                     |     yolov8m-pose      | [1,3,640,640] |   int8   |   18.4    |   27.1    |
-|     yolov8-seg      |      yolov8n-seg      | [1,3,640,640] |   int8   |   22.5    |   27.8    |
-|                     |      yolov8s-seg      | [1,3,640,640] |   int8   |   16.4    |   20.5    |
-|                     |      yolov8m-seg      | [1,3,640,640] |   int8   |   11.2    |   14.9    |
-|       yolo11        |        yolo11n        | [1,3,640,640] |   int8   |   38.9    |   55.8    |
-|                     |        yolo11s        | [1,3,640,640] |   int8   |   26.7    |   39.1    |
-|                     |        yolo11m        | [1,3,640,640] |   int8   |   13.7    |   20.9    |
-| bytetrack(10个目标) |        yolov8n        | [1,3,640,640] |   int8   |   31.7    |           |
-|                     |        yolov8s        | [1,3,640,640] |   int8   |   22.9    |           |
-|  ocsort(10个目标)   |        yolov8n        | [1,3,640,640] |   int8   |   21.4    |           |
-|                     |        yolov8s        | [1,3,640,640] |   int8   |   15.7    |           |
-|       yolov5        |        yolov5n        | [1,3,640,640] |   int8   |   27.6    |   32.2    |
-|                     |        yolov5s        | [1,3,640,640] |   int8   |   21.6    |   26.8    |
-
+|       模型大类        |         具体模型         |    输入大小     |  数据类型  |  帧率(4核)  |  帧率(8核)  |
+| :-------------------: | :----------------------: | :-------------: | :--------: | :---------: | :---------: |
+|        resnet         |        resnet50         |  [1,3,224,224]  |    int8    |    106.5    |    146.2    |
+|       mobilenet       |       mobilenet_v1       |  [1,3,224,224]  |    int8    |    192.8    |    278.7    |
+|                       |       mobilenet_v2       |  [1,3,224,224]  |    int8    |    150.0    |    222.7    |
+|     efficientnet      |     efficientnet_b0      |  [1,3,224,224]  |    int8    |    59.8     |    74.0     |
+|                       |    efficientnet_v2_s     |  [1,3,224,224]  |    int8    |    43.5     |    59.9     |
+|          vit          |         vit_b_16         |  [1,3,224,224]  |    int8    |    26.9     |    39.4     |
+|        arcface        |  arcface_mobilefacenet  |  [1,3,112,112]  |    int8    |    266.3    |    393.2    |
+|        adaface        |      adaface_ir101       |  [1,3,112,112]  |    int8    |    24.1     |    30.1     |
+|        emotion        |     emotion_resnet50     |  [1,3,224,224]  |    int8    |    132.9    |    179.3    |
+|      yolov5-face      |       yolov5n-face       |  [1,3,640,640]  |    int8    |    29.9     |    38.1     |
+|        yolov5         |         yolov5n          |  [1,3,640,640]  |    int8    |    28.0     |    32.2     |
+|                       |         yolov5s          |  [1,3,640,640]  |    int8    |    21.6     |    26.8     |
+|                       |      yolov5_gesture      |  [1,3,640,640]  |    int8    |    36.8     |    50.2     |
+|        yolov8         |         yolov8n          |  [1,3,640,640]  |    int8    |    48.1     |    61.8     |
+|                       |         yolov8s          |  [1,3,640,640]  |    int8    |    29.5     |    41.9     |
+|                       |         yolov8m          |  [1,3,640,640]  |    int8    |    16.6     |    25.7     |
+|      yolov8-pose      |       yolov8n-pose       |  [1,3,640,640]  |    int8    |    51.6     |    70.4     |
+|                       |       yolov8s-pose       |  [1,3,640,640]  |    int8    |    32.3     |    46.3     |
+|                       |       yolov8m-pose       |  [1,3,640,640]  |    int8    |    18.4     |    27.1     |
+|      yolov8-seg       |       yolov8n-seg       |  [1,3,640,640]  |    int8    |    20.0     |    23.0     |
+|                       |       yolov8s-seg        |  [1,3,640,640]  |    int8    |    16.4     |    20.5     |
+|                       |       yolov8m-seg        |  [1,3,640,640]  |    int8    |    11.2     |    14.9     |
+|        yolo11         |         yolo11n          |  [1,3,640,640]  |    int8    |    42.6     |    60.2     |
+|                       |         yolo11s          |  [1,3,640,640]  |    int8    |    28.4     |    40.8     |
+|                       |         yolo11m          |  [1,3,640,640]  |    int8    |    14.0     |    21.3     |
+|        yolo12         |         yolo12n          |  [1,3,640,640]  |    int8    |    16.6     |    20.5     |
+|        yolo26         |         yolo26n          |  [1,3,640,640]  |    int8    |    33.0     |    42.7     |
+|      bytetrack       |     yolov8n(19目标)      |  [1,3,640,640]  |    int8    |    40.0     |    51.6     |
+|                       |     yolov8s(22目标)      |  [1,3,640,640]  |    int8    |    27.7     |    36.2     |
+|        ocsort         |     yolov8n(19目标)      |  [1,3,640,640]  |    int8    |    23.8     |    27.8     |
+|                       |     yolov8s(22目标)      |  [1,3,640,640]  |    int8    |    18.6     |    22.0     |
 
 
 **复现方法**：
@@ -441,49 +417,79 @@ K3:
 
 **不包含前后处理：**
 
-> 说明：以下数据基于 K1/K3 平台实测，为阶段性信息，持续优化中，请以最新文档为准。
+> 说明：以下数据基于 K1/K3 平台实测（推理引擎 2.0.6），为阶段性信息，持续优化中，请以最新文档为准。
 
 K1:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: |
-|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   30.7    |
-|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   38.0    |
-| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    6.8    |
-|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   14.8    |
-|             |        yolov8s        | [1,3,640,640] |   int8   |    7.5    |
-|             |        yolov8m        | [1,3,640,640] |   int8   |    3.6    |
-| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   12.3    |
-|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    6.6    |
-|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.3    |
-| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   11.6    |
-|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    5.7    |
-|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    2.8    |
-|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |    5.9    |
-|             |        yolo11s        | [1,3,640,640] |   int8   |    3.1    |
-|             |        yolo11m        | [1,3,640,640] |   int8   |    1.2    |
+|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   29.9    |
+|  mobilenet  |     mobilenet_v1      | [1,3,224,224] |   int8   |   104.1   |
+|             |     mobilenet_v2      | [1,3,224,224] |   int8   |   80.6    |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   124.7   |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |    7.6    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   14.7    |
+|             |        yolov8s        | [1,3,640,640] |   int8   |    6.8    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |    3.4    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   11.9    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |    6.0    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |    3.2    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   11.5    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |    5.4    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |    2.7    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   12.6    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |    6.2    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |    2.4    |
+|   yolo26    |        yolo26n        | [1,3,640,640] |   int8   |   20.1    |
 
 K3:
 
 |  模型大类   |       具体模型        |   输入大小    | 数据类型 | 帧率(4核) | 帧率(8核) |
 | :---------: | :-------------------: | :-----------: | :------: | :-------: | :-------: |
-|   resnet    |       resnet50        | [1,3,224,224] |   int8   |   139.5   |   197.0   |
-|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   373.7   |   531.7   |
-| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   32.1    |   41.1    |
-|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   60.8    |   97.0    |
-|             |        yolov8s        | [1,3,640,640] |   int8   |   36.3    |   57.1    |
-|             |        yolov8m        | [1,3,640,640] |   int8   |   19.5    |   30.6    |
-| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   61.1    |   88.9    |
-|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   35.4    |   52.9    |
-|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   19.3    |   29.3    |
-| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   46.7    |   72.5    |
-|             |      yolov8s-seg      | [1,3,640,640] |   int8   |   28.2    |   43.9    |
-|             |      yolov8m-seg      | [1,3,640,640] |   int8   |   15.7    |   24.7    |
-|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   45.1    |   70.8    |
-|             |        yolo11s        | [1,3,640,640] |   int8   |   29.4    |   45.3    |
-|             |        yolo11m        | [1,3,640,640] |   int8   |   14.5    |   22.7    |
-|   yolov5    |        yolov5n        | [1,3,640,640] |   int8   |   69.1    |   104.4   |
-|             |        yolov5s        | [1,3,640,640] |   int8   |   41.3    |   62.8    |
+|   resnet    |       resnet18        | [1,3,224,224] |   int8   |   345.7   |   483.1   |
+|             |       resnet50        | [1,3,224,224] |   int8   |   130.4   |   186.3   |
+|  mobilenet  |     mobilenet_v1      | [1,3,224,224] |   int8   |   257.6   |   430.3   |
+|             |     mobilenet_v2      | [1,3,224,224] |   int8   |   193.0   |   308.2   |
+|             |  mobilenet_v3_small   | [1,3,224,224] |   fp16   |   311.7   |   367.5   |
+|             |  mobilenet_v3_large   | [1,3,224,224] |   fp16   |   168.7   |   223.3   |
+|efficientnet |   efficientnet_b0     | [1,3,224,224] |   int8   |   78.2    |   102.2   |
+|             |   efficientnet_b1     | [1,3,224,224] |   int8   |   50.6    |   68.0    |
+|             |  efficientnet_v2_s    | [1,3,224,224] |   int8   |   50.8    |   74.9    |
+|     vit     |        vit_b_16       | [1,3,224,224] |   int8   |   28.5    |   43.1    |
+|   arcface   | arcface_mobilefacenet | [1,3,112,112] |   int8   |   280.7   |   434.8   |
+|             |      w600k_r50        | [1,3,112,112] |   int8   |   66.0    |   98.4    |
+|   adaface   |   adaface_ir101       | [1,3,112,112] |   int8   |   24.1    |   30.2    |
+|    scrfd    |     det_10g_fixed     | [1,3,640,640] |   int8   |   48.2    |   79.3    |
+|  landmark   |       2d106det        | [1,3,192,192] |   fp32   |   92.9    |   131.4   |
+|  genderage  |       genderage       |  [1,3,96,96]  |   int8   |  1239.6   |  1501.7   |
+|   emotion   | emotion_resnet50      | [1,3,224,224] |   int8   |   142.4   |   202.7   |
+| yolov5-face |     yolov5n-face      | [1,3,640,640] |   int8   |   34.6    |   45.5    |
+|   yolov5    |        yolov5n        | [1,3,640,640] |   int8   |   69.4    |   102.8   |
+|             |        yolov5s        | [1,3,640,640] |   int8   |   41.3    |   62.2    |
+|             |    yolov5_gesture     | [1,3,640,640] |   int8   |   46.6    |   73.9    |
+|   yolov8    |        yolov8n        | [1,3,640,640] |   int8   |   70.5    |   106.7   |
+|             |        yolov8s        | [1,3,640,640] |   int8   |   39.4    |   59.0    |
+|             |        yolov8m        | [1,3,640,640] |   int8   |   20.4    |   31.2    |
+| yolov8-pose |     yolov8n-pose      | [1,3,640,640] |   int8   |   61.5    |   88.0    |
+|             |     yolov8s-pose      | [1,3,640,640] |   int8   |   35.4    |   52.2    |
+|             |     yolov8m-pose      | [1,3,640,640] |   int8   |   19.2    |   29.0    |
+| yolov8-seg  |      yolov8n-seg      | [1,3,640,640] |   int8   |   51.4    |   77.3    |
+|             |      yolov8s-seg      | [1,3,640,640] |   int8   |   29.9    |   45.3    |
+|             |      yolov8m-seg      | [1,3,640,640] |   int8   |   16.2    |   24.9    |
+|   yolo11    |        yolo11n        | [1,3,640,640] |   int8   |   50.2    |   76.1    |
+|             |        yolo11s        | [1,3,640,640] |   int8   |   31.7    |   48.0    |
+|             |        yolo11m        | [1,3,640,640] |   int8   |   14.9    |   23.1    |
+|   yolo12    |        yolo12n        | [1,3,640,640] |   int8   |   29.5    |   43.8    |
+|             |        yolo12s        | [1,3,640,640] |   int8   |   17.1    |   26.7    |
+|             |        yolo12m        | [1,3,640,640] |   int8   |    8.9    |   14.1    |
+|   yolo26    |        yolo26n        | [1,3,640,640] |   int8   |   48.8    |   70.1    |
+|             |        yolo26s        | [1,3,640,640] |   int8   |   22.0    |   32.6    |
+|             |        yolo26m        | [1,3,640,640] |   int8   |   10.7    |   16.2    |
+|   ppocr     | PP-OCRv6_tiny_det     | [1,3,640,640] |   fp16   |   17.5    |   27.3    |
+|             | PP-OCRv6_tiny_rec     | [1,3,48,320]  |   int8   |   324.4   |   434.6   |
+|             | PP-OCRv6_small_det    | [1,3,640,640] |   fp16   |   12.0    |   19.1    |
+|             | PP-OCRv6_small_rec    | [1,3,48,320]  |   int8   |   95.9    |   125.5   |
+
 
 **复现方法**：
 

@@ -40,6 +40,12 @@ set_target_properties(vision_opencl_backend PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
+# Silence cl_version.h pragma when CL_TARGET_OPENCL_VERSION is unset.
+# PUBLIC so dependents that include <CL/cl.h> via our headers also get it.
+target_compile_definitions(vision_opencl_backend
+    PUBLIC CL_TARGET_OPENCL_VERSION=300
+)
+
 target_link_libraries(vision_opencl_backend
     PRIVATE
         OpenCL::OpenCL

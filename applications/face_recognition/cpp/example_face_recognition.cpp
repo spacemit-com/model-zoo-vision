@@ -239,9 +239,13 @@ bool BuildLandmark106Input(const cv::Mat& image,
     }
     const float s = static_cast<float>(input_size) / side;
 
-    cv::Mat affine = (cv::Mat_<double>(2, 3)
-        << static_cast<double>(s), 0.0, static_cast<double>(input_size * 0.5f - cx * s),
-            0.0, static_cast<double>(s), static_cast<double>(input_size * 0.5f - cy * s));
+    cv::Mat_<double> affine(2, 3);
+    affine(0, 0) = static_cast<double>(s);
+    affine(0, 1) = 0.0;
+    affine(0, 2) = static_cast<double>(input_size * 0.5f - cx * s);
+    affine(1, 0) = 0.0;
+    affine(1, 1) = static_cast<double>(s);
+    affine(1, 2) = static_cast<double>(input_size * 0.5f - cy * s);
 
     cv::warpAffine(image, *out_crop, affine, cv::Size(input_size, input_size),
                     cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -190,6 +191,14 @@ bool IntentDeclared(const std::vector<vision_core::InferIntent>& intents,
 }
 
 bool ValidateIntentInputPair(const vision_core::InferRequest& request) {
+    if (request.intent == vision_core::InferIntent::kStereoDepth) {
+        return std::holds_alternative<vision_core::StereoImageInput>(
+            request.input);
+    }
+    if (request.intent == vision_core::InferIntent::kMatchLocalFeatures) {
+        return std::holds_alternative<vision_core::LocalFeaturePairInput>(
+            request.input);
+    }
     if (request.intent == vision_core::InferIntent::kInferSequence) {
         return std::holds_alternative<vision_core::SequenceInput>(request.input);
     }
@@ -212,6 +221,7 @@ std::optional<vision_core::InferIntent> PickImageIntent(
         vision_core::InferIntent::kOcr,
         vision_core::InferIntent::kDetect,
         vision_core::InferIntent::kClassify,
+        vision_core::InferIntent::kExtractLocalFeatures,
     };
     for (vision_core::InferIntent preferred : priority) {
         if (IntentDeclared(intents, preferred)) {
@@ -220,6 +230,48 @@ std::optional<vision_core::InferIntent> PickImageIntent(
     }
 
     return std::nullopt;
+}
+
+std::string ValidatePublicImage(
+    const cv::Mat& image,
+    VisionPixelFormat format,
+    const std::string& field_name) {
+    if (image.empty()) {
+        return field_name + " must not be empty";
+    }
+    if (format == VisionPixelFormat::BGR8) {
+        if (image.type() != CV_8UC3) {
+            return field_name + " BGR8 image must have type CV_8UC3";
+        }
+        return {};
+    }
+    if (format == VisionPixelFormat::NV12) {
+        if (image.type() != CV_8UC1 ||
+            image.rows <= 0 ||
+            image.rows % 3 != 0 ||
+            image.cols <= 0 ||
+            (image.cols & 1) != 0) {
+            return field_name + " NV12 image must be CV_8UC1 H*3/2 x W";
+        }
+        return {};
+    }
+    return field_name + " has unsupported pixel format";
+}
+
+bool IsValidInitialBox(
+    const vision::BoundingBox& box,
+    int image_width,
+    int image_height) {
+    return std::isfinite(box.x1) &&
+        std::isfinite(box.y1) &&
+        std::isfinite(box.x2) &&
+        std::isfinite(box.y2) &&
+        box.x1 >= 0.0f &&
+        box.y1 >= 0.0f &&
+        box.x2 > box.x1 &&
+        box.y2 > box.y1 &&
+        box.x2 <= static_cast<float>(image_width) &&
+        box.y2 <= static_cast<float>(image_height);
 }
 
 }  // namespace
@@ -319,39 +371,61 @@ VisionServiceStatus VisionService::Infer(
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, msg);
     }
 
-    const bool is_sequence = (request.sequence_pts != nullptr);
+    const bool has_sequence = request.sequence_pts != nullptr;
+    const bool has_primary_image = !request.image.empty();
+    const bool has_second_image = !request.image2.empty();
+    const bool has_features0 = request.local_features0 != nullptr;
+    const bool has_features1 = request.local_features1 != nullptr;
+    const bool has_any_features = has_features0 || has_features1;
 
-    // Validate image input early (sequence input validated below).
-    if (!is_sequence) {
-        if (request.image.empty()) {
-            response->error_message = "image must not be empty";
-            return SetError(VISION_SERVICE_INVALID_ARGUMENT, response->error_message);
+    const auto invalid = [&](const std::string& message) {
+        response->error_message = message;
+        return SetError(VISION_SERVICE_INVALID_ARGUMENT, message);
+    };
+
+    if (has_features0 != has_features1) {
+        return invalid(
+            "local_features0 and local_features1 must be provided together");
+    }
+    if (has_any_features &&
+        (has_sequence || has_primary_image || has_second_image)) {
+        return invalid(
+            "local feature input cannot be combined with image or sequence input");
+    }
+    if (has_sequence && (has_primary_image || has_second_image)) {
+        return invalid("sequence input cannot be combined with image input");
+    }
+    if (has_second_image && !has_primary_image) {
+        return invalid("image must be provided when image2 is set");
+    }
+    if (request.has_initial_bbox &&
+        (!has_primary_image || has_second_image ||
+            has_sequence || has_any_features)) {
+        return invalid(
+            "initial_bbox can only be combined with one image");
+    }
+    if (!has_any_features && !has_sequence && !has_primary_image) {
+        return invalid("inference input must not be empty");
+    }
+
+    if (has_primary_image) {
+        const std::string error =
+            ValidatePublicImage(request.image, request.image_format, "image");
+        if (!error.empty()) {
+            return invalid(error);
         }
-        if (request.image_format == VisionPixelFormat::BGR8) {
-            if (request.image.type() != CV_8UC3) {
-                response->error_message =
-                    "BGR8 image must have type CV_8UC3";
-                return SetError(
-                    VISION_SERVICE_INVALID_ARGUMENT,
-                    response->error_message);
-            }
-        } else if (request.image_format == VisionPixelFormat::NV12) {
-            if (request.image.type() != CV_8UC1 ||
-                request.image.rows <= 0 ||
-                request.image.rows % 3 != 0 ||
-                request.image.cols <= 0 ||
-                (request.image.cols & 1) != 0) {
-                response->error_message =
-                    "NV12 image must be CV_8UC1 H*3/2 x W";
-                return SetError(
-                    VISION_SERVICE_INVALID_ARGUMENT,
-                    response->error_message);
-            }
-        } else {
-            response->error_message = "unsupported image pixel format";
-            return SetError(
-                VISION_SERVICE_INVALID_ARGUMENT,
-                response->error_message);
+    }
+    if (has_second_image) {
+        const std::string error =
+            ValidatePublicImage(request.image2, request.image2_format, "image2");
+        if (!error.empty()) {
+            return invalid(error);
+        }
+        if (request.image_format != request.image2_format) {
+            return invalid("image and image2 pixel formats must match");
+        }
+        if (request.image.size() != request.image2.size()) {
+            return invalid("image and image2 dimensions must match");
         }
     }
 
@@ -367,14 +441,82 @@ VisionServiceStatus VisionService::Infer(
         vision_core::BaseModel* model = impl_->model.get();
         const std::vector<vision_core::InferIntent> declared = model->supported_intents();
 
-        // Decide the intent from input kind + declared capabilities.
+        // Decide the intent from the explicit input kind and declared
+        // capabilities, then build the matching internal input.
         vision_core::InferIntent intent;
-        if (is_sequence) {
+        vision_core::InferInput input;
+        if (has_any_features) {
+            if (!IntentDeclared(
+                    declared,
+                    vision_core::InferIntent::kMatchLocalFeatures)) {
+                response->error_message =
+                    "current model does not support local feature matching";
+                return SetError(
+                    VISION_SERVICE_INFER_FAILED,
+                    response->error_message);
+            }
+            intent = vision_core::InferIntent::kMatchLocalFeatures;
+            vision_core::LocalFeaturePairInput pair;
+            pair.query = *request.local_features0;
+            pair.train = *request.local_features1;
+            input = std::move(pair);
+        } else if (has_sequence) {
             if (!IntentDeclared(declared, vision_core::InferIntent::kInferSequence)) {
                 response->error_message = "current model does not support sequence inference";
                 return SetError(VISION_SERVICE_INFER_FAILED, response->error_message);
             }
             intent = vision_core::InferIntent::kInferSequence;
+            const size_t seq_size = model->expected_sequence_size();
+            if (seq_size == 0) {
+                response->error_message =
+                    "model does not report expected sequence size";
+                return SetError(
+                    VISION_SERVICE_INFER_FAILED,
+                    response->error_message);
+            }
+            if (request.sequence_count > 0 &&
+                static_cast<size_t>(request.sequence_count) < seq_size) {
+                response->error_message =
+                    "sequence_count (" +
+                    std::to_string(request.sequence_count) +
+                    ") is smaller than the model's expected sequence size (" +
+                    std::to_string(seq_size) + ")";
+                return SetError(
+                    VISION_SERVICE_INVALID_ARGUMENT,
+                    response->error_message);
+            }
+            vision_core::SequenceInput seq;
+            seq.image_width = request.sequence_width;
+            seq.image_height = request.sequence_height;
+            seq.pts.assign(
+                request.sequence_pts,
+                request.sequence_pts + seq_size);
+            input = std::move(seq);
+        } else if (has_second_image) {
+            if (!IntentDeclared(
+                    declared,
+                    vision_core::InferIntent::kStereoDepth)) {
+                response->error_message =
+                    "current model does not support stereo inference";
+                return SetError(
+                    VISION_SERVICE_INFER_FAILED,
+                    response->error_message);
+            }
+            intent = vision_core::InferIntent::kStereoDepth;
+            vision_core::StereoImageInput stereo;
+            stereo.left.image = request.image;
+            stereo.left.format =
+                request.image_format == VisionPixelFormat::NV12
+                    ? vision_core::ImagePixelFormat::kNv12
+                    : vision_core::ImagePixelFormat::kBgr8;
+            stereo.left.dma_fd = request.image_dma_fd;
+            stereo.right.image = request.image2;
+            stereo.right.format =
+                request.image2_format == VisionPixelFormat::NV12
+                    ? vision_core::ImagePixelFormat::kNv12
+                    : vision_core::ImagePixelFormat::kBgr8;
+            stereo.right.dma_fd = request.image2_dma_fd;
+            input = std::move(stereo);
         } else {
             const std::optional<vision_core::InferIntent> image_intent = PickImageIntent(declared);
             if (image_intent.has_value()) {
@@ -385,6 +527,34 @@ VisionServiceStatus VisionService::Infer(
                 response->error_message = "model does not support inference on image input";
                 return SetError(VISION_SERVICE_INFER_FAILED, response->error_message);
             }
+            if (request.has_initial_bbox &&
+                intent != vision_core::InferIntent::kTrack) {
+                return invalid(
+                    "initial_bbox is only valid for tracking models");
+            }
+            vision_core::ImageInput image;
+            image.image = request.image;
+            image.format =
+                request.image_format == VisionPixelFormat::NV12
+                    ? vision_core::ImagePixelFormat::kNv12
+                    : vision_core::ImagePixelFormat::kBgr8;
+            image.dma_fd = request.image_dma_fd;
+            image.has_initial_bbox = request.has_initial_bbox;
+            image.initial_bbox = request.initial_bbox;
+            if (request.has_initial_bbox) {
+                const int logical_height =
+                    request.image_format == VisionPixelFormat::NV12
+                        ? request.image.rows * 2 / 3
+                        : request.image.rows;
+                if (!IsValidInitialBox(
+                        request.initial_bbox,
+                        request.image.cols,
+                        logical_height)) {
+                    return invalid(
+                        "initial_bbox must be finite, positive-area, and inside image bounds");
+                }
+            }
+            input = std::move(image);
         }
 
         // Map public params -> internal params.
@@ -396,40 +566,6 @@ VisionServiceStatus VisionService::Infer(
         infer_params.mask_threshold = request.params.mask_threshold;
         infer_params.max_det = request.params.max_det;
         infer_params.prompts = request.prompts;  // open-vocabulary text (YOLO-World)
-
-        // Build the internal request input.
-        vision_core::InferInput input;
-        if (is_sequence) {
-            const size_t seq_size = model->expected_sequence_size();
-            if (seq_size == 0) {
-                response->error_message = "model does not report expected sequence size";
-                return SetError(VISION_SERVICE_INFER_FAILED, response->error_message);
-            }
-            // Guard against reading past the caller's buffer: if a count is
-            // provided, it must cover what the model expects to consume.
-            if (request.sequence_count > 0 &&
-                static_cast<size_t>(request.sequence_count) < seq_size) {
-                response->error_message =
-                    "sequence_count (" + std::to_string(request.sequence_count) +
-                    ") is smaller than the model's expected sequence size (" +
-                    std::to_string(seq_size) + ")";
-                return SetError(VISION_SERVICE_INVALID_ARGUMENT, response->error_message);
-            }
-            vision_core::SequenceInput seq;
-            seq.image_width = request.sequence_width;
-            seq.image_height = request.sequence_height;
-            seq.pts.assign(request.sequence_pts, request.sequence_pts + seq_size);
-            input = std::move(seq);
-        } else {
-            vision_core::ImageInput image;
-            image.image = request.image;
-            image.format =
-                request.image_format == VisionPixelFormat::NV12
-                    ? vision_core::ImagePixelFormat::kNv12
-                    : vision_core::ImagePixelFormat::kBgr8;
-            image.dma_fd = request.image_dma_fd;
-            input = std::move(image);
-        }
 
         vision_core::InferRequest internal_request{std::move(input), intent, infer_params};
         if (!ValidateIntentInputPair(internal_request)) {

@@ -7,15 +7,18 @@ CV_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$CV_ROOT"
 
 echo "========== Examples =========="
+failures=0
 for dir in examples/resnet examples/efficientnet examples/efficientnet_v2s examples/mobilenet examples/mobilenetv1 examples/vit \
            examples/yolov8 examples/yolov8_pose examples/yolov8_seg examples/yolov11 \
            examples/yolo12 examples/yolo26 examples/yolo_world examples/yoloe \
            examples/yolov5 examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
            examples/bytetrack examples/emotion examples/pp_liteseg \
-           examples/adaface examples/siglip2 examples/mobileclip2; do
+           examples/adaface examples/siglip2 examples/mobileclip2 \
+           examples/banet2d examples/superpoint examples/lightglue \
+           examples/mixformer examples/avtrack examples/nanotrack; do
   if [ -f "$dir/scripts/download_models.sh" ]; then
     echo ">>> $dir"
-    bash "$dir/scripts/download_models.sh" || true
+    bash "$dir/scripts/download_models.sh" || failures=$((failures + 1))
   fi
 done
 
@@ -24,7 +27,7 @@ echo "========== Applications =========="
 for dir in applications/emotion_detection applications/fall_detection applications/fire_detection applications/intrusion_detection applications/face_recognition; do
   if [ -f "$dir/scripts/download_models.sh" ]; then
     echo ">>> $dir"
-    bash "$dir/scripts/download_models.sh" || true
+    bash "$dir/scripts/download_models.sh" || failures=$((failures + 1))
   fi
 done
 
@@ -32,3 +35,7 @@ echo ""
 echo "========== Done =========="
 echo "Models are in: ${HOME:-~}/.cache/models/vision/"
 ls -la "${HOME:-$HOME}/.cache/models/vision/" 2>/dev/null || true
+if [ "$failures" -ne 0 ]; then
+  echo "$failures download script(s) failed; see errors above." >&2
+  exit 1
+fi

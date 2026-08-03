@@ -1,6 +1,7 @@
 from .vision_service_native import (
     VisionServiceInferParams,
     VisionServiceKeypoint,
+    VisionServiceLocalFeatures,
     VisionServiceNative,
     VisionServiceProfile,
     VisionServiceProfileEntry,
@@ -17,6 +18,7 @@ __all__ = [
     "VisionServiceNative",
     "VisionServiceResult",
     "VisionServiceKeypoint",
+    "VisionServiceLocalFeatures",
     "VisionServiceInferParams",
     "VisionServiceProfile",
     "VisionServiceProfileEntry",

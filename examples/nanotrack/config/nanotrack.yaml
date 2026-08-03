@@ -1,0 +1,20 @@
+model_path: ~/.cache/models/vision/nanotrack/nanotrack_backbone2.q.onnx
+test_video: ~/.cache/assets/video/004_bag.avi
+class: deploy.nanotrack.NanoTracker
+initial_bbox:
+  x: 315
+  y: 140
+  w: 116
+  h: 121
+default_params:
+  template_model_path: ~/.cache/models/vision/nanotrack/nanotrack_backbone1.onnx
+  head_model_path: ~/.cache/models/vision/nanotrack/nanotrack_head.q.onnx
+  num_threads: 4
+  template_num_threads: 4
+  head_num_threads: 1
+  context_amount: 0.5
+  penalty_k: 0.148
+  window_influence: 0.462
+  learning_rate: 0.390
+  providers:
+    - SpaceMITExecutionProvider

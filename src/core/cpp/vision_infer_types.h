@@ -27,6 +27,18 @@ struct ImageInput {
     cv::Mat image;
     ImagePixelFormat format = ImagePixelFormat::kBgr8;
     int dma_fd = -1;
+    bool has_initial_bbox = false;
+    vision::BoundingBox initial_bbox;
+};
+
+struct StereoImageInput {
+    ImageInput left;
+    ImageInput right;
+};
+
+struct LocalFeaturePairInput {
+    vision::LocalFeatures query;
+    vision::LocalFeatures train;
 };
 
 struct SequenceInput {
@@ -39,7 +51,12 @@ struct TextInput {
     std::string text;
 };
 
-using InferInput = std::variant<ImageInput, SequenceInput, TextInput>;
+using InferInput = std::variant<
+    ImageInput,
+    StereoImageInput,
+    LocalFeaturePairInput,
+    SequenceInput,
+    TextInput>;
 
 enum class InferIntent {
     kDetect,
@@ -51,6 +68,9 @@ enum class InferIntent {
     kEmbedText,
     kInferSequence,
     kOcr,
+    kStereoDepth,
+    kExtractLocalFeatures,
+    kMatchLocalFeatures,
 };
 
 // Unified inference-time parameters (field <= 0 means "use model default").

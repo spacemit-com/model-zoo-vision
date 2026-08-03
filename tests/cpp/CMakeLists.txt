@@ -70,8 +70,66 @@ configure_vision_cpp_test(vision_cpp_functional cpp_functional.cpp)
 configure_vision_cpp_test(vision_cpp_invalid_input cpp_invalid_input.cpp)
 configure_vision_cpp_test(vision_cpp_runtime_profile cpp_runtime_profile.cpp)
 configure_vision_cpp_test(
+    vision_extended_infer_contract_test
+    extended_infer_contract_test.cpp
+)
+configure_vision_cpp_test(
+    vision_banet2d_postprocess_test
+    banet2d_postprocess_test.cpp
+)
+configure_vision_cpp_test(
+    vision_local_feature_models_test
+    local_feature_models_test.cpp
+)
+configure_vision_cpp_test(
+    vision_single_object_tracker_contract_test
+    single_object_tracker_contract_test.cpp
+)
+configure_vision_cpp_test(
     vision_preprocess_backend_scope_test
     preprocess_backend_scope_test.cpp
+)
+target_include_directories(vision_extended_infer_contract_test PRIVATE
+    ${VISION_ROOT}/src
+    ${VISION_ROOT}/src/core/cpp
+    ${VISION_ROOT}/src/common/cpp
+)
+target_include_directories(vision_banet2d_postprocess_test PRIVATE
+    ${VISION_ROOT}/src/deploy/banet2d/cpp
+    ${VISION_ROOT}/src
+    ${VISION_ROOT}/src/core/cpp
+    ${VISION_ROOT}/src/common/cpp
+)
+target_include_directories(vision_local_feature_models_test PRIVATE
+    ${VISION_ROOT}/src
+    ${VISION_ROOT}/src/core/cpp
+    ${VISION_ROOT}/src/common/cpp
+    ${VISION_ROOT}/src/deploy/superpoint/cpp
+    ${VISION_ROOT}/src/deploy/lightglue/cpp
+)
+target_include_directories(vision_single_object_tracker_contract_test PRIVATE
+    ${VISION_ROOT}/src
+    ${VISION_ROOT}/src/core/cpp
+    ${VISION_ROOT}/src/common/cpp
+    ${VISION_ROOT}/src/deploy/mixformer/cpp
+    ${VISION_ROOT}/src/deploy/avtrack/cpp
+    ${VISION_ROOT}/src/deploy/nanotrack/cpp
+)
+add_test(
+    NAME vision_extended_infer_contract
+    COMMAND vision_extended_infer_contract_test
+)
+add_test(
+    NAME vision_banet2d_postprocess
+    COMMAND vision_banet2d_postprocess_test
+)
+add_test(
+    NAME vision_local_feature_models
+    COMMAND vision_local_feature_models_test
+)
+add_test(
+    NAME vision_single_object_tracker_contract
+    COMMAND vision_single_object_tracker_contract_test
 )
 target_include_directories(vision_preprocess_backend_scope_test PRIVATE
     ${VISION_ROOT}/src

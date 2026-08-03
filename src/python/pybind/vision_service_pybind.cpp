@@ -31,6 +31,16 @@ struct PyFlatResult {
     std::vector<float> class_scores;
     std::string text;                          // OCR: recognized string
     std::vector<vision::KeyPoint> polygon;     // OCR: text-box quadrilateral corners
+    cv::Mat disparity;
+    std::vector<float> descriptors;
+    int descriptor_dim = 0;
+    int image_width = 0;
+    int image_height = 0;
+    std::string feature_type;
+    int query_index = -1;
+    int train_index = -1;
+    vision::KeyPoint query_point;
+    vision::KeyPoint train_point;
 };
 
 PyFlatResult ToFlatResult(const vision::Result& r) {
@@ -57,6 +67,24 @@ PyFlatResult ToFlatResult(const vision::Result& r) {
     } else if (const vision::Text* t = std::get_if<vision::Text>(&r)) {
         out.text = t->text;
         out.polygon = t->polygon;
+    } else if (const vision::Disparity* d = std::get_if<vision::Disparity>(&r)) {
+        if (d->map && !d->map->empty()) {
+            out.disparity = d->map->clone();
+        }
+    } else if (const vision::LocalFeatures* f =
+                std::get_if<vision::LocalFeatures>(&r)) {
+        out.keypoints = f->keypoints;
+        out.descriptors = f->descriptors;
+        out.descriptor_dim = f->descriptor_dim;
+        out.image_width = f->image_width;
+        out.image_height = f->image_height;
+        out.feature_type = f->feature_type;
+    } else if (const vision::FeatureMatch* match =
+                std::get_if<vision::FeatureMatch>(&r)) {
+        out.query_index = match->query_index;
+        out.train_index = match->train_index;
+        out.query_point = match->query_point;
+        out.train_point = match->train_point;
     }
     return out;
 }
@@ -130,6 +158,14 @@ py::array MatToNumpy(const cv::Mat& mat) {
         return py::array();
     }
     cv::Mat contiguous = mat.isContinuous() ? mat : mat.clone();
+    if (contiguous.type() == CV_32FC1) {
+        py::array_t<float> out({contiguous.rows, contiguous.cols});
+        py::buffer_info dst = out.request();
+        cv::Mat dst_wrapped(
+            contiguous.rows, contiguous.cols, CV_32FC1, dst.ptr);
+        contiguous.copyTo(dst_wrapped);
+        return out;
+    }
     const int channels = contiguous.channels();
     if (channels == 1) {
         py::array_t<uint8_t> out({contiguous.rows, contiguous.cols});
@@ -202,6 +238,18 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def_readwrite("y", &vision::KeyPoint::y)
         .def_readwrite("visibility", &vision::KeyPoint::visibility);
 
+    py::class_<vision::LocalFeatures>(m, "VisionServiceLocalFeatures")
+        .def(py::init<>())
+        .def_readwrite("keypoints", &vision::LocalFeatures::keypoints)
+        .def_readwrite("descriptors", &vision::LocalFeatures::descriptors)
+        .def_readwrite(
+            "descriptor_dim", &vision::LocalFeatures::descriptor_dim)
+        .def_readwrite("image_width", &vision::LocalFeatures::image_width)
+        .def_readwrite("image_height", &vision::LocalFeatures::image_height)
+        .def_readwrite("feature_type", &vision::LocalFeatures::feature_type)
+        .def_readwrite("score", &vision::LocalFeatures::score)
+        .def_readwrite("label", &vision::LocalFeatures::label);
+
     py::class_<PyFlatResult>(m, "VisionServiceResult")
         .def_readwrite("x1", &PyFlatResult::x1)
         .def_readwrite("y1", &PyFlatResult::y1)
@@ -214,6 +262,15 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def_readwrite("class_scores", &PyFlatResult::class_scores)
         .def_readwrite("text", &PyFlatResult::text)
         .def_readwrite("polygon", &PyFlatResult::polygon)
+        .def_readwrite("descriptors", &PyFlatResult::descriptors)
+        .def_readwrite("descriptor_dim", &PyFlatResult::descriptor_dim)
+        .def_readwrite("image_width", &PyFlatResult::image_width)
+        .def_readwrite("image_height", &PyFlatResult::image_height)
+        .def_readwrite("feature_type", &PyFlatResult::feature_type)
+        .def_readwrite("query_index", &PyFlatResult::query_index)
+        .def_readwrite("train_index", &PyFlatResult::train_index)
+        .def_readwrite("query_point", &PyFlatResult::query_point)
+        .def_readwrite("train_point", &PyFlatResult::train_point)
         .def_property(
             "mask",
             [](const PyFlatResult& r) -> py::object {
@@ -228,6 +285,14 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                     return;
                 }
                 r.mask = NumpyToMat(obj.cast<py::array>());
+            })
+        .def_property_readonly(
+            "disparity",
+            [](const PyFlatResult& r) -> py::object {
+                if (r.disparity.empty()) {
+                    return py::none();
+                }
+                return MatToNumpy(r.disparity);
             })
         .def("__repr__", [](const PyFlatResult& r) {
             return "<VisionServiceResult x1=" + std::to_string(r.x1) + " y1=" + std::to_string(r.y1) +
@@ -358,6 +423,104 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             py::arg("prompts"),
             py::arg("conf") = -1.0f,
             py::arg("iou") = -1.0f)
+        .def(
+            "infer_stereo",
+            [](VisionService& self,
+                const py::array& left,
+                const py::array& right) {
+                cv::Mat left_mat = NumpyToMatBgr(left);
+                cv::Mat right_mat = NumpyToMatBgr(right);
+                VisionServiceRequest request{};
+                request.image = left_mat;
+                request.image2 = right_mat;
+                VisionServiceResponse response;
+                const VisionServiceStatus status =
+                    self.Infer(request, &response);
+                py::object disparity = py::none();
+                if (status == VISION_SERVICE_OK &&
+                    response.results.size() == 1) {
+                    const auto* value = std::get_if<vision::Disparity>(
+                        &response.results.front());
+                    if (value != nullptr && value->map &&
+                        !value->map->empty()) {
+                        disparity = MatToNumpy(*value->map);
+                    }
+                }
+                return py::make_tuple(status, disparity, response);
+            },
+            py::arg("left_bgr_uint8"),
+            py::arg("right_bgr_uint8"))
+        .def(
+            "extract_local_features",
+            [](VisionService& self, const py::array& image) {
+                cv::Mat mat = NumpyToMatBgr(image);
+                VisionServiceResponse response;
+                const VisionServiceStatus status =
+                    self.Infer(mat, &response);
+                vision::LocalFeatures features;
+                if (status == VISION_SERVICE_OK &&
+                    response.results.size() == 1) {
+                    const auto* value =
+                        std::get_if<vision::LocalFeatures>(
+                            &response.results.front());
+                    if (value == nullptr) {
+                        throw std::runtime_error(
+                            "model did not return LocalFeatures");
+                    }
+                    features = *value;
+                }
+                return py::make_tuple(status, features, response);
+            },
+            py::arg("image_bgr_uint8"))
+        .def(
+            "match_local_features",
+            [](VisionService& self,
+                const vision::LocalFeatures& query,
+                const vision::LocalFeatures& train) {
+                VisionServiceRequest request{};
+                request.local_features0 = &query;
+                request.local_features1 = &train;
+                VisionServiceResponse response;
+                const VisionServiceStatus status =
+                    self.Infer(request, &response);
+                return py::make_tuple(
+                    status,
+                    FlattenResults(response.results),
+                    response);
+            },
+            py::arg("query"),
+            py::arg("train"))
+        .def(
+            "track",
+            [](VisionService& self,
+                const py::array& image,
+                const std::vector<float>& initial_bbox_xyxy) {
+                if (!initial_bbox_xyxy.empty() &&
+                    initial_bbox_xyxy.size() != 4) {
+                    throw std::invalid_argument(
+                        "initial_bbox_xyxy must be empty or have four values");
+                }
+                cv::Mat mat = NumpyToMatBgr(image);
+                VisionServiceRequest request{};
+                request.image = mat;
+                if (!initial_bbox_xyxy.empty()) {
+                    request.has_initial_bbox = true;
+                    request.initial_bbox = {
+                        initial_bbox_xyxy[0],
+                        initial_bbox_xyxy[1],
+                        initial_bbox_xyxy[2],
+                        initial_bbox_xyxy[3]};
+                }
+                VisionServiceResponse response;
+                const VisionServiceStatus status =
+                    self.Infer(request, &response);
+                return py::make_tuple(
+                    status,
+                    FlattenResults(response.results),
+                    response);
+            },
+            py::arg("image_bgr_uint8"),
+            py::arg("initial_bbox_xyxy") = std::vector<float>{})
         .def(
             "infer_embedding",
             [](VisionService& self, const std::string& path) {

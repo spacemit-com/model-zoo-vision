@@ -61,6 +61,7 @@ __all__ = [
     "VisionServiceNative",
     "VisionServiceResult",
     "VisionServiceKeypoint",
+    "VisionServiceLocalFeatures",
     "VisionServiceInferParams",
     "VisionServiceResponse",
     "VisionServiceProfile",
@@ -94,6 +95,7 @@ def _require_ext() -> None:
 VisionServiceStatus = None  # type: ignore[assignment,misc]
 VisionServiceResult = None  # type: ignore[assignment,misc]
 VisionServiceKeypoint = None  # type: ignore[assignment,misc]
+VisionServiceLocalFeatures = None  # type: ignore[assignment,misc]
 VisionServiceInferParams = None  # type: ignore[assignment,misc]
 VisionServiceResponse = None  # type: ignore[assignment,misc]
 VisionServiceProfile = None  # type: ignore[assignment,misc]
@@ -105,6 +107,7 @@ if _ext is not None:
     VisionServiceStatus = _ext.VisionServiceStatus
     VisionServiceResult = _ext.VisionServiceResult
     VisionServiceKeypoint = _ext.VisionServiceKeypoint
+    VisionServiceLocalFeatures = _ext.VisionServiceLocalFeatures
     VisionServiceInferParams = _ext.VisionServiceInferParams
     VisionServiceResponse = _ext.VisionServiceResponse
     VisionServiceProfile = _ext.VisionServiceProfile
@@ -244,6 +247,68 @@ class VisionServiceNative:
         if status == VisionServiceStatus.OK:
             self._last_response = response
         return status, embedding
+
+    def infer_stereo(
+        self,
+        left_bgr_uint8: npt.NDArray[np.uint8],
+        right_bgr_uint8: npt.NDArray[np.uint8],
+    ) -> Tuple[object, Optional[npt.NDArray[np.float32]]]:
+        """Run dense stereo inference and return a float32 disparity map."""
+        left = np.ascontiguousarray(left_bgr_uint8)
+        right = np.ascontiguousarray(right_bgr_uint8)
+        if left.dtype != np.uint8 or right.dtype != np.uint8:
+            raise TypeError("stereo images must be uint8 BGR (HxWx3)")
+        status, disparity, response = self._svc.infer_stereo(
+            left_bgr_uint8=left, right_bgr_uint8=right
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, disparity
+
+    def extract_local_features(
+        self,
+        image_bgr_uint8: npt.NDArray[np.uint8],
+    ) -> Tuple[object, object]:
+        """Extract reusable local features from one BGR image."""
+        image = np.ascontiguousarray(image_bgr_uint8)
+        if image.dtype != np.uint8:
+            raise TypeError("image must be uint8 BGR (HxWx3)")
+        status, features, response = self._svc.extract_local_features(
+            image_bgr_uint8=image
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, features
+
+    def match_local_features(
+        self,
+        query: object,
+        train: object,
+    ) -> Tuple[object, List]:
+        """Match two frontend-independent LocalFeatures objects."""
+        status, matches, response = self._svc.match_local_features(
+            query=query, train=train
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, matches
+
+    def track(
+        self,
+        image_bgr_uint8: npt.NDArray[np.uint8],
+        initial_bbox_xyxy: Optional[List[float]] = None,
+    ) -> Tuple[object, List]:
+        """Track one object; provide an xyxy box to initialize or reset."""
+        image = np.ascontiguousarray(image_bgr_uint8)
+        if image.dtype != np.uint8:
+            raise TypeError("image must be uint8 BGR (HxWx3)")
+        status, results, response = self._svc.track(
+            image_bgr_uint8=image,
+            initial_bbox_xyxy=initial_bbox_xyxy or [],
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, results
 
     def encode_text(self, text: str) -> Tuple[object, List[float]]:
         _require_ext()

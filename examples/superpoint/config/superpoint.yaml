@@ -1,0 +1,11 @@
+model_path: ~/.cache/models/vision/superpoint/superpoint_512x512_top512_batch1.q.onnx
+test_image: ~/.cache/assets/image/016_lightglue1.jpg
+class: deploy.superpoint.SuperPointExtractor
+default_params:
+  num_keypoints: 512
+  nms_radius: 4
+  remove_borders: 4
+  feature_type: superpoint
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

@@ -6,6 +6,10 @@
 #include "drawing.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -289,6 +293,8 @@ void draw_results(
     std::vector<SegmentationResult> segmentations;
     std::vector<TrackingResult> trackings;
     std::vector<TextResult> texts;
+    std::vector<DisparityResult> disparities;
+    std::vector<LocalFeaturesResult> local_features;
 
     for (const auto& result : results) {
         std::visit([&](const auto& r) {
@@ -303,8 +309,74 @@ void draw_results(
                 trackings.push_back(r);
             } else if constexpr (std::is_same_v<T, TextResult>) {
                 texts.push_back(r);
+            } else if constexpr (std::is_same_v<T, DisparityResult>) {
+                disparities.push_back(r);
+            } else if constexpr (
+                std::is_same_v<T, LocalFeaturesResult>) {
+                local_features.push_back(r);
             }
         }, result);
+    }
+
+    if (!disparities.empty()) {
+        const auto& disparity = disparities.front();
+        if (disparity.map == nullptr || disparity.map->empty() ||
+            disparity.map->type() != CV_32FC1) {
+            throw std::runtime_error(
+                "disparity draw expects a non-empty CV_32FC1 map");
+        }
+        const cv::Mat& map = *disparity.map;
+        float min_value = std::numeric_limits<float>::infinity();
+        float max_value = -std::numeric_limits<float>::infinity();
+        for (int y = 0; y < map.rows; ++y) {
+            const float* row = map.ptr<float>(y);
+            for (int x = 0; x < map.cols; ++x) {
+                if (!std::isfinite(row[x])) {
+                    continue;
+                }
+                min_value = std::min(min_value, row[x]);
+                max_value = std::max(max_value, row[x]);
+            }
+        }
+        if (!std::isfinite(min_value) || !std::isfinite(max_value)) {
+            throw std::runtime_error(
+                "disparity draw requires at least one finite value");
+        }
+        cv::Mat normalized(map.size(), CV_8UC1, cv::Scalar(0));
+        const float scale = max_value > min_value
+            ? 255.0f / (max_value - min_value)
+            : 0.0f;
+        for (int y = 0; y < map.rows; ++y) {
+            const float* source = map.ptr<float>(y);
+            uint8_t* destination = normalized.ptr<uint8_t>(y);
+            for (int x = 0; x < map.cols; ++x) {
+                if (std::isfinite(source[x])) {
+                    destination[x] = cv::saturate_cast<uint8_t>(
+                        (source[x] - min_value) * scale);
+                }
+            }
+        }
+        cv::applyColorMap(normalized, image, cv::COLORMAP_JET);
+    }
+    for (const auto& features : local_features) {
+        for (const auto& point : features.keypoints) {
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                !std::isfinite(point.visibility) ||
+                point.visibility <= 0.0f ||
+                point.x < 0.0f || point.y < 0.0f ||
+                point.x >= static_cast<float>(image.cols) ||
+                point.y >= static_cast<float>(image.rows)) {
+                continue;
+            }
+            cv::circle(
+                image,
+                cv::Point(
+                    static_cast<int>(std::round(point.x)),
+                    static_cast<int>(std::round(point.y))),
+                2,
+                cv::Scalar(0, 255, 0),
+                -1);
+        }
     }
 
     // Draw each type with appropriate function
@@ -356,4 +428,3 @@ void draw_text(
 }
 
 }  // namespace vision_common
-

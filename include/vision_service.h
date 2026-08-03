@@ -104,6 +104,37 @@ struct Text {
     int label = -1;                 // unused for OCR (kept for accessor symmetry)
 };
 
+// Dense stereo disparity. Values are horizontal pixel disparities in the
+// original left-image coordinate system.
+struct Disparity {
+    std::shared_ptr<cv::Mat> map;  // CV_32FC1, may be null on failure
+    float score = 1.0f;
+    int label = -1;
+};
+
+// Sparse local image features. Descriptors are row-major:
+// keypoints.size() x descriptor_dim.
+struct LocalFeatures {
+    std::vector<KeyPoint> keypoints;
+    std::vector<float> descriptors;
+    int descriptor_dim = 0;
+    int image_width = 0;
+    int image_height = 0;
+    std::string feature_type;
+    float score = 1.0f;
+    int label = -1;
+};
+
+// One correspondence between two LocalFeatures collections.
+struct FeatureMatch {
+    int query_index = -1;
+    int train_index = -1;
+    KeyPoint query_point;
+    KeyPoint train_point;
+    float score = 0.0f;
+    int label = -1;
+};
+
 // ============================================================================
 // Unified result variant
 // ============================================================================
@@ -116,7 +147,10 @@ using Result = std::variant<
     Embedding,
     Tracking,
     Action,
-    Text>;
+    Text,
+    Disparity,
+    LocalFeatures,
+    FeatureMatch>;
 
 using ResultList = std::vector<Result>;
 
@@ -197,6 +231,22 @@ struct VisionServiceRequest {
     cv::Mat image;                        // image-based models
     VisionPixelFormat image_format = VisionPixelFormat::BGR8;
     int image_dma_fd = -1;                // >= 0 imports DMA-BUF; otherwise host memory
+
+    // Optional second image for stereo models. Its ownership contract matches
+    // `image`.
+    cv::Mat image2;
+    VisionPixelFormat image2_format = VisionPixelFormat::BGR8;
+    int image2_dma_fd = -1;
+
+    // Local-feature matching input. Both pointers must be non-null together
+    // and remain readable until Infer() returns.
+    const vision::LocalFeatures* local_features0 = nullptr;
+    const vision::LocalFeatures* local_features1 = nullptr;
+
+    // Stateful single-object trackers initialize (or reset) when this flag is
+    // true. The box is xyxy in the current image's pixel coordinate system.
+    bool has_initial_bbox = false;
+    vision::BoundingBox initial_bbox;
 
     const float* sequence_pts = nullptr;  // sequence models: skeleton points
     int sequence_count = 0;               // length of sequence_pts; if > 0 it is

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Download MixFormer models to ~/.cache/models/vision/mixformer/
+# Remote: https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mixformer/
+# Assets (test video) via: bash scripts/download_assets.sh
+# Run: sh examples/mixformer/scripts/download_models.sh
+
+set -e
+CACHE_BASE="${HOME:-/tmp}/.cache/models/vision"
+MODEL_DIR="$CACHE_BASE/mixformer"
+mkdir -p "$MODEL_DIR"
+
+BASE_URL="${MIXFORMER_BASE_URL:-https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mixformer}"
+
+download() {
+  name="$1"
+  if [ -f "$MODEL_DIR/$name" ]; then
+    echo "Exists: $MODEL_DIR/$name"
+    return 0
+  fi
+  echo "Downloading $name ..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL -o "$MODEL_DIR/$name" "$BASE_URL/$name"
+  else
+    wget -O "$MODEL_DIR/$name" "$BASE_URL/$name"
+  fi
+}
+
+download "mixformer_v2.q.onnx"
+echo "Done. Models in $MODEL_DIR"

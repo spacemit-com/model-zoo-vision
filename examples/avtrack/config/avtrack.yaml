@@ -1,0 +1,12 @@
+model_path: ~/.cache/models/vision/avtrack/avtrack_deit_depth4.q.onnx
+test_video: ~/.cache/assets/video/004_bag.avi
+class: deploy.avtrack.AVTracker
+initial_bbox:
+  x: 315
+  y: 140
+  w: 116
+  h: 121
+default_params:
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

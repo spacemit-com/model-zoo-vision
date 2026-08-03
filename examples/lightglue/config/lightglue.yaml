@@ -1,0 +1,13 @@
+model_path: ~/.cache/models/vision/lightglue/lightglue_for_superpoint_512_depth1.fp16.onnx
+superpoint_config_path: examples/superpoint/config/superpoint.yaml
+test_image1: ~/.cache/assets/image/016_lightglue1.jpg
+test_image2: ~/.cache/assets/image/017_lightglue2.jpg
+class: deploy.lightglue.LightGlueMatcher
+default_params:
+  feature_type: superpoint
+  num_keypoints: 512
+  descriptor_dim: 256
+  filter_threshold: 0.1
+  num_threads: 4
+  providers:
+    - SpaceMITExecutionProvider

@@ -41,6 +41,9 @@ using EmbeddingResult = vision::Embedding;
 using TrackingResult = vision::Tracking;
 using ActionResult = vision::Action;
 using TextResult = vision::Text;
+using DisparityResult = vision::Disparity;
+using LocalFeaturesResult = vision::LocalFeatures;
+using FeatureMatchResult = vision::FeatureMatch;
 
 using ModelResult = vision::Result;
 
@@ -50,6 +53,7 @@ using PoseResultList = std::vector<PoseResult>;
 using SegmentationResultList = std::vector<SegmentationResult>;
 using TrackingResultList = std::vector<TrackingResult>;
 using TextResultList = std::vector<TextResult>;
+using FeatureMatchResultList = std::vector<FeatureMatchResult>;
 
 // ----------------------------------------------------------------------------
 // Helpers

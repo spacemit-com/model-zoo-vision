@@ -8,7 +8,7 @@ endfunction()
 # Usage:
 #   add_application(example_emotion emotion_detection/cpp/example_emotion.cpp yolov5_face emotion)
 #   add_application(example_fall_detection fall_detection/cpp/example_fall_detection.cpp yolov8_pose)
-#   add_application(example_intrusion ... bytetrack EXTRA_INCLUDES /path/to/eigen)
+#   add_application(example_intrusion ... bytetrack)
 function(add_application target_name cpp_file)
     set(extra_includes "")
     set(deploy_dirs "")
@@ -54,8 +54,7 @@ endfunction()
 # -----------------------------------------------------------------------------
 add_application(example_emotion emotion_detection/cpp/example_emotion.cpp yolov5_face emotion emotion_lstm)
 add_application(example_fall_detection fall_detection/cpp/example_fall_detection.cpp yolov8_pose)
-add_application(example_intrusion_identification intrusion_detection/cpp/example_intrusion_identification.cpp bytetrack
-    EXTRA_INCLUDES ${CMAKE_SOURCE_DIR}/../../rvv_libs/eigen-rvv/eigen)
+add_application(example_intrusion_identification intrusion_detection/cpp/example_intrusion_identification.cpp bytetrack)
 add_application(example_fire_detection fire_detection/cpp/example_fire_detection.cpp yolov8)
 add_application(example_face_recognition face_recognition/cpp/example_face_recognition.cpp
     scrfd arcface genderage landmark2d106)

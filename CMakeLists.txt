@@ -66,11 +66,28 @@ else()
 endif()
 
 
-# Eigen3 (system)
-find_package(Eigen3 REQUIRED)
-if(Eigen3_FOUND)
-    message(STATUS "Eigen3 found: ${Eigen3_VERSION}")
+# Eigen + OpenBLAS (SpaceMIT board installs under /opt).
+set(EIGEN_SPACEMIT_DIR "/opt/eigen-spacemit" CACHE PATH "SpaceMIT Eigen prefix")
+set(EIGEN_INCLUDE_DIR "${EIGEN_SPACEMIT_DIR}/include/eigen3")
+if(NOT EXISTS "${EIGEN_INCLUDE_DIR}/Eigen/Dense")
+    message(FATAL_ERROR "Eigen not found at ${EIGEN_INCLUDE_DIR}")
 endif()
+message(STATUS "Eigen: ${EIGEN_INCLUDE_DIR}")
+
+set(OPENBLAS_DIR "/opt/openblas-spacemit" CACHE PATH "OpenBLAS prefix")
+find_library(OPENBLAS_LIB
+    NAMES openblas
+    HINTS "${OPENBLAS_DIR}"
+    PATH_SUFFIXES lib
+    REQUIRED
+)
+find_path(OPENBLAS_INCLUDE_DIR
+    NAMES cblas.h
+    HINTS "${OPENBLAS_DIR}"
+    PATH_SUFFIXES include
+    REQUIRED
+)
+message(STATUS "OpenBLAS: ${OPENBLAS_LIB}")
 
 # yaml-cpp Configuration
 find_package(yaml-cpp REQUIRED)
@@ -177,7 +194,7 @@ add_library(vision SHARED
 
 target_link_libraries(vision
     ${LIBS}
-    Eigen3::Eigen
+    "${OPENBLAS_LIB}"
 )
 
 if(VISION_WITH_OPENCL)
@@ -186,6 +203,12 @@ if(VISION_WITH_OPENCL)
 else()
     target_compile_definitions(vision PRIVATE VISION_WITH_OPENCL=0)
 endif()
+
+# EIGEN_USE_BLAS routes Eigen GEMM (e.g. YOLOv8-Seg mask matmul) to OpenBLAS.
+target_compile_definitions(vision PRIVATE EIGEN_USE_BLAS)
+get_filename_component(_openblas_libdir "${OPENBLAS_LIB}" DIRECTORY)
+set_property(TARGET vision APPEND PROPERTY BUILD_RPATH "${_openblas_libdir}")
+set_property(TARGET vision APPEND PROPERTY INSTALL_RPATH "${_openblas_libdir}")
 
 # ONNX Runtime float16: use __fp16 if available, else define for dependency headers
 include(CheckCXXSourceCompiles)
@@ -216,7 +239,8 @@ target_include_directories(vision PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${DEPLOY_CPP_DIRS}
     ${DEPLOY_INTERNAL_INCLUDE_DIRS}
-    Eigen3::Eigen
+    ${EIGEN_INCLUDE_DIR}
+    ${OPENBLAS_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${OpenCV_INCLUDE_DIRS}
     ${SPACEMIT_DIR}/include

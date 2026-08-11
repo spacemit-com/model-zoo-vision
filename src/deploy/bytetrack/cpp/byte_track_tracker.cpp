@@ -193,6 +193,12 @@ void ByteTrackTracker::configure_preprocess_backend(
     detector_->configure_preprocess_backend(backend);
 }
 
+void ByteTrackTracker::configure_preprocess_opencl_sampling(
+    const std::string& sampling)
+{
+    detector_->configure_preprocess_opencl_sampling(sampling);
+}
+
 std::vector<Object> ByteTrackTracker::convert_results_to_objects(
     const vision_common::DetectionResultList& results) {
     std::vector<Object> objects;

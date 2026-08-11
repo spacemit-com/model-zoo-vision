@@ -203,20 +203,20 @@ int main()
         "strict OpenCL configuration follows build capability");
 
 #if VISION_WITH_OPENCL
-    bool rejected_bgr = false;
+    bool accepted_bgr = false;
     try {
-        auto unexpected = enabled.prepare_bgr(
+        auto prepared_bgr = enabled.prepare_bgr(
             cv::Mat::zeros(4, 4, CV_8UC3));
-        unexpected.complete();
-    } catch (const std::invalid_argument& error) {
-        rejected_bgr =
-            std::string(error.what()).find(
-                "requires NV12 DMA-BUF input") !=
-            std::string::npos;
+        accepted_bgr =
+            prepared_bgr.backend_used() ==
+            vision_operators::PreprocessBackend::kOpenCl;
+        prepared_bgr.complete();
+    } catch (...) {
+        accepted_bgr = false;
     }
     check(
-        rejected_bgr,
-        "strict OpenCL rejects BGR host input");
+        accepted_bgr,
+        "strict OpenCL accepts BGR host input");
 #endif
 
     if (failures != 0) {

@@ -13,3 +13,4 @@ default_params:
     - SpaceMITExecutionProvider
   preprocess:
     backend: auto
+    opencl_sampling: opencv_compatible

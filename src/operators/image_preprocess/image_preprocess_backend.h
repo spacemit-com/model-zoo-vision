@@ -22,7 +22,15 @@ enum class PreprocessBackend {
     kOpenCl,
 };
 
+enum class PreprocessOpenClSampling {
+    kOpenCvCompatible,
+    kFast,
+};
+
 PreprocessBackendPolicy parse_preprocess_backend_policy(
+    std::string_view value);
+
+PreprocessOpenClSampling parse_preprocess_opencl_sampling(
     std::string_view value);
 
 class OpenClBackendState {

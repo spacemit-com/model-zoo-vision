@@ -1,5 +1,7 @@
 __constant sampler_t nv12_nearest_sampler =
     CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+__constant sampler_t nv12_linear_sampler =
+    CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
 
 inline float3 read_nv12_pixel(
     read_only image2d_t y_image,
@@ -15,6 +17,55 @@ inline float3 read_nv12_pixel(
         nv12_nearest_sampler,
         coordinate >> 1).xy * 255.0f;
     return yuv_to_rgb(yy, uv.x, uv.y);
+}
+
+inline void read_nv12_pixels4_even(
+    read_only image2d_t y_image,
+    read_only image2d_t uv_image,
+    int x,
+    int y,
+    __private float4* red,
+    __private float4* green,
+    __private float4* blue)
+{
+    const float4 yy = (float4)(
+        read_imagef(
+            y_image, nv12_nearest_sampler, (int2)(x, y)).x,
+        read_imagef(
+            y_image, nv12_nearest_sampler, (int2)(x + 1, y)).x,
+        read_imagef(
+            y_image, nv12_nearest_sampler, (int2)(x + 2, y)).x,
+        read_imagef(
+            y_image, nv12_nearest_sampler, (int2)(x + 3, y)).x) *
+        255.0f;
+    const float2 uv01 = read_imagef(
+        uv_image,
+        nv12_nearest_sampler,
+        (int2)(x >> 1, y >> 1)).xy * 255.0f;
+    const float2 uv23 = read_imagef(
+        uv_image,
+        nv12_nearest_sampler,
+        (int2)((x + 2) >> 1, y >> 1)).xy * 255.0f;
+    const float4 u =
+        (float4)(uv01.x, uv01.x, uv23.x, uv23.x);
+    const float4 v =
+        (float4)(uv01.y, uv01.y, uv23.y, uv23.y);
+    const float4 c = yy - 16.0f;
+    const float4 d = u - 128.0f;
+    const float4 e = v - 128.0f;
+    *red = clamp(
+        1.16438356f * c + 1.59602678f * e,
+        0.0f,
+        255.0f);
+    *green = clamp(
+        1.16438356f * c - 0.39176229f * d -
+            0.81296765f * e,
+        0.0f,
+        255.0f);
+    *blue = clamp(
+        1.16438356f * c + 2.01723214f * d,
+        0.0f,
+        255.0f);
 }
 
 inline float3 sample_nv12_images(
@@ -51,6 +102,124 @@ inline float3 sample_nv12_images(
             y_image, uv_image, (int2)(x0, y0 + 1)),
         read_nv12_pixel(
             y_image, uv_image, (int2)(x0 + 1, y0 + 1)),
+        x_weight);
+    return mix(top, bottom, y_weight);
+}
+
+inline float3 sample_nv12_images_fast(
+    read_only image2d_t y_image,
+    read_only image2d_t uv_image,
+    float x,
+    float y,
+    int interpolation)
+{
+    if (interpolation == 1) {
+        const int2 y_coordinate = (int2)(
+            convert_int_rte(x),
+            convert_int_rte(y));
+        return read_nv12_pixel(
+            y_image, uv_image, y_coordinate);
+    }
+
+    // OpenCL image coordinates address pixel centers at N + 0.5. Sample
+    // the Y and subsampled UV planes once, then perform one color conversion.
+    // This is faster than converting four RGB neighbors, but intentionally
+    // smooths chroma across NV12 2x2 block boundaries.
+    const float yy = read_imagef(
+        y_image,
+        nv12_linear_sampler,
+        (float2)(x + 0.5f, y + 0.5f)).x * 255.0f;
+    const float2 uv = read_imagef(
+        uv_image,
+        nv12_linear_sampler,
+        (float2)(x * 0.5f + 0.5f, y * 0.5f + 0.5f)).xy *
+        255.0f;
+    return yuv_to_rgb(yy, uv.x, uv.y);
+}
+
+inline float3 read_bgr_buffer_pixel(
+    __global const uchar* input,
+    int input_stride,
+    int input_width,
+    int input_height,
+    int2 coordinate)
+{
+    coordinate = clamp(
+        coordinate,
+        (int2)(0, 0),
+        (int2)(input_width - 1, input_height - 1));
+    const int offset =
+        coordinate.y * input_stride + coordinate.x * 3;
+    // Use scalar byte loads. Some embedded OpenCL compilers widen vload3 at
+    // the final pixel of a row, which may read into the next row and corrupt
+    // the channel swizzle for tightly packed 3-byte pixels.
+    return (float3)(
+        (float)input[offset + 2],
+        (float)input[offset + 1],
+        (float)input[offset]);
+}
+
+inline void read_bgr_buffer_pixels4(
+    __global const uchar* input,
+    int input_stride,
+    int x,
+    int y,
+    __private float4* red,
+    __private float4* green,
+    __private float4* blue)
+{
+    const int offset = y * input_stride + x * 3;
+    // Four packed BGR pixels occupy exactly 12 bytes. When the starting
+    // address is aligned (enforced by the caller), three uchar4 loads remain
+    // inside the row and avoid PowerVR's unaligned/vload3 behavior.
+    const uchar4 bytes0 = vload4(0, input + offset);
+    const uchar4 bytes1 = vload4(0, input + offset + 4);
+    const uchar4 bytes2 = vload4(0, input + offset + 8);
+    *red = convert_float4((uchar4)(
+        bytes0.s2, bytes1.s1, bytes2.s0, bytes2.s3));
+    *green = convert_float4((uchar4)(
+        bytes0.s1, bytes1.s0, bytes1.s3, bytes2.s2));
+    *blue = convert_float4((uchar4)(
+        bytes0.s0, bytes0.s3, bytes1.s2, bytes2.s1));
+}
+
+inline float3 sample_bgr_buffer(
+    __global const uchar* input,
+    int input_stride,
+    int input_width,
+    int input_height,
+    float x,
+    float y,
+    int interpolation)
+{
+    if (interpolation == 1) {
+        return read_bgr_buffer_pixel(
+            input,
+            input_stride,
+            input_width,
+            input_height,
+            (int2)(convert_int_rte(x), convert_int_rte(y)));
+    }
+
+    const int x0 = convert_int_rtn(x);
+    const int y0 = convert_int_rtn(y);
+    const float x_weight = x - (float)x0;
+    const float y_weight = y - (float)y0;
+    const float3 top = mix(
+        read_bgr_buffer_pixel(
+            input, input_stride, input_width, input_height,
+            (int2)(x0, y0)),
+        read_bgr_buffer_pixel(
+            input, input_stride, input_width, input_height,
+            (int2)(x0 + 1, y0)),
+        x_weight);
+    const float3 bottom = mix(
+        read_bgr_buffer_pixel(
+            input, input_stride, input_width, input_height,
+            (int2)(x0, y0 + 1)),
+        read_bgr_buffer_pixel(
+            input, input_stride, input_width, input_height,
+            (int2)(x0 + 1, y0 + 1)),
         x_weight);
     return mix(top, bottom, y_weight);
 }

@@ -8,6 +8,8 @@
 
 #include <array>
 
+#include "image_preprocess_backend.h"
+
 namespace vision_operators {
 
 enum class PreprocessCropMode {
@@ -50,6 +52,8 @@ struct ImagePreprocessSpec {
     bool output_rgb = true;
     PreprocessInterpolation interpolation =
         PreprocessInterpolation::kBilinear;
+    PreprocessOpenClSampling opencl_sampling =
+        PreprocessOpenClSampling::kOpenCvCompatible;
     PreprocessOutputType output_type = PreprocessOutputType::kFloat32;
     std::array<float, 3> mean{0.0F, 0.0F, 0.0F};
     std::array<float, 3> scale{1.0F, 1.0F, 1.0F};

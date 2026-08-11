@@ -33,6 +33,7 @@ bool same_preprocess_spec(
         left.resize_height == right.resize_height &&
         left.output_rgb == right.output_rgb &&
         left.interpolation == right.interpolation &&
+        left.opencl_sampling == right.opencl_sampling &&
         left.output_type == right.output_type &&
         left.mean == right.mean &&
         left.scale == right.scale &&
@@ -140,16 +141,27 @@ public:
 
         const bool is_nv12 =
             input.format == vision_core::ImagePixelFormat::kNv12;
-        const bool is_opencl_input =
+        const bool is_bgr =
+            input.format == vision_core::ImagePixelFormat::kBgr8;
+        const bool is_nv12_dma =
             is_nv12 && input.dma_fd >= 0;
+        // Keep auto behavior unchanged: host BGR remains on the CPU unless
+        // OpenCL is explicitly requested. This makes the new upload-based
+        // BGR path opt-in and avoids regressing existing camera pipelines.
+        const bool should_try_bgr_opencl =
+            is_bgr && state_.policy() ==
+                PreprocessBackendPolicy::kOpenCl;
+        const bool is_opencl_input =
+            should_try_bgr_opencl || is_nv12_dma;
         if (state_.policy() ==
                 PreprocessBackendPolicy::kOpenCl &&
             !is_opencl_input) {
             throw std::invalid_argument(
                 "OpenCL image preprocessing requires "
-                "NV12 DMA-BUF input");
+                "BGR8 host input or NV12 DMA-BUF input");
         }
-        if (!state_.should_try_opencl_for_input(
+        if (!should_try_bgr_opencl &&
+            !state_.should_try_opencl_for_input(
                 is_nv12, input.dma_fd >= 0)) {
             return run_cpu_image_preprocess(
                 input, cpu_preprocess);

@@ -80,6 +80,8 @@ public:
 
     void configure_preprocess_backend(
         const std::string& backend) override;
+    void configure_preprocess_opencl_sampling(
+        const std::string& sampling) override;
 
 private:
     vision_common::TrackingResultList track_input(

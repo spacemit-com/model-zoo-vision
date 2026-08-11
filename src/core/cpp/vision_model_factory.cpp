@@ -131,6 +131,8 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
     }
 
     std::string preprocess_backend = "cpu";
+    std::string preprocess_opencl_sampling =
+        "opencv_compatible";
     if (dp && !dp.IsMap()) {
         throw std::runtime_error(
             "default_params must be a map in config file: " +
@@ -156,12 +158,30 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
                     parse_preprocess_backend_policy(
                         preprocess_backend);
             }
+            const YAML::Node opencl_sampling =
+                preprocess["opencl_sampling"];
+            if (opencl_sampling &&
+                !opencl_sampling.IsScalar()) {
+                throw std::runtime_error(
+                    "default_params.preprocess.opencl_sampling "
+                    "must be a scalar in config file: " +
+                    config_path);
+            }
+            if (opencl_sampling) {
+                preprocess_opencl_sampling =
+                    opencl_sampling.as<std::string>();
+                (void)vision_operators::
+                    parse_preprocess_opencl_sampling(
+                        preprocess_opencl_sampling);
+            }
         }
     }
 
     std::unique_ptr<BaseModel> model =
         it->second(config, lazy_load);
     model->configure_preprocess_backend(preprocess_backend);
+    model->configure_preprocess_opencl_sampling(
+        preprocess_opencl_sampling);
     return model;
 }
 

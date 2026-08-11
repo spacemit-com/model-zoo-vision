@@ -210,6 +210,12 @@ void OCSortTracker::configure_preprocess_backend(
     detector_->configure_preprocess_backend(backend);
 }
 
+void OCSortTracker::configure_preprocess_opencl_sampling(
+    const std::string& sampling)
+{
+    detector_->configure_preprocess_opencl_sampling(sampling);
+}
+
 Eigen::MatrixXf OCSortTracker::convert_results_to_dets(
     const vision_common::DetectionResultList& results) {
     if (results.empty()) {

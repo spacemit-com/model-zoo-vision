@@ -9,6 +9,19 @@ inline void store_float_output(
     output[index + plane * 2] = value.z;
 }
 
+inline void store_float4_output(
+    __global float* output,
+    int index,
+    int plane,
+    float4 first,
+    float4 second,
+    float4 third)
+{
+    vstore4(first, 0, output + index);
+    vstore4(second, 0, output + index + plane);
+    vstore4(third, 0, output + index + plane * 2);
+}
+
 inline void store_half_output(
     __global half* output,
     int index,
@@ -18,4 +31,17 @@ inline void store_half_output(
     vstore_half(value.x, 0, output + index);
     vstore_half(value.y, 0, output + index + plane);
     vstore_half(value.z, 0, output + index + plane * 2);
+}
+
+inline void store_half4_output(
+    __global half* output,
+    int index,
+    int plane,
+    float4 first,
+    float4 second,
+    float4 third)
+{
+    vstore_half4(first, 0, output + index);
+    vstore_half4(second, 0, output + index + plane);
+    vstore_half4(third, 0, output + index + plane * 2);
 }

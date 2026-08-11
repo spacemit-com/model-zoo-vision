@@ -87,6 +87,25 @@ public:
         throw std::runtime_error("test completion failure");
     }
 };
+
+class SuccessfulPreprocessor final
+    : public vision_operators::ImagePreprocessor {
+public:
+    cv::Mat process(
+        const vision_core::ImageInput&) override
+    {
+        ++calls_;
+        const int shape[] = {1, 3, 4, 4};
+        return cv::Mat::zeros(4, shape, CV_32F);
+    }
+
+    void complete() override {}
+
+    int calls() const { return calls_; }
+
+private:
+    int calls_{0};
+};
 #endif
 
 }  // namespace
@@ -108,27 +127,50 @@ int main()
     spec.output_height = 4;
 
 #if VISION_WITH_OPENCL
+    auto successful =
+        std::make_shared<SuccessfulPreprocessor>();
     ImagePreprocessDispatcher dispatcher(
-        PreprocessBackendPolicy::kOpenCl);
+        PreprocessBackendPolicy::kOpenCl,
+        [successful](const ImagePreprocessSpec&) {
+            return successful;
+        });
     bool cpu_called = false;
-    bool rejected_input = false;
-    try {
-        (void)dispatcher.process(
-            input,
-            spec,
-            [&](const cv::Mat& image) {
-                cpu_called = true;
-                return image.clone();
-            });
-    } catch (const std::invalid_argument& error) {
-        rejected_input =
-            std::string(error.what()).find("NV12 DMA-BUF") !=
-            std::string::npos;
-    }
+    auto bgr_opencl_result = dispatcher.process(
+        input,
+        spec,
+        [&](const cv::Mat& image) {
+            cpu_called = true;
+            return image.clone();
+        });
     check(
-        rejected_input,
-        "strict OpenCL rejects BGR host input");
+        bgr_opencl_result.backend_used() ==
+            vision_operators::PreprocessBackend::kOpenCl &&
+            successful->calls() == 1,
+        "strict OpenCL accepts BGR host input");
     check(!cpu_called, "strict OpenCL never falls back to CPU");
+    bgr_opencl_result.complete();
+
+    auto auto_successful =
+        std::make_shared<SuccessfulPreprocessor>();
+    ImagePreprocessDispatcher auto_bgr_dispatcher(
+        PreprocessBackendPolicy::kAuto,
+        [auto_successful](const ImagePreprocessSpec&) {
+            return auto_successful;
+        });
+    bool auto_bgr_cpu_called = false;
+    auto auto_bgr_result = auto_bgr_dispatcher.process(
+        input,
+        spec,
+        [&](const cv::Mat& image) {
+            auto_bgr_cpu_called = true;
+            return image.clone();
+        });
+    check(
+        auto_bgr_cpu_called && auto_successful->calls() == 0 &&
+            auto_bgr_result.backend_used() ==
+                vision_operators::PreprocessBackend::kCpu,
+        "auto keeps BGR host input on CPU");
+    auto_bgr_result.complete();
 
     const int valid_fd = ::open("/dev/null", O_RDONLY);
     if (valid_fd >= 0) {

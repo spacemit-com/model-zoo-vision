@@ -345,19 +345,11 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    int inputWidth = static_cast<int>(input_shape_[3]);
-    int inputHeight = static_cast<int>(input_shape_[2]);
-
-
-    // Use common letterbox function (similar to Python implementation)
-    cv::Mat padded = vision_common::letterbox(
+    const int input_width = static_cast<int>(input_shape_[3]);
+    const int input_height = static_cast<int>(input_shape_[2]);
+    return vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(inputHeight, inputWidth));
-
-
-    return cv::dnn::blobFromImage(padded, 1.0/255.0,
-        cv::Size(inputWidth, inputHeight),
-        cv::Scalar(0, 0, 0), true, false, CV_32F);
+        std::make_pair(input_height, input_width));
 }
 
 

@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -59,6 +61,122 @@ cv::Mat letterbox(
                         cv::BORDER_CONSTANT, pad_color);
 
     return padded;
+}
+
+cv::Mat letterbox_to_nchw_rgb_blob(
+    const cv::Mat& image,
+    const std::pair<int, int>& target_size,
+    const cv::Scalar& pad_color,
+    cv::Mat* resized_scratch) {
+    const int input_height = target_size.first;
+    const int input_width = target_size.second;
+    if (image.empty()) {
+        throw std::invalid_argument(
+            "letterbox_to_nchw_rgb_blob: input image is empty");
+    }
+    if (image.type() != CV_8UC3) {
+        throw std::invalid_argument(
+            "letterbox_to_nchw_rgb_blob: expected CV_8UC3 BGR input");
+    }
+    if (input_width <= 0 || input_height <= 0) {
+        throw std::invalid_argument(
+            "letterbox_to_nchw_rgb_blob: target size must be positive");
+    }
+    const float ratio = std::min(
+        static_cast<float>(input_height) / image.rows,
+        static_cast<float>(input_width) / image.cols);
+    const int resized_width = static_cast<int>(
+        std::round(image.cols * ratio));
+    const int resized_height = static_cast<int>(
+        std::round(image.rows * ratio));
+    const float dw = (input_width - resized_width) / 2.0F;
+    const float dh = (input_height - resized_height) / 2.0F;
+    const int left = static_cast<int>(std::round(dw - 0.1F));
+    const int right = static_cast<int>(std::round(dw + 0.1F));
+    const int top = static_cast<int>(std::round(dh - 0.1F));
+    const int bottom = static_cast<int>(std::round(dh + 0.1F));
+
+    thread_local cv::Mat thread_resized_scratch;
+    cv::Mat* resize_output =
+        resized_scratch != nullptr
+            ? resized_scratch
+            : &thread_resized_scratch;
+    const cv::Mat* resized = &image;
+    if (image.cols != resized_width || image.rows != resized_height) {
+        cv::resize(
+            image,
+            *resize_output,
+            cv::Size(resized_width, resized_height),
+            0.0,
+            0.0,
+            cv::INTER_LINEAR);
+        resized = resize_output;
+    }
+
+    const int dimensions[] = {
+        1, 3, input_height, input_width};
+    cv::Mat output_blob(4, dimensions, CV_32F);
+    float* output = output_blob.ptr<float>();
+    const size_t plane_size =
+        static_cast<size_t>(input_width) * input_height;
+    constexpr float scale = 1.0F / 255.0F;
+    const float channel_padding[] = {
+        static_cast<float>(pad_color[2]) * scale,
+        static_cast<float>(pad_color[1]) * scale,
+        static_cast<float>(pad_color[0]) * scale};
+
+    for (int channel = 0; channel < 3; ++channel) {
+        float* plane = output +
+            static_cast<size_t>(channel) * plane_size;
+        const float padding = channel_padding[channel];
+        if (top > 0) {
+            std::fill(
+                plane,
+                plane + static_cast<size_t>(top) * input_width,
+                padding);
+        }
+        if (bottom > 0) {
+            std::fill(
+                plane + static_cast<size_t>(top + resized_height) *
+                    input_width,
+                plane + plane_size,
+                padding);
+        }
+        if (left > 0 || right > 0) {
+            for (int y = 0; y < resized_height; ++y) {
+                float* row = plane +
+                    static_cast<size_t>(top + y) * input_width;
+                std::fill(row, row + left, padding);
+                std::fill(
+                    row + left + resized_width,
+                    row + input_width,
+                    padding);
+            }
+        }
+    }
+
+    cv::parallel_for_(
+        cv::Range(0, resized_height),
+        [&](const cv::Range& rows) {
+            float* red = output;
+            float* green = output + plane_size;
+            float* blue = output + plane_size * 2;
+            for (int y = rows.start; y < rows.end; ++y) {
+                const uint8_t* source = resized->ptr<uint8_t>(y);
+                const size_t offset =
+                    static_cast<size_t>(top + y) * input_width +
+                    left;
+                float* output_red = red + offset;
+                float* output_green = green + offset;
+                float* output_blue = blue + offset;
+                for (int x = 0; x < resized_width; ++x) {
+                    output_blue[x] = source[x * 3] * scale;
+                    output_green[x] = source[x * 3 + 1] * scale;
+                    output_red[x] = source[x * 3 + 2] * scale;
+                }
+            }
+        });
+    return output_blob;
 }
 
 cv::Mat preprocess_classification(
@@ -164,4 +282,3 @@ std::vector<std::string> load_labels_imagenet(const std::string& label_file) {
 }
 
 }  // namespace vision_common
-

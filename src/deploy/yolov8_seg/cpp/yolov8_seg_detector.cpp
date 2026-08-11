@@ -170,14 +170,9 @@ cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image) {
     int inputWidth = static_cast<int>(input_shape_[3]);  // width
     int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
-    // Use letterbox preprocessing (same as Python)
-    cv::Mat padded = vision_common::letterbox(
+    return vision_common::letterbox_to_nchw_rgb_blob(
         image,
         std::make_pair(inputHeight, inputWidth));
-
-    return cv::dnn::blobFromImage(padded, 1.0/255.0,
-        cv::Size(inputWidth, inputHeight),
-        cv::Scalar(0, 0, 0), true, false, CV_32F);
 }
 
 vision_common::SegmentationResultList YOLOv8SegDetector::segment(

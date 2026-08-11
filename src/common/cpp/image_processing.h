@@ -29,6 +29,23 @@ cv::Mat letterbox(
 );
 
 /**
+ * @brief Fused YOLO letterbox and BGR-to-RGB NCHW conversion
+ * @param image Input CV_8UC3 image in BGR format
+ * @param target_size Target size (height, width)
+ * @param pad_color Letterbox padding color in BGR order
+ * @param resized_scratch Optional reusable buffer; nullptr uses a
+ *        thread-local buffer
+ * @return Independent CV_32F tensor with shape [1, 3, height, width],
+ *         scaled by 1/255
+ */
+cv::Mat letterbox_to_nchw_rgb_blob(
+    const cv::Mat& image,
+    const std::pair<int, int>& target_size,
+    const cv::Scalar& pad_color = cv::Scalar(114, 114, 114),
+    cv::Mat* resized_scratch = nullptr
+);
+
+/**
  * @brief Preprocess image for classification models
  * @param image Input image in BGR format
  * @param input_shape Target input shape (height, width)
@@ -74,4 +91,3 @@ std::vector<std::string> load_labels_imagenet(const std::string& label_file);
 }  // namespace vision_common
 
 #endif  // IMAGE_PROCESSING_H
-

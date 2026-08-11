@@ -16,7 +16,7 @@ The shared dispatcher accepts three policies:
 | --- | --- |
 | `cpu` | Always uses the existing CPU preprocessing path. |
 | `auto` | Opted-in models use OpenCL for NV12 DMA-BUF input and CPU for host/BGR input; non-opted-in models remain on CPU. |
-| `opencl` | Opted-in models require OpenCL and NV12 DMA-BUF input; non-opted-in models reject the configuration. |
+| `opencl` | Opted-in models require OpenCL and accept BGR8 host upload or NV12 DMA-BUF input; non-opted-in models reject the configuration. |
 
 `auto` emits one warning when OpenCL is disabled. If execution fails after
 external memory has been acquired or a kernel has been enqueued, the current
@@ -49,15 +49,17 @@ without introducing separate APIs:
 
 | `image_format` | `image_dma_fd` | OpenCL input |
 | --- | ---: | --- |
-| `BGR8` | `< 0` | CPU in `auto`; rejected by strict `opencl` |
+| `BGR8` | `< 0` | CPU in `auto`; host upload in strict `opencl` |
 | `NV12` | `< 0` | CPU in `auto`; rejected by strict `opencl` |
-| `BGR8` | `>= 0` | CPU in `auto`; rejected by strict `opencl` |
+| `BGR8` | `>= 0` | CPU in `auto`; host upload in strict `opencl` (`image_dma_fd` is ignored) |
 | `NV12` | `>= 0` | imported DMA-BUF NV12 images |
 
-The OpenCL backend deliberately has no BGR or host-buffer path. DMA-BUF import
-is the zero-copy input path on supported SpacemiT platforms. The fd, mapped
-layout, and MPP frame lease must remain valid for the duration of synchronous
-`Infer()`.
+Strict `opencl` uploads BGR8 pixels from the `cv::Mat` host buffer into a
+reusable OpenCL buffer. This path copies the input and completes the upload
+before the caller's host storage may be released. `auto` deliberately keeps
+BGR8 on CPU. DMA-BUF import is the zero-copy NV12 input path on supported
+SpacemiT platforms. The fd, mapped layout, and MPP frame lease must remain
+valid for the duration of synchronous `Infer()`.
 
 `MppFrameSource` exposes a move-only native frame lease for camera/video
 examples that use it. A compatible MPP NV12 frame remains owned until synchronous
@@ -68,8 +70,9 @@ incompatible MPP layouts are converted to owned BGR instead of being exposed as
 NV12 DMA input.
 
 The OpenCL backend performs crop, bilinear or nearest resize, letterbox or
-top-left padding, NV12 conversion, channel ordering, per-channel
-normalization, and NCHW packing in one fused kernel enqueue. It supports FP32
+top-left padding, channel ordering, per-channel normalization, and NCHW
+packing in one fused kernel enqueue after BGR upload or NV12 DMA-BUF import.
+It also performs NV12 conversion in the fused NV12 kernels. It supports FP32
 and FP16 output; current model preprocess specs request FP32 tensors and batch
 size 1. In `auto`, a model whose input tensor has a larger fixed batch stays on
 CPU; strict `opencl` rejects it. NV12 conversion follows OpenCV's BT.601

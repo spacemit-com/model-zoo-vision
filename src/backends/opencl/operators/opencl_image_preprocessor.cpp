@@ -258,7 +258,10 @@ private:
             clEnqueueWriteBufferRect(
                 queue_.get(),
                 bgr_input_buffer_.get(),
-                CL_FALSE,
+                // The source belongs to the caller. Complete the upload
+                // before any later operation can throw and unwind the
+                // cv::Mat that owns input.image.data.
+                CL_TRUE,
                 buffer_origin,
                 host_origin,
                 region,

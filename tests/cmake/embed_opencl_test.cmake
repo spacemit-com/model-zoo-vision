@@ -53,6 +53,14 @@ file(READ "${image_preprocess_output}" image_preprocess_generated)
 foreach(kernel_name
     preprocess_nv12_images_f32
     preprocess_nv12_images_f16
+    preprocess_nv12_images_fast_f32
+    preprocess_nv12_images_fast_f16
+    preprocess_nv12_images_identity_f32
+    preprocess_nv12_images_identity_f16
+    preprocess_bgr_buffer_f32
+    preprocess_bgr_buffer_f16
+    preprocess_bgr_buffer_identity_f32
+    preprocess_bgr_buffer_identity_f16
 )
     if(NOT image_preprocess_generated MATCHES "${kernel_name}")
         message(FATAL_ERROR
@@ -60,11 +68,8 @@ foreach(kernel_name
     endif()
 endforeach()
 foreach(unsupported_symbol
-    preprocess_bgr_buffer_f32
     preprocess_nv12_buffer_f32
-    preprocess_bgr_buffer_f16
     preprocess_nv12_buffer_f16
-    sample_bgr
     sample_nv12_buffer
     read_bgr_channel
     sample_plane

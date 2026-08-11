@@ -367,6 +367,15 @@ void BaseModel::configure_preprocess_backend(
     image_preprocess_dispatcher_.configure(backend);
 }
 
+void BaseModel::configure_preprocess_opencl_sampling(
+    const std::string& sampling)
+{
+    preprocess_opencl_sampling_ =
+        vision_operators::parse_preprocess_opencl_sampling(
+            sampling);
+    image_preprocess_dispatcher_.reset();
+}
+
 BaseModel::PreparedImage BaseModel::prepare_image(
     const ImageInput& input,
     const vision_operators::ImagePreprocessSpec& spec,
@@ -374,6 +383,8 @@ BaseModel::PreparedImage BaseModel::prepare_image(
 {
     const auto start = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec effective_spec = spec;
+    effective_spec.opencl_sampling =
+        preprocess_opencl_sampling_;
     if (!input_shape_.empty() && input_shape_[0] > 0) {
         effective_spec.batch_size =
             static_cast<int>(input_shape_[0]);

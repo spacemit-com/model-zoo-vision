@@ -172,6 +172,15 @@ public:
      */
     virtual void configure_preprocess_backend(const std::string& backend);
 
+    /**
+     * @brief Select OpenCL NV12 sampling behavior.
+     *
+     * "opencv_compatible" preserves conversion-before-resize semantics.
+     * "fast" resizes Y/UV first and performs one color conversion.
+     */
+    virtual void configure_preprocess_opencl_sampling(
+        const std::string& sampling);
+
 protected:
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;
@@ -221,6 +230,10 @@ protected:
 
 private:
     bool accelerated_image_preprocess_enabled_{false};
+    vision_operators::PreprocessOpenClSampling
+        preprocess_opencl_sampling_{
+            vision_operators::PreprocessOpenClSampling::
+                kOpenCvCompatible};
     vision_operators::ImagePreprocessDispatcher
         image_preprocess_dispatcher_;
 

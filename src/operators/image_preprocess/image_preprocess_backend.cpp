@@ -26,6 +26,20 @@ PreprocessBackendPolicy parse_preprocess_backend_policy(
         "preprocess.backend must be cpu, auto, or opencl");
 }
 
+PreprocessOpenClSampling parse_preprocess_opencl_sampling(
+    std::string_view value)
+{
+    if (value == "opencv_compatible") {
+        return PreprocessOpenClSampling::kOpenCvCompatible;
+    }
+    if (value == "fast") {
+        return PreprocessOpenClSampling::kFast;
+    }
+    throw std::invalid_argument(
+        "preprocess.opencl_sampling must be "
+        "opencv_compatible or fast");
+}
+
 OpenClBackendState::OpenClBackendState(
     PreprocessBackendPolicy policy)
     : policy_(policy)

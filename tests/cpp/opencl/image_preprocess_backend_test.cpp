@@ -27,7 +27,9 @@ int main()
 {
     using vision_operators::OpenClBackendState;
     using vision_operators::PreprocessBackendPolicy;
+    using vision_operators::PreprocessOpenClSampling;
     using vision_operators::parse_preprocess_backend_policy;
+    using vision_operators::parse_preprocess_opencl_sampling;
 
     check(
         parse_preprocess_backend_policy("cpu") ==
@@ -51,6 +53,28 @@ int main()
             std::string::npos;
     }
     check(rejected_unknown, "unknown backend values are rejected");
+
+    check(
+        parse_preprocess_opencl_sampling(
+            "opencv_compatible") ==
+            PreprocessOpenClSampling::kOpenCvCompatible,
+        "opencv_compatible parses as compatible sampling");
+    check(
+        parse_preprocess_opencl_sampling("fast") ==
+            PreprocessOpenClSampling::kFast,
+        "fast parses as fast sampling");
+    bool rejected_unknown_sampling = false;
+    try {
+        (void)parse_preprocess_opencl_sampling("turbo");
+    } catch (const std::invalid_argument& error) {
+        rejected_unknown_sampling =
+            std::string(error.what()).find(
+                "opencv_compatible or fast") !=
+            std::string::npos;
+    }
+    check(
+        rejected_unknown_sampling,
+        "unknown OpenCL sampling values are rejected");
 
     OpenClBackendState cpu(PreprocessBackendPolicy::kCpu);
     check(!cpu.should_try_opencl(), "CPU policy never attempts OpenCL");
@@ -84,10 +108,10 @@ int main()
             "strict OpenCL policy attempts OpenCL");
     check(
         !strict.should_try_opencl_for_input(false, false),
-        "strict OpenCL rejects BGR host input");
+        "generic DMA selector excludes BGR host input");
     check(
         !strict.should_try_opencl_for_input(false, true),
-        "strict OpenCL rejects BGR DMA input");
+        "generic DMA selector excludes BGR DMA input");
     check(
         !strict.should_try_opencl_for_input(true, false),
         "strict OpenCL rejects NV12 host input");

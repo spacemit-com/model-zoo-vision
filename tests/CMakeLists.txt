@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(VISION_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+set(VISION_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 if(NOT TARGET vision)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -66,28 +66,37 @@ macro(configure_vision_cpp_test target_name source_file)
     endif()
 endmacro()
 
-configure_vision_cpp_test(vision_cpp_functional cpp_functional.cpp)
-configure_vision_cpp_test(vision_cpp_invalid_input cpp_invalid_input.cpp)
-configure_vision_cpp_test(vision_cpp_runtime_profile cpp_runtime_profile.cpp)
+configure_vision_cpp_test(
+    vision_cpp_functional
+    pr/cpp/cpp_functional.cpp
+)
+configure_vision_cpp_test(
+    vision_cpp_invalid_input
+    pr/cpp/cpp_invalid_input.cpp
+)
+configure_vision_cpp_test(
+    vision_cpp_runtime_profile
+    unit/core/cpp_runtime_profile.cpp
+)
 configure_vision_cpp_test(
     vision_extended_infer_contract_test
-    extended_infer_contract_test.cpp
+    unit/core/extended_infer_contract_test.cpp
 )
 configure_vision_cpp_test(
     vision_banet2d_postprocess_test
-    banet2d_postprocess_test.cpp
+    unit/models/banet2d_postprocess_test.cpp
 )
 configure_vision_cpp_test(
     vision_local_feature_models_test
-    local_feature_models_test.cpp
+    unit/models/local_feature_models_test.cpp
 )
 configure_vision_cpp_test(
     vision_single_object_tracker_contract_test
-    single_object_tracker_contract_test.cpp
+    unit/models/single_object_tracker_contract_test.cpp
 )
 configure_vision_cpp_test(
     vision_preprocess_backend_scope_test
-    preprocess_backend_scope_test.cpp
+    unit/preprocess/preprocess_backend_scope_test.cpp
 )
 target_include_directories(vision_extended_infer_contract_test PRIVATE
     ${VISION_ROOT}/src
@@ -142,7 +151,7 @@ target_compile_definitions(vision_preprocess_backend_scope_test PRIVATE
 
 configure_vision_cpp_test(
     vision_mpp_frame_api_test
-    mpp_frame_source_api_test.cpp
+    unit/mpp/mpp_frame_source_api_test.cpp
 )
 target_include_directories(vision_mpp_frame_api_test PRIVATE
     ${VISION_ROOT}/src/common/cpp
@@ -154,7 +163,7 @@ add_test(
 
 add_executable(
     vision_mpp_nv12_layout_test
-    mpp_nv12_layout_test.cpp
+    unit/mpp/mpp_nv12_layout_test.cpp
     ${VISION_ROOT}/src/common/cpp/mpp_nv12_layout.cpp
 )
 target_include_directories(vision_mpp_nv12_layout_test PRIVATE
@@ -167,7 +176,7 @@ add_test(
 
 add_executable(
     vision_opencl_geometry_test
-    opencl/image_preprocess_geometry_test.cpp
+    unit/preprocess/image_preprocess_geometry_test.cpp
     ${VISION_ROOT}/src/operators/image_preprocess/image_preprocess_geometry.cpp
 )
 target_include_directories(vision_opencl_geometry_test PRIVATE
@@ -180,7 +189,7 @@ add_test(
 
 add_executable(
     vision_preprocess_backend_test
-    opencl/image_preprocess_backend_test.cpp
+    unit/preprocess/image_preprocess_backend_test.cpp
     ${VISION_ROOT}/src/operators/image_preprocess/image_preprocess_backend.cpp
 )
 target_include_directories(vision_preprocess_backend_test PRIVATE
@@ -193,10 +202,11 @@ add_test(
 
 configure_vision_cpp_test(
     vision_preprocess_dispatcher_test
-    opencl/image_preprocess_dispatcher_test.cpp
+    unit/preprocess/image_preprocess_dispatcher_test.cpp
 )
 target_include_directories(vision_preprocess_dispatcher_test PRIVATE
     ${VISION_ROOT}/src
+    ${VISION_ROOT}/tests/support/opencl
 )
 target_compile_definitions(vision_preprocess_dispatcher_test PRIVATE
     VISION_WITH_OPENCL=$<BOOL:${VISION_WITH_OPENCL}>
@@ -208,7 +218,7 @@ add_test(
 
 configure_vision_cpp_test(
     vision_cpu_image_preprocessor_test
-    opencl/cpu_image_preprocessor_test.cpp
+    unit/preprocess/cpu_image_preprocessor_test.cpp
 )
 target_include_directories(vision_cpu_image_preprocessor_test PRIVATE
     ${VISION_ROOT}/src
@@ -241,11 +251,13 @@ add_test(
 if(VISION_WITH_OPENCL)
     configure_vision_cpp_test(
         vision_opencl_image_preprocess_golden_test
-        opencl/opencl_image_preprocess_golden_test.cpp
+        golden/opencl/image_preprocess_golden_test.cpp
     )
     target_include_directories(
         vision_opencl_image_preprocess_golden_test
-        PRIVATE ${VISION_ROOT}/src
+        PRIVATE
+            ${VISION_ROOT}/src
+            ${VISION_ROOT}/tests/support/opencl
     )
     add_test(
         NAME vision_opencl_image_preprocess_golden
@@ -254,7 +266,7 @@ if(VISION_WITH_OPENCL)
 
     add_executable(
         vision_opencl_program_cache_test
-        opencl/opencl_program_cache_test.cpp
+        unit/opencl/opencl_program_cache_test.cpp
     )
     target_link_libraries(
         vision_opencl_program_cache_test
@@ -271,7 +283,7 @@ if(VISION_WITH_OPENCL)
 
     add_executable(
         vision_opencl_memory_ownership_test
-        opencl/opencl_memory_ownership_test.cpp
+        unit/opencl/opencl_memory_ownership_test.cpp
     )
     target_link_libraries(
         vision_opencl_memory_ownership_test
@@ -310,3 +322,5 @@ install(TARGETS
     vision_cpp_runtime_profile
     RUNTIME DESTINATION bin
 )
+
+add_subdirectory(benchmarks)

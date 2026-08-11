@@ -22,6 +22,9 @@ test_env/
 modelzoo_vision.egg-info/
 /config/
 
+# Runtime test artifacts (created on demand by gate runners).
+/tests/output/
+
 # --- 模型与大数据（见大文件策略） ---
 *.onnx
 *.gguf

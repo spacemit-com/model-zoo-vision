@@ -11,7 +11,7 @@ tests:
     artifacts:
       - tests/output/cpp_functional.txt
     command: |
-      bash tests/cpp/run_cpp_tests.sh functional
+      bash tests/pr/cpp/run_cpp_tests.sh functional
 
   - name: vision-cpp-invalid-input
     description: Bad/missing/syntactically-invalid config path makes Create return null with a non-empty LastCreateError. Pure Create error path, no model, no crash, no hang.
@@ -20,7 +20,7 @@ tests:
     timeout_s: 180
     workdir: module
     command: |
-      bash tests/cpp/run_cpp_tests.sh invalid
+      bash tests/pr/cpp/run_cpp_tests.sh invalid
 
   - name: vision-python-invalid-input
     description: ModelFactory rejects missing config, missing class, bad class path, model URL and missing model file with the correct exception types; plus nms/letterbox smoke.
@@ -32,7 +32,17 @@ tests:
       install:
         - "-r tests/requirements.txt"
     command: |
-      pytest -q tests/pr/test_python_invalid_input.py
+      pytest -q tests/pr/python/test_python_invalid_input.py
+
+  # ---------- OpenCL/preprocess：相关改动手动执行，发布前强制执行 ----------
+  - name: vision-opencl-preprocess-golden
+    description: Build the OpenCL backend and compare BGR/NV12 preprocessing against CPU numerical golden outputs.
+    category: functional
+    scopes: [manual, release]
+    timeout_s: 600
+    workdir: module
+    command: |
+      bash tests/golden/run_opencl_preprocess_golden.sh
 
   # ---------- scheduled：性能采集 ----------
   - name: vision-infer-perf

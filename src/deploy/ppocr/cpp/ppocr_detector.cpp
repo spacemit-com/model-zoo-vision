@@ -24,10 +24,71 @@
 
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
 namespace vision_deploy {
+
+namespace {
+
+vision_operators::ImagePreprocessSpec make_ppocr_det_preprocess_spec(
+    int net_width,
+    int net_height,
+    int resized_width,
+    int resized_height)
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = net_width;
+    spec.output_height = net_height;
+    if (resized_width != net_width || resized_height != net_height) {
+        spec.resize_mode =
+            vision_operators::PreprocessResizeMode::kFitTopLeft;
+    }
+    spec.output_rgb = true;
+    spec.mean = {
+        0.485F * 255.0F,
+        0.456F * 255.0F,
+        0.406F * 255.0F};
+    spec.scale = {
+        1.0F / (0.229F * 255.0F),
+        1.0F / (0.224F * 255.0F),
+        1.0F / (0.225F * 255.0F)};
+    return spec;
+}
+
+vision_operators::CpuChannelTransform make_ppocr_det_cpu_transform()
+{
+    vision_operators::CpuChannelTransform transform;
+    transform.input_scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    transform.mean = {0.485F, 0.456F, 0.406F};
+    transform.output_scale = {
+        1.0F / 0.229F,
+        1.0F / 0.224F,
+        1.0F / 0.225F};
+    return transform;
+}
+
+vision_operators::ImagePreprocessSpec make_ppocr_rec_preprocess_spec(
+    int width,
+    int height)
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = width;
+    spec.output_height = height;
+    spec.output_rgb = true;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.scale = {
+        1.0F / 127.5F,
+        1.0F / 127.5F,
+        1.0F / 127.5F};
+    return spec;
+}
+
+}  // namespace
 
 std::unique_ptr<vision_core::BaseModel> PPOCRDetector::create(const YAML::Node& config, bool lazy_load) {
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
@@ -199,7 +260,7 @@ void PPOCRDetector::load_model() {
 // Detection (DBNet)
 // ---------------------------------------------------------------------------
 
-std::vector<float> PPOCRDetector::det_preprocess(const cv::Mat& image, int* net_h, int* net_w) {
+cv::Mat PPOCRDetector::det_preprocess(const cv::Mat& image, int* net_h, int* net_w) {
     const int ori_h = image.rows;
     const int ori_w = image.cols;
 
@@ -240,35 +301,11 @@ std::vector<float> PPOCRDetector::det_preprocess(const cv::Mat& image, int* net_
     *net_h = canvas_h;
     *net_w = canvas_w;
 
-    // Resize+pad on uint8 first (cheaper than float), then blobFromImage for
-    // BGR->RGB /255 / HWC->CHW, then ImageNet mean/std on CHW.
-    cv::Mat resized;
-    cv::resize(image, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
-    cv::Mat padded;
-    if (canvas_h == rh && canvas_w == rw) {
-        padded = resized;
-    } else {
-        padded = cv::Mat::zeros(canvas_h, canvas_w, CV_8UC3);
-        resized.copyTo(padded(cv::Rect(0, 0, rw, rh)));
-    }
-
-    cv::Mat blob = cv::dnn::blobFromImage(
-        padded, 1.0 / 255.0, cv::Size(), cv::Scalar(),
-        /*swapRB=*/true, /*crop=*/false, CV_32F);
-
-    static const float mean[3] = {0.485f, 0.456f, 0.406f};
-    static const float std_val[3] = {0.229f, 0.224f, 0.225f};
-    const int plane = canvas_h * canvas_w;
-    float* blob_data = blob.ptr<float>();
-    for (int c = 0; c < 3; ++c) {
-        float* ch = blob_data + static_cast<size_t>(c) * plane;
-        const float inv_std = 1.0f / std_val[c];
-        for (int i = 0; i < plane; ++i) {
-            ch[i] = (ch[i] - mean[c]) * inv_std;
-        }
-    }
-
-    return std::vector<float>(blob_data, blob_data + static_cast<size_t>(3) * plane);
+    return vision_operators::preprocess_bgr_to_nchw(
+        image,
+        make_ppocr_det_preprocess_spec(
+            canvas_w, canvas_h, rw, rh),
+        make_ppocr_det_cpu_transform());
 }
 
 std::vector<cv::Point> PPOCRDetector::unclip(const std::vector<cv::Point>& poly) {
@@ -561,10 +598,12 @@ std::string PPOCRDetector::rec_run(
     }
 
     cv::Mat canvas = rec_make_canvas(crop);
-    // (x - 127.5) / 127.5; mean order is (R,G,B) with swapRB.
-    cv::Mat blob = cv::dnn::blobFromImage(
-        canvas, 1.0 / 127.5, cv::Size(), cv::Scalar(127.5, 127.5, 127.5),
-        /*swapRB=*/true, /*crop=*/false, CV_32F);
+    // (x - 127.5) / 127.5 with BGR-to-RGB and NCHW packing fused into the
+    // final tensor write. This path runs once for every detected text box.
+    cv::Mat blob = vision_operators::preprocess_bgr_to_nchw(
+        canvas,
+        make_ppocr_rec_preprocess_spec(
+            rec_img_w_max_, rec_img_h_));
 
     const int plane = rec_img_h_ * rec_img_w_max_;
     const std::vector<int64_t> shape = {1, 3, rec_img_h_, rec_img_w_max_};
@@ -650,30 +689,16 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
     }
     det_resize_h_ = resize_h;
     det_resize_w_ = resize_w;
-    vision_operators::ImagePreprocessSpec spec;
-    spec.output_width = net_w;
-    spec.output_height = net_h;
-    if (resize_h != net_h || resize_w != net_w) {
-        spec.resize_mode =
-            vision_operators::PreprocessResizeMode::kFitTopLeft;
-    }
-    spec.output_rgb = true;
-    spec.mean = {
-        0.485F * 255.0F,
-        0.456F * 255.0F,
-        0.406F * 255.0F};
-    spec.scale = {
-        1.0F / (0.229F * 255.0F),
-        1.0F / (0.224F * 255.0F),
-        1.0F / (0.225F * 255.0F)};
+    const vision_operators::ImagePreprocessSpec spec =
+        make_ppocr_det_preprocess_spec(
+            net_w, net_h, resize_w, resize_h);
     auto prepared = prepare_image(
         input, spec,
         [this, net_h, net_w](const cv::Mat& bgr) {
             int actual_height = 0;
             int actual_width = 0;
-            std::vector<float> values =
-                det_preprocess(
-                    bgr, &actual_height, &actual_width);
+            cv::Mat tensor = det_preprocess(
+                bgr, &actual_height, &actual_width);
             if (actual_height != net_h || actual_width != net_w) {
                 throw std::runtime_error(
                     "PPOCRDetector: CPU preprocessing shape "
@@ -681,16 +706,12 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
             }
             const size_t expected_elements =
                 static_cast<size_t>(3) * net_h * net_w;
-            if (values.size() != expected_elements) {
+            if (tensor.type() != CV_32F ||
+                tensor.total() != expected_elements) {
                 throw std::runtime_error(
                     "PPOCRDetector: CPU preprocessing tensor "
                     "has an unexpected element count");
             }
-            const int shape[] = {1, 3, net_h, net_w};
-            cv::Mat tensor(4, shape, CV_32F);
-            std::copy(
-                values.begin(), values.end(),
-                tensor.ptr<float>());
             return tensor;
         });
     const auto t_pre1 = std::chrono::steady_clock::now();

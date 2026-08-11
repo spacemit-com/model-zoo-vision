@@ -78,7 +78,7 @@ private:
     // --- detection (DBNet) ---
     // When det_input_h/w > 0: aspect-preserving bilinear resize, then pad to HxW.
     // Sets *net_h/*net_w to the tensor shape; stores content size in det_resize_*.
-    std::vector<float> det_preprocess(const cv::Mat& image, int* net_h, int* net_w);
+    cv::Mat det_preprocess(const cv::Mat& image, int* net_h, int* net_w);
     std::vector<TextBox> db_postprocess(const cv::Mat& prob_map, int ori_h, int ori_w,
                                         int net_h, int net_w);
     std::vector<cv::Point> unclip(const std::vector<cv::Point>& poly);

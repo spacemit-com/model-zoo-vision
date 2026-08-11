@@ -18,10 +18,36 @@
 #include <vector>
 
 #include "common.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "operators/image_preprocess/image_preprocess_geometry.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
 namespace vision_deploy {
+
+namespace {
+
+vision_operators::ImagePreprocessSpec make_scrfd_preprocess_spec(
+    int input_width,
+    int input_height)
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_width;
+    spec.output_height = input_height;
+    spec.resize_mode =
+        vision_operators::PreprocessResizeMode::kFitTopLeft;
+    spec.resize_rounding =
+        vision_operators::PreprocessResizeRounding::kTruncate;
+    spec.output_rgb = true;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.scale = {
+        1.0F / 128.0F,
+        1.0F / 128.0F,
+        1.0F / 128.0F};
+    return spec;
+}
+
+}  // namespace
 
 std::unique_ptr<vision_core::BaseModel> ScrfdDetector::create(const YAML::Node& config, bool lazy_load) {
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
@@ -117,39 +143,21 @@ cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    const float im_ratio = static_cast<float>(image.rows) / static_cast<float>(image.cols);
-    const float model_ratio = static_cast<float>(input_height_) / static_cast<float>(input_width_);
-
-    int new_width = 0;
-    int new_height = 0;
-    if (im_ratio > model_ratio) {
-        new_height = input_height_;
-        new_width = static_cast<int>(static_cast<float>(new_height) / im_ratio);
-    } else {
-        new_width = input_width_;
-        new_height = static_cast<int>(static_cast<float>(new_width) * im_ratio);
-    }
-
     if (input_width_ <= 0 || input_height_ <= 0 || image.cols <= 0 || image.rows <= 0) {
         throw std::runtime_error("SCRFD got invalid input size for resize");
     }
-    new_width = std::max(1, std::min(new_width, input_width_));
-    new_height = std::max(1, std::min(new_height, input_height_));
-
-    last_det_scale_ = static_cast<float>(new_height) / static_cast<float>(image.rows);
-
-    cv::Mat resized;
-    cv::resize(image, resized, cv::Size(new_width, new_height));
-
-    cv::Mat padded(input_height_, input_width_, image.type(), cv::Scalar(0, 0, 0));
-    resized.copyTo(padded(cv::Rect(0, 0, new_width, new_height)));
-
-    cv::Mat rgb;
-    cv::cvtColor(padded, rgb, cv::COLOR_BGR2RGB);
-    return cv::dnn::blobFromImage(rgb, 1.0 / 128.0,
-                                cv::Size(input_width_, input_height_),
-                                cv::Scalar(127.5, 127.5, 127.5),
-                                false, false, CV_32F);
+    const vision_operators::ImagePreprocessSpec spec =
+        make_scrfd_preprocess_spec(input_width_, input_height_);
+    const vision_operators::FitResizeDimensions resized =
+        vision_operators::calculate_fit_resize_dimensions(
+            static_cast<float>(image.cols),
+            static_cast<float>(image.rows),
+            input_width_,
+            input_height_,
+            spec.resize_rounding);
+    last_det_scale_ =
+        static_cast<float>(resized.height) / image.rows;
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,

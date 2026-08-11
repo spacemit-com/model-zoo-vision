@@ -18,7 +18,6 @@
 #include <variant>
 #include <vector>
 
-#include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
@@ -263,24 +262,13 @@ vision::LocalFeatures SuperPointExtractor::extract(
     }
     const int input_height = static_cast<int>(input_shape_[2]);
     const int input_width = static_cast<int>(input_shape_[3]);
-    cv::Mat resized;
-    cv::resize(
-        bgr,
-        resized,
-        cv::Size(input_width, input_height),
-        0.0,
-        0.0,
-        cv::INTER_LINEAR);
-    cv::Mat float_bgr;
-    resized.convertTo(float_bgr, CV_32FC3, 1.0 / 255.0);
-    std::vector<cv::Mat> channels;
-    cv::split(float_bgr, channels);
-    cv::Mat gray =
-        channels[2] * 0.299f +
-        channels[1] * 0.587f +
-        channels[0] * 0.114f;
-    cv::Mat tensor =
-        gray.isContinuous() ? gray.reshape(1, 1) : gray.clone().reshape(1, 1);
+    vision_operators::ImagePreprocessSpec preprocess_spec;
+    preprocess_spec.output_width = input_width;
+    preprocess_spec.output_height = input_height;
+    vision_operators::CpuGrayscaleTransform grayscale_transform;
+    grayscale_transform.input_scale = 1.0F / 255.0F;
+    cv::Mat tensor = vision_operators::preprocess_bgr_to_gray_nchw(
+        bgr, preprocess_spec, grayscale_transform);
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(

@@ -23,6 +23,7 @@
 
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "operators/image_preprocess/image_preprocess_geometry.h"
 
 namespace vision_deploy {
@@ -34,6 +35,43 @@ int positive_dim(int64_t d, int fallback) {
         return static_cast<int>(d);
     }
     return fallback;
+}
+
+vision_operators::ImagePreprocessSpec make_pp_liteseg_preprocess_spec(
+    int input_width,
+    int input_height,
+    float mean,
+    float standard_deviation)
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_width;
+    spec.output_height = input_height;
+    spec.resize_mode =
+        vision_operators::PreprocessResizeMode::kFitTopLeft;
+    spec.output_rgb = true;
+    spec.mean = {mean * 255.0F, mean * 255.0F, mean * 255.0F};
+    spec.scale = {
+        1.0F / (255.0F * standard_deviation),
+        1.0F / (255.0F * standard_deviation),
+        1.0F / (255.0F * standard_deviation)};
+    return spec;
+}
+
+vision_operators::CpuChannelTransform make_pp_liteseg_cpu_transform(
+    float mean,
+    float standard_deviation)
+{
+    vision_operators::CpuChannelTransform transform;
+    transform.input_scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    transform.mean = {mean, mean, mean};
+    transform.output_scale = {
+        1.0F / standard_deviation,
+        1.0F / standard_deviation,
+        1.0F / standard_deviation};
+    return transform;
 }
 
 }  // namespace
@@ -114,30 +152,12 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
     valid_h = new_h;
     valid_w = new_w;
 
-    // Resize on uint8 first — much cheaper than resizing float32
-    cv::Mat resized;
-    cv::resize(image, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
-
-    cv::Mat padded = cv::Mat::zeros(in_h, in_w, CV_8UC3);
-    resized.copyTo(padded(cv::Rect(0, 0, new_w, new_h)));
-
-    // blobFromImage: BGR->RGB (swapRB=true), float conversion, 1/255 scale,
-    // and HWC->CHW in one optimized call
-    cv::Mat blob = cv::dnn::blobFromImage(padded, 1.0 / 255.0,
-                                            cv::Size(), cv::Scalar(),
-                                            true, false, CV_32F);
-
-    // Per-channel mean/std normalization directly on contiguous CHW memory
-    const int channel_size = in_h * in_w;
-    float* blob_data = blob.ptr<float>();
-    for (int c = 0; c < 3; ++c) {
-        float* ch = blob_data + c * channel_size;
-        for (int i = 0; i < channel_size; ++i) {
-            ch[i] = (ch[i] - mean_val_) / std_val_;
-        }
-    }
-
-    return blob;
+    return vision_operators::preprocess_bgr_to_nchw(
+        image,
+        make_pp_liteseg_preprocess_spec(
+            in_w, in_h, mean_val_, std_val_),
+        make_pp_liteseg_cpu_transform(
+            mean_val_, std_val_));
 }
 
 cv::Mat PPLiteSeg::postprocess_to_label_map(std::vector<Ort::Value>& outputs,
@@ -315,20 +335,9 @@ vision_common::SegmentationResultList PPLiteSeg::segment_input(
     int valid_h = valid_dimensions.height;
     int valid_w = valid_dimensions.width;
     const auto t_pre0 = std::chrono::steady_clock::now();
-    vision_operators::ImagePreprocessSpec spec;
-    spec.output_width = in_w;
-    spec.output_height = in_h;
-    spec.resize_mode =
-        vision_operators::PreprocessResizeMode::kFitTopLeft;
-    spec.output_rgb = true;
-    spec.mean = {
-        mean_val_ * 255.0F,
-        mean_val_ * 255.0F,
-        mean_val_ * 255.0F};
-    spec.scale = {
-        1.0F / (255.0F * std_val_),
-        1.0F / (255.0F * std_val_),
-        1.0F / (255.0F * std_val_)};
+    const vision_operators::ImagePreprocessSpec spec =
+        make_pp_liteseg_preprocess_spec(
+            in_w, in_h, mean_val_, std_val_);
     auto prepared = prepare_image(
         input, spec,
         [this, &valid_h, &valid_w](const cv::Mat& bgr) {

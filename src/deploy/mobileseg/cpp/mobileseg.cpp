@@ -14,10 +14,10 @@
 #include <variant>
 #include <vector>
 
-#include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -44,6 +44,26 @@ bool shape_is_positive(
         }
     }
     return true;
+}
+
+vision_operators::ImagePreprocessSpec make_mobileseg_preprocess_spec(
+    int input_width,
+    int input_height)
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_width;
+    spec.output_height = input_height;
+    spec.resize_mode =
+        vision_operators::PreprocessResizeMode::kStretch;
+    spec.output_rgb = true;
+    spec.interpolation =
+        vision_operators::PreprocessInterpolation::kBilinear;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.scale = {
+        1.0F / 127.5F,
+        1.0F / 127.5F,
+        1.0F / 127.5F};
+    return spec;
 }
 
 }  // namespace
@@ -254,22 +274,10 @@ cv::Mat MobileSeg::preprocess(const cv::Mat& bgr) const {
             "MobileSeg expects a non-empty BGR8 image");
     }
 
-    cv::Mat resized;
-    cv::resize(
+    return vision_operators::preprocess_bgr_to_nchw(
         bgr,
-        resized,
-        cv::Size(input_width_, input_height_),
-        0.0,
-        0.0,
-        cv::INTER_LINEAR);
-    return cv::dnn::blobFromImage(
-        resized,
-        1.0 / 127.5,
-        cv::Size(),
-        cv::Scalar(127.5, 127.5, 127.5),
-        true,
-        false,
-        CV_32F);
+        make_mobileseg_preprocess_spec(
+            input_width_, input_height_));
 }
 
 std::vector<vision::Segmentation> MobileSeg::segment(
@@ -283,19 +291,9 @@ std::vector<vision::Segmentation> MobileSeg::segment(
         std::chrono::steady_clock::now();
     const auto preprocess_begin =
         std::chrono::steady_clock::now();
-    vision_operators::ImagePreprocessSpec spec;
-    spec.output_width = input_width_;
-    spec.output_height = input_height_;
-    spec.resize_mode =
-        vision_operators::PreprocessResizeMode::kStretch;
-    spec.output_rgb = true;
-    spec.interpolation =
-        vision_operators::PreprocessInterpolation::kBilinear;
-    spec.mean = {127.5F, 127.5F, 127.5F};
-    spec.scale = {
-        1.0F / 127.5F,
-        1.0F / 127.5F,
-        1.0F / 127.5F};
+    const vision_operators::ImagePreprocessSpec spec =
+        make_mobileseg_preprocess_spec(
+            input_width_, input_height_);
     auto prepared = prepare_image(
         input,
         spec,

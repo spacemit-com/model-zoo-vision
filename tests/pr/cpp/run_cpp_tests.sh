@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Build (via mm) and run C++ vision_service.h PR tests.
-# Usage: bash tests/cpp/run_cpp_tests.sh functional|invalid
+# Usage: bash tests/pr/cpp/run_cpp_tests.sh functional|invalid
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ if [[ "$MODE" != "functional" && "$MODE" != "invalid" ]]; then
   exit 1
 fi
 
-MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$MODULE_ROOT"
 
 SDK_ROOT="${SROBOTIS_ROOT:-${SPACEMIT_SDK_ROOT:-}}"
@@ -43,7 +43,7 @@ find_test_binary() {
   if [[ -n "$STAGING" ]]; then
     candidates+=("${STAGING}/bin/${name}")
   fi
-  candidates+=("${MODULE_ROOT}/build/tests/cpp/${name}")
+  candidates+=("${MODULE_ROOT}/build/tests/${name}")
   for path in "${candidates[@]}"; do
     if [[ -x "$path" ]]; then
       echo "$path"

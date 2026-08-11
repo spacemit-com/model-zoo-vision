@@ -200,11 +200,9 @@ void YoloWorldDetector::preprocess(const cv::Mat& image, cv::Mat& blob) {
     letterbox_ox_ = static_cast<int>(std::round((dst_w - new_w) / 2.0f - 0.1));
     letterbox_oy_ = static_cast<int>(std::round((dst_h - new_h) / 2.0f - 0.1));
 
-    // Reuse the shared letterbox (pad 114, same as the repo's YOLO family).
-    cv::Mat padded = vision_common::letterbox(image, std::make_pair(dst_h, dst_w));
-
-    blob = cv::dnn::blobFromImage(padded, 1.0 / 255.0, cv::Size(dst_w, dst_h),
-        cv::Scalar(0, 0, 0), true, false, CV_32F);
+    blob = vision_common::letterbox_to_nchw_rgb_blob(
+        image,
+        std::make_pair(dst_h, dst_w));
 }
 
 vision_common::DetectionResultList YoloWorldDetector::postprocess(

@@ -77,16 +77,9 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
     const int inputWidth = static_cast<int>(input_shape_[3]);   // width
     const int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
-    // letterbox() in common converts BGR->RGB and pads to requested shape
-    cv::Mat padded = vision_common::letterbox(image, std::make_pair(inputHeight, inputWidth));
-    return cv::dnn::blobFromImage(
-        padded,
-        1.0 / 255.0,
-        cv::Size(inputWidth, inputHeight),
-        cv::Scalar(0, 0, 0),
-        true,   // swapRB (already RGB, but keep consistent with other deploys)
-        false,  // crop
-        CV_32F);
+    return vision_common::letterbox_to_nchw_rgb_blob(
+        image,
+        std::make_pair(inputHeight, inputWidth));
 }
 
 vision_common::DetectionResultList YOLOv5GestureDetector::detect(

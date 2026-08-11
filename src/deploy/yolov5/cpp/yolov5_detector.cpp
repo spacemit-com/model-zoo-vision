@@ -83,9 +83,9 @@ cv::Mat YOLOv5Detector::preprocess(const cv::Mat& image) {
     int input_width = static_cast<int>(input_shape_[3]);
     int input_height = static_cast<int>(input_shape_[2]);
 
-    cv::Mat padded = vision_common::letterbox(image, std::make_pair(input_height, input_width));
-    return cv::dnn::blobFromImage(
-        padded, 1.0f / 255.0f, cv::Size(input_width, input_height), cv::Scalar(0, 0, 0), true, false, CV_32F);
+    return vision_common::letterbox_to_nchw_rgb_blob(
+        image,
+        std::make_pair(input_height, input_width));
 }
 
 vision_common::DetectionResultList YOLOv5Detector::detect(

@@ -88,14 +88,10 @@ cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image) {
     int inputWidth = static_cast<int>(input_shape_[3]);
     int inputHeight = static_cast<int>(input_shape_[2]);
 
-    // Use common letterbox function (similar to yolov8_detector.cpp)
-    cv::Mat padded = vision_common::letterbox(image,
-                                            std::make_pair(inputHeight, inputWidth),
-                                            cv::Scalar(0, 0, 0));
-
-    return cv::dnn::blobFromImage(padded, 1.0/255.0,
-        cv::Size(inputWidth, inputHeight),
-        cv::Scalar(0, 0, 0), true, false, CV_32F);
+    return vision_common::letterbox_to_nchw_rgb_blob(
+        image,
+        std::make_pair(inputHeight, inputWidth),
+        cv::Scalar(0, 0, 0));
 }
 
 

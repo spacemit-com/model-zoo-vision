@@ -13,7 +13,7 @@ MobileCLIP2 图文双塔 embedding（256 视觉 + 77 token 文本，768 维）�
 bash examples/mobileclip2/scripts/download_models.sh
 ```
 
-归档路径：`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2/s3/`
+归档路径：`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2_s3/`
 
 **测试图片**：默认 `~/.cache/assets/image/007_dog.jpg`。在根目录执行 `bash scripts/download_assets.sh`。
 

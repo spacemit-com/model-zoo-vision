@@ -5,7 +5,7 @@ set -e
 CACHE_BASE="${HOME:-/tmp}/.cache/models/vision"
 MODEL_DIR="$CACHE_BASE/mobileclip2/s3"
 mkdir -p "$MODEL_DIR"
-BASE_URL="https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2/s3"
+BASE_URL="https://archive.spacemit.com/spacemit-ai/model_zoo/vision/mobileclip2_s3"
 
 download() {
   name="$1"

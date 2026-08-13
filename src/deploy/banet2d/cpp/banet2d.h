@@ -63,9 +63,6 @@ public:
         bool lazy_load);
 
 private:
-    cv::Mat preprocess_one(
-        const cv::Mat& bgr,
-        const BANetLetterbox& geometry) const;
     vision::Disparity infer_stereo(
         const vision_core::StereoImageInput& input);
 

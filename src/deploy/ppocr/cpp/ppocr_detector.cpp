@@ -72,22 +72,6 @@ vision_operators::CpuChannelTransform make_ppocr_det_cpu_transform()
     return transform;
 }
 
-vision_operators::ImagePreprocessSpec make_ppocr_rec_preprocess_spec(
-    int width,
-    int height)
-{
-    vision_operators::ImagePreprocessSpec spec;
-    spec.output_width = width;
-    spec.output_height = height;
-    spec.output_rgb = true;
-    spec.mean = {127.5F, 127.5F, 127.5F};
-    spec.scale = {
-        1.0F / 127.5F,
-        1.0F / 127.5F,
-        1.0F / 127.5F};
-    return spec;
-}
-
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> PPOCRDetector::create(const YAML::Node& config, bool lazy_load) {
@@ -545,20 +529,71 @@ cv::Mat PPOCRDetector::crop_text_box(const cv::Mat& image, const std::vector<cv:
     return crop;
 }
 
-cv::Mat PPOCRDetector::rec_make_canvas(const cv::Mat& crop) const {
-    // Keep aspect ratio, pad to [rec_img_h_ x rec_img_w_max_] with gray 127
-    // (PaddleOCR RecResizeImg).
-    cv::Mat canvas(rec_img_h_, rec_img_w_max_, CV_8UC3, cv::Scalar(127, 127, 127));
-    if (crop.empty() || crop.rows <= 0 || crop.cols <= 0) {
-        return canvas;
+static cv::Mat preprocess_ppocr_recognition_crop(
+    const cv::Mat& crop,
+    int output_width,
+    int output_height)
+{
+    if (crop.empty() || crop.type() != CV_8UC3) {
+        throw std::invalid_argument(
+            "PPOCRDetector recognition expects a non-empty BGR8 crop");
     }
-    int target_w = std::max(1, static_cast<int>(
-        static_cast<float>(crop.cols) / static_cast<float>(crop.rows) * rec_img_h_));
-    target_w = std::min(target_w, rec_img_w_max_);
+    if (output_width <= 0 || output_height <= 0) {
+        throw std::invalid_argument(
+            "PPOCRDetector recognition dimensions must be positive");
+    }
+
+    // Keep the reference RecResizeImg truncation and width clamp. Wide text
+    // is resized to the full recognition height, just as the former canvas
+    // path did.
+    int target_width = std::max(
+        1,
+        static_cast<int>(
+            static_cast<float>(crop.cols) /
+            static_cast<float>(crop.rows) * output_height));
+    target_width = std::min(target_width, output_width);
     cv::Mat resized;
-    cv::resize(crop, resized, cv::Size(target_w, rec_img_h_), 0, 0, cv::INTER_LINEAR);
-    resized.copyTo(canvas(cv::Rect(0, 0, target_w, rec_img_h_)));
-    return canvas;
+    cv::resize(
+        crop,
+        resized,
+        cv::Size(target_width, output_height),
+        0.0,
+        0.0,
+        cv::INTER_LINEAR);
+
+    const int dimensions[] = {
+        1, 3, output_height, output_width};
+    cv::Mat tensor(4, dimensions, CV_32F);
+    const size_t plane_size =
+        static_cast<size_t>(output_height) * output_width;
+    float* red = tensor.ptr<float>();
+    float* green = red + plane_size;
+    float* blue = green + plane_size;
+    constexpr float kMean = 127.5F;
+    constexpr float kScale = 1.0F / 127.5F;
+    const float padding = (127.0F - kMean) * kScale;
+    std::fill(red, red + plane_size, padding);
+    std::fill(green, green + plane_size, padding);
+    std::fill(blue, blue + plane_size, padding);
+
+    // Fuse BGR-to-RGB, normalization and HWC-to-NCHW packing into the final
+    // tensor write; no full-size padded BGR canvas is created.
+    for (int y = 0; y < output_height; ++y) {
+        const uint8_t* source = resized.ptr<uint8_t>(y);
+        const size_t row_offset =
+            static_cast<size_t>(y) * output_width;
+        for (int x = 0; x < target_width; ++x) {
+            const uint8_t* pixel = source + x * 3;
+            const size_t index = row_offset + x;
+            red[index] =
+                (static_cast<float>(pixel[2]) - kMean) * kScale;
+            green[index] =
+                (static_cast<float>(pixel[1]) - kMean) * kScale;
+            blue[index] =
+                (static_cast<float>(pixel[0]) - kMean) * kScale;
+        }
+    }
+    return tensor;
 }
 
 std::string PPOCRDetector::ctc_decode(
@@ -597,13 +632,8 @@ std::string PPOCRDetector::rec_run(
         return "";
     }
 
-    cv::Mat canvas = rec_make_canvas(crop);
-    // (x - 127.5) / 127.5 with BGR-to-RGB and NCHW packing fused into the
-    // final tensor write. This path runs once for every detected text box.
-    cv::Mat blob = vision_operators::preprocess_bgr_to_nchw(
-        canvas,
-        make_ppocr_rec_preprocess_spec(
-            rec_img_w_max_, rec_img_h_));
+    cv::Mat blob = preprocess_ppocr_recognition_crop(
+        crop, rec_img_w_max_, rec_img_h_);
 
     const int plane = rec_img_h_ * rec_img_w_max_;
     const std::vector<int64_t> shape = {1, 3, rec_img_h_, rec_img_w_max_};

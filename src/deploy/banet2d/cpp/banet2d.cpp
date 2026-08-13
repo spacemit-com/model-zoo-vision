@@ -6,9 +6,10 @@
 #include "banet2d.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
-#include <cstring>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -16,7 +17,6 @@
 #include <variant>
 #include <vector>
 
-#include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 
@@ -25,6 +25,69 @@
 #include "vision_model_factory.h"
 
 namespace vision_deploy {
+
+namespace {
+
+void preprocess_banet_image(
+    const cv::Mat& bgr,
+    const BANetLetterbox& geometry,
+    float* output)
+{
+    cv::Mat resized;
+    cv::resize(
+        bgr,
+        resized,
+        cv::Size(
+            geometry.resized_width,
+            geometry.resized_height),
+        0.0,
+        0.0,
+        cv::INTER_LINEAR);
+
+    const size_t plane_size =
+        static_cast<size_t>(geometry.output_width) *
+        geometry.output_height;
+    float* red = output;
+    float* green = output + plane_size;
+    float* blue = output + plane_size * 2U;
+    const int content_right =
+        geometry.pad_left + geometry.resized_width;
+
+    // Match copyMakeBorder(BORDER_REPLICATE) followed by blobFromImage with
+    // swapRB=true, but write directly into the model's RGB NCHW batch.
+    for (int y = 0; y < geometry.output_height; ++y) {
+        const int source_y = std::clamp(
+            y - geometry.pad_top,
+            0,
+            geometry.resized_height - 1);
+        const uint8_t* source = resized.ptr<uint8_t>(source_y);
+        const size_t row_offset =
+            static_cast<size_t>(y) * geometry.output_width;
+
+        const auto write_pixel = [&](int x, const uint8_t* pixel) {
+            const size_t index = row_offset + x;
+            red[index] = static_cast<float>(pixel[2]);
+            green[index] = static_cast<float>(pixel[1]);
+            blue[index] = static_cast<float>(pixel[0]);
+        };
+        for (int x = 0; x < geometry.pad_left; ++x) {
+            write_pixel(x, source);
+        }
+        for (int x = 0; x < geometry.resized_width; ++x) {
+            write_pixel(geometry.pad_left + x, source + x * 3);
+        }
+        const uint8_t* last_pixel =
+            source + (geometry.resized_width - 1) * 3;
+        for (
+            int x = content_right;
+            x < geometry.output_width;
+            ++x) {
+            write_pixel(x, last_pixel);
+        }
+    }
+}
+
+}  // namespace
 
 BANetLetterbox make_banet_letterbox(
     int input_width,
@@ -99,6 +162,38 @@ cv::Mat restore_banet_disparity(
     return restored;
 }
 
+static cv::Mat preprocess_banet_stereo(
+    const cv::Mat& left,
+    const cv::Mat& right,
+    const BANetLetterbox& geometry)
+{
+    if (left.empty() || left.type() != CV_8UC3 ||
+        right.empty() || right.type() != CV_8UC3) {
+        throw std::invalid_argument(
+            "BANet2D expects non-empty BGR8 stereo images");
+    }
+    const size_t image_values =
+        static_cast<size_t>(3) * geometry.output_height *
+        geometry.output_width;
+    const int batch_dimensions[] = {
+        2, 3, geometry.output_height, geometry.output_width};
+    cv::Mat batch(4, batch_dimensions, CV_32F);
+    const std::array<cv::Mat, 2> images = {left, right};
+    cv::parallel_for_(
+        cv::Range(0, 2),
+        [&](const cv::Range& range) {
+            for (int index = range.start; index < range.end; ++index) {
+                preprocess_banet_image(
+                    images[static_cast<size_t>(index)],
+                    geometry,
+                    batch.ptr<float>() +
+                        static_cast<size_t>(index) * image_values);
+            }
+        },
+        2.0);
+    return batch;
+}
+
 BANet2D::BANet2D(
     const std::string& model_path,
     int num_threads,
@@ -151,42 +246,6 @@ void BANet2D::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat BANet2D::preprocess_one(
-    const cv::Mat& bgr,
-    const BANetLetterbox& geometry) const {
-    if (bgr.empty() || bgr.type() != CV_8UC3) {
-        throw std::invalid_argument(
-            "BANet2D expects a non-empty BGR8 image");
-    }
-    cv::Mat resized;
-    cv::resize(
-        bgr,
-        resized,
-        cv::Size(
-            geometry.resized_width,
-            geometry.resized_height),
-        0.0,
-        0.0,
-        cv::INTER_LINEAR);
-    cv::Mat padded;
-    cv::copyMakeBorder(
-        resized,
-        padded,
-        geometry.pad_top,
-        geometry.pad_bottom,
-        geometry.pad_left,
-        geometry.pad_right,
-        cv::BORDER_REPLICATE);
-    return cv::dnn::blobFromImage(
-        padded,
-        1.0,
-        cv::Size(),
-        cv::Scalar(),
-        true,
-        false,
-        CV_32F);
-}
-
 vision::Disparity BANet2D::infer_stereo(
     const vision_core::StereoImageInput& input) {
     ensure_model_loaded();
@@ -209,22 +268,7 @@ vision::Disparity BANet2D::infer_stereo(
         left.rows,
         model_width,
         model_height);
-    const cv::Mat left_blob = preprocess_one(left, geometry);
-    const cv::Mat right_blob = preprocess_one(right, geometry);
-    const size_t image_values =
-        static_cast<size_t>(3) * model_height * model_width;
-    cv::Mat batch(
-        1,
-        static_cast<int>(image_values * 2),
-        CV_32FC1);
-    std::memcpy(
-        batch.ptr<float>(),
-        left_blob.ptr<float>(),
-        image_values * sizeof(float));
-    std::memcpy(
-        batch.ptr<float>() + image_values,
-        right_blob.ptr<float>(),
-        image_values * sizeof(float));
+    cv::Mat batch = preprocess_banet_stereo(left, right, geometry);
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(

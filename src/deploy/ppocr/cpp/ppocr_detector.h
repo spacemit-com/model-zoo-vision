@@ -89,7 +89,6 @@ private:
 
     // --- recognition (CRNN + CTC) ---
     static cv::Mat crop_text_box(const cv::Mat& image, const std::vector<cv::Point>& box);
-    cv::Mat rec_make_canvas(const cv::Mat& crop) const;
     std::string ctc_decode(const float* logits, int seq_len, int num_classes, float* out_score) const;
     std::string rec_run(
         const cv::Mat& crop,

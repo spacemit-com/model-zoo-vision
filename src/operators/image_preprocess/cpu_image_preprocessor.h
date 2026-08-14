@@ -22,8 +22,12 @@ using CpuImagePreprocess =
 
 struct CpuChannelTransform {
     std::array<float, 3> input_scale{1.0F, 1.0F, 1.0F};
+    // Optional explicit divisors preserve pipelines written as value / c
+    // instead of replacing division with multiplication by a reciprocal.
+    std::array<float, 3> input_divisor{1.0F, 1.0F, 1.0F};
     std::array<float, 3> mean{0.0F, 0.0F, 0.0F};
     std::array<float, 3> output_scale{1.0F, 1.0F, 1.0F};
+    std::array<float, 3> output_divisor{1.0F, 1.0F, 1.0F};
 };
 
 struct CpuGrayscaleTransform {

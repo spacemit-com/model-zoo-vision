@@ -37,6 +37,7 @@ enum class PreprocessOutputType {
 enum class PreprocessInterpolation {
     kBilinear,
     kNearest,
+    kArea,
 };
 
 struct ImagePreprocessSpec {

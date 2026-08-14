@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
@@ -75,6 +76,67 @@ cv::Mat make_test_image()
     return image;
 }
 
+cv::Mat yolop_area_letterbox_reference(
+    const cv::Mat& image,
+    int output_width,
+    int output_height)
+{
+    constexpr float mean[] = {0.485F, 0.456F, 0.406F};
+    constexpr float standard_deviation[] = {0.229F, 0.224F, 0.225F};
+    const float ratio = std::min(
+        static_cast<float>(output_width) / image.cols,
+        static_cast<float>(output_height) / image.rows);
+    const int resized_width = static_cast<int>(
+        std::lround(image.cols * ratio));
+    const int resized_height = static_cast<int>(
+        std::lround(image.rows * ratio));
+    const float pad_w = (output_width - resized_width) * 0.5F;
+    const float pad_h = (output_height - resized_height) * 0.5F;
+    const int left = static_cast<int>(std::lround(pad_w - 0.1F));
+    const int right = static_cast<int>(std::lround(pad_w + 0.1F));
+    const int top = static_cast<int>(std::lround(pad_h - 0.1F));
+    const int bottom = static_cast<int>(std::lround(pad_h + 0.1F));
+    cv::Mat resized;
+    if (image.cols == resized_width && image.rows == resized_height) {
+        resized = image;
+    } else {
+        cv::resize(
+            image,
+            resized,
+            cv::Size(resized_width, resized_height),
+            0.0,
+            0.0,
+            cv::INTER_AREA);
+    }
+    cv::Mat padded;
+    cv::copyMakeBorder(
+        resized,
+        padded,
+        top,
+        bottom,
+        left,
+        right,
+        cv::BORDER_CONSTANT,
+        cv::Scalar(114, 114, 114));
+    const int dimensions[] = {1, 3, output_height, output_width};
+    cv::Mat tensor(4, dimensions, CV_32F);
+    const size_t plane =
+        static_cast<size_t>(output_height) * output_width;
+    for (int y = 0; y < output_height; ++y) {
+        const uint8_t* source = padded.ptr<uint8_t>(y);
+        for (int x = 0; x < output_width; ++x) {
+            for (int channel = 0; channel < 3; ++channel) {
+                tensor.ptr<float>()[
+                    static_cast<size_t>(channel) * plane +
+                    static_cast<size_t>(y) * output_width + x] =
+                    (source[x * 3 + channel] / 255.0F - mean[channel]) /
+                    standard_deviation[channel];
+            }
+        }
+    }
+    return tensor;
+}
+
 }  // namespace
 
 int main()
@@ -85,6 +147,7 @@ int main()
     using vision_operators::CpuGrayscaleTransform;
     using vision_operators::PreprocessBackend;
     using vision_operators::ImagePreprocessSpec;
+    using vision_operators::PreprocessInterpolation;
     using vision_operators::PreprocessResizeMode;
     using vision_operators::image_input_to_bgr_cpu;
     using vision_operators::preprocess_bgr_to_nchw;
@@ -188,6 +251,47 @@ int main()
     check(
         bitwise_equal(stretch_reference, stretch_fused),
         "fused stretch matches resize plus blobFromImage");
+
+    ImagePreprocessSpec area_spec;
+    area_spec.output_width = 8;
+    area_spec.output_height = 8;
+    area_spec.resize_mode = PreprocessResizeMode::kLetterbox;
+    area_spec.output_rgb = false;
+    area_spec.interpolation = PreprocessInterpolation::kArea;
+    area_spec.padding = {114.0F, 114.0F, 114.0F};
+    const float area_mean[] = {0.485F, 0.456F, 0.406F};
+    const float area_std[] = {0.229F, 0.224F, 0.225F};
+    CpuChannelTransform area_transform;
+    area_transform.input_divisor = {255.0F, 255.0F, 255.0F};
+    area_transform.mean = {
+        area_mean[0], area_mean[1], area_mean[2]};
+    area_transform.output_divisor = {
+        area_std[0], area_std[1], area_std[2]};
+    const auto check_area_case = [&](
+        const cv::Mat& image,
+        const std::string& geometry) {
+        const cv::Mat reference = yolop_area_letterbox_reference(
+            image, area_spec.output_width, area_spec.output_height);
+        const cv::Mat fused = preprocess_bgr_to_nchw(
+            image, area_spec, area_transform);
+        check(
+            bitwise_equal(reference, fused),
+            "fused area letterbox matches the YOLOP " + geometry +
+                " reference pipeline");
+    };
+    check_area_case(test_image, "vertical-padding");
+    cv::Mat transposed_test_image;
+    cv::transpose(test_image, transposed_test_image);
+    check_area_case(transposed_test_image, "horizontal-padding");
+    cv::Mat square_test_image;
+    cv::resize(
+        test_image,
+        square_test_image,
+        cv::Size(8, 8),
+        0.0,
+        0.0,
+        cv::INTER_NEAREST);
+    check_area_case(square_test_image, "no-padding");
 
     ImagePreprocessSpec top_left_spec;
     top_left_spec.output_width = 8;

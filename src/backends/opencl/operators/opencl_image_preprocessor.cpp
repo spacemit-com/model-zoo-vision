@@ -138,6 +138,11 @@ private:
 
     void validate_spec(int output_ring_depth) const
     {
+        if (spec_.interpolation == PreprocessInterpolation::kArea) {
+            throw std::runtime_error(
+                "OpenCL image preprocessing does not support area "
+                "interpolation");
+        }
         if (spec_.batch_size != 1) {
             throw std::runtime_error(
                 "OpenCL image preprocessing supports batch size 1");

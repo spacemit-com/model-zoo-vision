@@ -74,6 +74,20 @@ struct CpuPreprocessScratch {
     cv::Mat resized;
 };
 
+int opencv_interpolation(PreprocessInterpolation interpolation)
+{
+    switch (interpolation) {
+        case PreprocessInterpolation::kNearest:
+            return cv::INTER_NEAREST;
+        case PreprocessInterpolation::kArea:
+            return cv::INTER_AREA;
+        case PreprocessInterpolation::kBilinear:
+            return cv::INTER_LINEAR;
+    }
+    throw std::invalid_argument(
+        "CPU preprocessing received an unsupported interpolation mode");
+}
+
 cv::Mat crop_source(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
@@ -94,17 +108,13 @@ cv::Mat crop_source(
         throw std::invalid_argument(
             "center-crop preprocessing dimensions are invalid");
     }
-    const int interpolation =
-        spec.interpolation == PreprocessInterpolation::kNearest
-        ? cv::INTER_NEAREST
-        : cv::INTER_LINEAR;
     cv::resize(
         bgr,
         scratch->intermediate,
         cv::Size(spec.resize_width, spec.resize_height),
         0.0,
         0.0,
-        interpolation);
+        opencv_interpolation(spec.interpolation));
     const int x = (spec.resize_width - spec.output_width) / 2;
     const int y = (spec.resize_height - spec.output_height) / 2;
     return scratch->intermediate(
@@ -122,17 +132,13 @@ cv::Mat resize_source(
         source.rows == geometry.dst_height) {
         return source;
     }
-    const int interpolation =
-        spec.interpolation == PreprocessInterpolation::kNearest
-        ? cv::INTER_NEAREST
-        : cv::INTER_LINEAR;
     cv::resize(
         source,
         scratch->resized,
         cv::Size(geometry.dst_width, geometry.dst_height),
         0.0,
         0.0,
-        interpolation);
+        opencv_interpolation(spec.interpolation));
     return scratch->resized;
 }
 
@@ -230,21 +236,42 @@ cv::Mat preprocess_bgr_to_nchw(
             // uint8 scaling and normalization stages. The volatile temporary
             // prevents contraction into a fused multiply-add; this work is
             // performed only for the 768 LUT entries, not for every pixel.
-            volatile float scaled_input =
-                value * transform.input_scale[channel];
+            volatile float scaled_input;
+            if (transform.input_divisor[channel] == 1.0F) {
+                scaled_input = value * transform.input_scale[channel];
+            } else {
+                scaled_input =
+                    (value * transform.input_scale[channel]) /
+                    transform.input_divisor[channel];
+            }
+            const float centered =
+                scaled_input - transform.mean[channel];
             channel_lut[channel][value] =
-                (scaled_input - transform.mean[channel]) *
-                transform.output_scale[channel];
+                transform.output_divisor[channel] == 1.0F
+                ? centered * transform.output_scale[channel]
+                : (centered * transform.output_scale[channel]) /
+                    transform.output_divisor[channel];
         }
-        volatile float scaled_padding =
-            spec.padding[channel] * transform.input_scale[channel];
+        volatile float scaled_padding;
+        if (transform.input_divisor[channel] == 1.0F) {
+            scaled_padding =
+                spec.padding[channel] * transform.input_scale[channel];
+        } else {
+            scaled_padding =
+                (spec.padding[channel] * transform.input_scale[channel]) /
+                transform.input_divisor[channel];
+        }
+        const float centered_padding =
+            scaled_padding - transform.mean[channel];
         fill_padding(
             output + static_cast<size_t>(channel) * plane_size,
             spec.output_width,
             spec.output_height,
             geometry,
-            (scaled_padding - transform.mean[channel]) *
-                transform.output_scale[channel]);
+            transform.output_divisor[channel] == 1.0F
+                ? centered_padding * transform.output_scale[channel]
+                : (centered_padding * transform.output_scale[channel]) /
+                    transform.output_divisor[channel]);
     }
 
     const auto pack_rows = [&](const cv::Range& rows) {

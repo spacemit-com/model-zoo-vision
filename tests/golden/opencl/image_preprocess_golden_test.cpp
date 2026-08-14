@@ -666,6 +666,25 @@ void check_bgr_host_input()
     odd_result.complete();
 }
 
+void check_area_rejected()
+{
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = 32;
+    spec.output_height = 32;
+    spec.interpolation =
+        vision_operators::PreprocessInterpolation::kArea;
+    bool rejected = false;
+    try {
+        (void)vision_operators::create_opencl_image_preprocessor(spec);
+    } catch (const std::runtime_error& error) {
+        rejected = std::string(error.what()).find(
+            "does not support area interpolation") != std::string::npos;
+    }
+    check(
+        rejected,
+        "OpenCL explicitly rejects unsupported area interpolation");
+}
+
 }  // namespace
 
 int main()
@@ -673,6 +692,7 @@ int main()
     check_color_and_sampling();
     check_letterbox();
     check_bgr_host_input();
+    check_area_rejected();
     if (failures != 0) {
         std::cerr << failures << " assertion(s) failed\n";
         return 1;

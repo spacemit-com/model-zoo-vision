@@ -5,7 +5,6 @@
 
 #include "resnet_classifier.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -237,7 +236,9 @@ std::vector<vision_core::InferIntent> ResNetClassifier::supported_intents() cons
 }
 
 vision_core::InferResponse ResNetClassifier::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kClassify);
+    if (request.intent != vision_core::InferIntent::kClassify) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

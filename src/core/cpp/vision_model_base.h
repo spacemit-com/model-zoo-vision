@@ -214,6 +214,11 @@ protected:
 
     void enable_accelerated_image_preprocess() noexcept;
 
+    // Creates the common non-fatal response used when a caller dispatches an
+    // intent that this model does not implement.
+    InferResponse unsupported_intent_response(
+        InferIntent requested_intent) const;
+
     Ort::MemoryInfo memory_info_{nullptr};
     RuntimeProfile runtime_profile_;
 

@@ -6,7 +6,6 @@
 #include "yolov5_detector.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -158,7 +157,9 @@ std::vector<vision_core::InferIntent> YOLOv5Detector::supported_intents() const 
 }
 
 vision_core::InferResponse YOLOv5Detector::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kDetect);
+    if (request.intent != vision_core::InferIntent::kDetect) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

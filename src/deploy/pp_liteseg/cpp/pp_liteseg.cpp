@@ -7,7 +7,6 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -370,7 +369,9 @@ std::vector<vision_core::InferIntent> PPLiteSeg::supported_intents() const {
 }
 
 vision_core::InferResponse PPLiteSeg::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kSegment);
+    if (request.intent != vision_core::InferIntent::kSegment) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

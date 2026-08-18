@@ -6,7 +6,6 @@
 #include "yoloe_segmentor.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -556,7 +555,9 @@ std::vector<vision_core::ModelCapability> YoloeSegmentor::get_capabilities() con
 }
 
 vision_core::InferResponse YoloeSegmentor::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kSegment);
+    if (request.intent != vision_core::InferIntent::kSegment) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

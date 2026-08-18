@@ -6,7 +6,6 @@
 #include "adaface_recognizer.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <stdexcept>
 #include <utility>
@@ -138,7 +137,9 @@ std::vector<vision_core::InferIntent> AdaFaceRecognizer::supported_intents() con
 }
 
 vision_core::InferResponse AdaFaceRecognizer::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kEmbed);
+    if (request.intent != vision_core::InferIntent::kEmbed) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

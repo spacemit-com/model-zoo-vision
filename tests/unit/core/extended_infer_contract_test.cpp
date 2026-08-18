@@ -58,6 +58,16 @@ public:
 
     vision_core::InferResponse Run(
         const vision_core::InferRequest& request) override {
+        bool supported = false;
+        for (const auto intent : supported_intents()) {
+            if (request.intent == intent) {
+                supported = true;
+                break;
+            }
+        }
+        if (!supported) {
+            return unsupported_intent_response(request.intent);
+        }
         vision_core::InferResponse response;
         if (request.intent == vision_core::InferIntent::kMatchLocalFeatures) {
             const auto* pair =
@@ -141,6 +151,19 @@ vision::LocalFeatures make_features() {
 }  // namespace
 
 int main() {
+    ExtendedProbeModel probe(true);
+    vision_core::InferRequest unsupported_request{};
+    unsupported_request.intent = vision_core::InferIntent::kOcr;
+    const vision_core::InferResponse unsupported_response =
+        probe.Run(unsupported_request);
+    check(
+        !unsupported_response.ok,
+        "unsupported intent should return a non-fatal error response");
+    check(
+        unsupported_response.error_message.find("kOcr") != std::string::npos &&
+            unsupported_response.error_message.find("kTrack") != std::string::npos,
+        "unsupported intent response should identify requested and supported intents");
+
     const std::string config_path = write_config();
     std::unique_ptr<VisionService> service =
         VisionService::Create(config_path, "", true);

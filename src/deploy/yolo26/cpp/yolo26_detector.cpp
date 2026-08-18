@@ -6,7 +6,6 @@
 #include "yolo26_detector.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -147,7 +146,9 @@ vision_common::DetectionResultList YOLO26Detector::detect_input(
 }
 
 vision_core::InferResponse YOLO26Detector::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kDetect);
+    if (request.intent != vision_core::InferIntent::kDetect) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

@@ -413,4 +413,37 @@ void BaseModel::enable_accelerated_image_preprocess() noexcept
     accelerated_image_preprocess_enabled_ = true;
 }
 
+InferResponse BaseModel::unsupported_intent_response(
+    InferIntent requested_intent) const
+{
+    const auto intent_name = [](InferIntent intent) {
+        switch (intent) {
+        case InferIntent::kDetect: return "kDetect";
+        case InferIntent::kClassify: return "kClassify";
+        case InferIntent::kEstimatePose: return "kEstimatePose";
+        case InferIntent::kSegment: return "kSegment";
+        case InferIntent::kTrack: return "kTrack";
+        case InferIntent::kEmbed: return "kEmbed";
+        case InferIntent::kEmbedText: return "kEmbedText";
+        case InferIntent::kInferSequence: return "kInferSequence";
+        case InferIntent::kOcr: return "kOcr";
+        case InferIntent::kStereoDepth: return "kStereoDepth";
+        case InferIntent::kExtractLocalFeatures: return "kExtractLocalFeatures";
+        case InferIntent::kMatchLocalFeatures: return "kMatchLocalFeatures";
+        }
+        return "unknown";
+    };
+
+    InferResponse response;
+    response.ok = false;
+    response.error_message = "unsupported inference intent " +
+        std::string(intent_name(requested_intent)) + "; supported: ";
+    const std::vector<InferIntent> supported = supported_intents();
+    for (size_t index = 0; index < supported.size(); ++index) {
+        if (index != 0) response.error_message += ", ";
+        response.error_message += intent_name(supported[index]);
+    }
+    return response;
+}
+
 }  // namespace vision_core

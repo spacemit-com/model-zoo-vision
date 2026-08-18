@@ -5,7 +5,6 @@
 
 #include "byte_track_tracker.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <map>
@@ -161,7 +160,9 @@ std::vector<vision_core::InferIntent> ByteTrackTracker::supported_intents() cons
 }
 
 vision_core::InferResponse ByteTrackTracker::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kTrack);
+    if (request.intent != vision_core::InferIntent::kTrack) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

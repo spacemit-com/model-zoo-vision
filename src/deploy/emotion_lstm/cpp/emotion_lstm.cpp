@@ -6,7 +6,6 @@
 #include "emotion_lstm.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <stdexcept>
 #include <string>
@@ -142,7 +141,9 @@ vision_common::ActionResult EmotionLstm::predict(const float* feats) {
 }
 
 vision_core::InferResponse EmotionLstm::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kInferSequence);
+    if (request.intent != vision_core::InferIntent::kInferSequence) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* sequence_input = std::get_if<vision_core::SequenceInput>(&request.input);
     if (sequence_input == nullptr) {
         vision_core::InferResponse response;

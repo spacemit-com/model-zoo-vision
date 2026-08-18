@@ -5,7 +5,6 @@
 
 #include "scrfd_detector.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -198,7 +197,9 @@ std::vector<vision_core::InferIntent> ScrfdDetector::supported_intents() const {
 }
 
 vision_core::InferResponse ScrfdDetector::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kEstimatePose);
+    if (request.intent != vision_core::InferIntent::kEstimatePose) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

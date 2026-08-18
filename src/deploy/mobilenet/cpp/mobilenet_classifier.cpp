@@ -5,7 +5,6 @@
 
 #include "mobilenet_classifier.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -206,7 +205,9 @@ std::vector<vision_core::InferIntent> MobileNetV1Classifier::supported_intents()
 }
 
 vision_core::InferResponse MobileNetV1Classifier::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kClassify);
+    if (request.intent != vision_core::InferIntent::kClassify) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

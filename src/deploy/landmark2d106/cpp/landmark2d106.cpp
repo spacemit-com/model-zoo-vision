@@ -5,7 +5,6 @@
 
 #include "landmark2d106.h"
 
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -148,7 +147,9 @@ std::vector<vision_core::InferIntent> Landmark2d106::supported_intents() const {
 }
 
 vision_core::InferResponse Landmark2d106::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kEstimatePose);
+    if (request.intent != vision_core::InferIntent::kEstimatePose) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

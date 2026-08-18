@@ -6,7 +6,6 @@
 #include "stgcn_action_recognizer.h"
 
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -221,7 +220,9 @@ std::vector<std::string> StgcnActionRecognizer::get_sequence_class_names() const
 }
 
 vision_core::InferResponse StgcnActionRecognizer::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kInferSequence);
+    if (request.intent != vision_core::InferIntent::kInferSequence) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* sequence_input = std::get_if<vision_core::SequenceInput>(&request.input);
     if (sequence_input == nullptr) {
         vision_core::InferResponse response;

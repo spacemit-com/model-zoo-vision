@@ -5,7 +5,6 @@
 
 #include "yolov5_face_detector.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -157,7 +156,9 @@ std::vector<vision_core::InferIntent> YOLOv5FaceDetector::supported_intents() co
 }
 
 vision_core::InferResponse YOLOv5FaceDetector::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kDetect);
+    if (request.intent != vision_core::InferIntent::kDetect) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

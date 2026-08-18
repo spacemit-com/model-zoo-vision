@@ -5,7 +5,6 @@
 
 #include "ocsort_tracker.h"
 
-#include <cassert>
 #include <chrono>
 #include <algorithm>
 #include <memory>
@@ -178,7 +177,9 @@ std::vector<vision_core::InferIntent> OCSortTracker::supported_intents() const {
 }
 
 vision_core::InferResponse OCSortTracker::Run(const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kTrack);
+    if (request.intent != vision_core::InferIntent::kTrack) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {
         vision_core::InferResponse response;

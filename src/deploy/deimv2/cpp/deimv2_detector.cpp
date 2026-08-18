@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -454,7 +453,9 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
 
 vision_core::InferResponse DEIMv2Detector::Run(
     const vision_core::InferRequest& request) {
-    assert(request.intent == vision_core::InferIntent::kDetect);
+    if (request.intent != vision_core::InferIntent::kDetect) {
+        return unsupported_intent_response(request.intent);
+    }
     const auto* image_input =
         std::get_if<vision_core::ImageInput>(&request.input);
     if (image_input == nullptr) {

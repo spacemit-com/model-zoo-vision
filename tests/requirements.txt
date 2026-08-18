@@ -2,3 +2,4 @@ numpy
 opencv-python
 pyyaml
 pytest
+Pygments==2.20.0

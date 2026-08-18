@@ -16,7 +16,7 @@ for dir in examples/resnet examples/efficientnet examples/efficientnet_v2s examp
            examples/adaface examples/siglip2 examples/mobileclip2 \
            examples/banet2d examples/superpoint examples/lightglue \
            examples/mixformer examples/avtrack examples/nanotrack \
-           examples/yolop examples/yolopv2; do
+           examples/yolop examples/yolopv2 examples/deimv2; do
   if [ -f "$dir/scripts/download_models.sh" ]; then
     echo ">>> $dir"
     bash "$dir/scripts/download_models.sh" || failures=$((failures + 1))

@@ -265,6 +265,21 @@ class VisionServiceNative:
             self._last_response = response
         return status, disparity
 
+    def infer_depth(
+        self,
+        image_bgr_uint8: npt.NDArray[np.uint8],
+    ) -> Tuple[object, Optional[npt.NDArray[np.float32]]]:
+        """Run monocular metric-depth inference and return metres."""
+        image = np.ascontiguousarray(image_bgr_uint8)
+        if image.dtype != np.uint8:
+            raise TypeError("image must be uint8 BGR (HxWx3)")
+        status, depth, response = self._svc.infer_depth(
+            image_bgr_uint8=image
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, depth
+
     def extract_local_features(
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],

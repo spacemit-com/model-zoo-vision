@@ -112,6 +112,14 @@ struct Disparity {
     int label = -1;
 };
 
+// Dense monocular metric depth. Values are distances in metres in the
+// original image coordinate system. Non-positive values are invalid.
+struct DepthMap {
+    std::shared_ptr<cv::Mat> map;  // CV_32FC1, may be null on failure
+    float score = 1.0f;
+    int label = -1;
+};
+
 // Sparse local image features. Descriptors are row-major:
 // keypoints.size() x descriptor_dim.
 struct LocalFeatures {
@@ -149,6 +157,7 @@ using Result = std::variant<
     Action,
     Text,
     Disparity,
+    DepthMap,
     LocalFeatures,
     FeatureMatch>;
 

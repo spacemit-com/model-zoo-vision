@@ -294,6 +294,7 @@ void draw_results(
     std::vector<TrackingResult> trackings;
     std::vector<TextResult> texts;
     std::vector<DisparityResult> disparities;
+    std::vector<DepthMapResult> depth_maps;
     std::vector<LocalFeaturesResult> local_features;
 
     for (const auto& result : results) {
@@ -311,6 +312,8 @@ void draw_results(
                 texts.push_back(r);
             } else if constexpr (std::is_same_v<T, DisparityResult>) {
                 disparities.push_back(r);
+            } else if constexpr (std::is_same_v<T, DepthMapResult>) {
+                depth_maps.push_back(r);
             } else if constexpr (
                 std::is_same_v<T, LocalFeaturesResult>) {
                 local_features.push_back(r);
@@ -321,9 +324,11 @@ void draw_results(
     if (!disparities.empty()) {
         const auto& disparity = disparities.front();
         if (disparity.map == nullptr || disparity.map->empty() ||
-            disparity.map->type() != CV_32FC1) {
+            disparity.map->type() != CV_32FC1 ||
+            disparity.map->size() != image.size()) {
             throw std::runtime_error(
-                "disparity draw expects a non-empty CV_32FC1 map");
+                "disparity draw expects a non-empty CV_32FC1 map "
+                "matching the image size");
         }
         const cv::Mat& map = *disparity.map;
         float min_value = std::numeric_limits<float>::infinity();
@@ -357,6 +362,53 @@ void draw_results(
             }
         }
         cv::applyColorMap(normalized, image, cv::COLORMAP_JET);
+    }
+    if (!depth_maps.empty()) {
+        const auto& depth = depth_maps.front();
+        if (depth.map == nullptr || depth.map->empty() ||
+            depth.map->type() != CV_32FC1 ||
+            depth.map->size() != image.size()) {
+            throw std::runtime_error(
+                "depth draw expects a non-empty CV_32FC1 map "
+                "matching the image size");
+        }
+        const cv::Mat& map = *depth.map;
+        float min_value = std::numeric_limits<float>::infinity();
+        float max_value = -std::numeric_limits<float>::infinity();
+        for (int y = 0; y < map.rows; ++y) {
+            const float* row = map.ptr<float>(y);
+            for (int x = 0; x < map.cols; ++x) {
+                if (!std::isfinite(row[x]) || row[x] <= 0.0F) {
+                    continue;
+                }
+                min_value = std::min(min_value, row[x]);
+                max_value = std::max(max_value, row[x]);
+            }
+        }
+        if (!std::isfinite(min_value) || !std::isfinite(max_value)) {
+            throw std::runtime_error(
+                "depth draw requires at least one positive finite value");
+        }
+        cv::Mat normalized(map.size(), CV_8UC1, cv::Scalar(0));
+        cv::Mat invalid(map.size(), CV_8UC1, cv::Scalar(0));
+        const float scale = max_value > min_value
+            ? 255.0F / (max_value - min_value)
+            : 0.0F;
+        for (int y = 0; y < map.rows; ++y) {
+            const float* source = map.ptr<float>(y);
+            uint8_t* destination = normalized.ptr<uint8_t>(y);
+            uint8_t* invalid_row = invalid.ptr<uint8_t>(y);
+            for (int x = 0; x < map.cols; ++x) {
+                if (std::isfinite(source[x]) && source[x] > 0.0F) {
+                    destination[x] = cv::saturate_cast<uint8_t>(
+                        (max_value - source[x]) * scale);
+                } else {
+                    invalid_row[x] = 255;
+                }
+            }
+        }
+        cv::applyColorMap(normalized, image, cv::COLORMAP_JET);
+        image.setTo(cv::Scalar(0, 0, 0), invalid);
     }
     for (const auto& features : local_features) {
         for (const auto& point : features.keypoints) {

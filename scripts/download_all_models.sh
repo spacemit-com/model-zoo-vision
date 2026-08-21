@@ -10,7 +10,7 @@ echo "========== Examples =========="
 failures=0
 for dir in examples/resnet examples/efficientnet examples/efficientnet_v2s examples/mobilenet examples/mobilenetv1 examples/vit \
            examples/yolov8 examples/yolov8_pose examples/yolov8_seg examples/yolov11 \
-           examples/yolo12 examples/yolo26 examples/yolo_world examples/yoloe \
+           examples/yolo12 examples/yolo26 examples/yolo26_sem examples/yolo26_depth examples/yolo_world examples/yoloe \
            examples/yolov5 examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
            examples/bytetrack examples/emotion examples/pp_liteseg examples/mobileseg \
            examples/adaface examples/siglip2 examples/mobileclip2 \

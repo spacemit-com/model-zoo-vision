@@ -32,6 +32,7 @@ struct PyFlatResult {
     std::string text;                          // OCR: recognized string
     std::vector<vision::KeyPoint> polygon;     // OCR: text-box quadrilateral corners
     cv::Mat disparity;
+    cv::Mat depth;
     std::vector<float> descriptors;
     int descriptor_dim = 0;
     int image_width = 0;
@@ -70,6 +71,10 @@ PyFlatResult ToFlatResult(const vision::Result& r) {
     } else if (const vision::Disparity* d = std::get_if<vision::Disparity>(&r)) {
         if (d->map && !d->map->empty()) {
             out.disparity = d->map->clone();
+        }
+    } else if (const vision::DepthMap* d = std::get_if<vision::DepthMap>(&r)) {
+        if (d->map && !d->map->empty()) {
+            out.depth = d->map->clone();
         }
     } else if (const vision::LocalFeatures* f =
                 std::get_if<vision::LocalFeatures>(&r)) {
@@ -294,6 +299,14 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 }
                 return MatToNumpy(r.disparity);
             })
+        .def_property_readonly(
+            "depth",
+            [](const PyFlatResult& r) -> py::object {
+                if (r.depth.empty()) {
+                    return py::none();
+                }
+                return MatToNumpy(r.depth);
+            })
         .def("__repr__", [](const PyFlatResult& r) {
             return "<VisionServiceResult x1=" + std::to_string(r.x1) + " y1=" + std::to_string(r.y1) +
                 " x2=" + std::to_string(r.x2) + " y2=" + std::to_string(r.y2) +
@@ -450,6 +463,26 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             },
             py::arg("left_bgr_uint8"),
             py::arg("right_bgr_uint8"))
+        .def(
+            "infer_depth",
+            [](VisionService& self, const py::array& image) {
+                cv::Mat mat = NumpyToMatBgr(image);
+                VisionServiceResponse response;
+                const VisionServiceStatus status =
+                    self.Infer(mat, &response);
+                py::object depth = py::none();
+                if (status == VISION_SERVICE_OK &&
+                    response.results.size() == 1) {
+                    const auto* value = std::get_if<vision::DepthMap>(
+                        &response.results.front());
+                    if (value != nullptr && value->map &&
+                        !value->map->empty()) {
+                        depth = MatToNumpy(*value->map);
+                    }
+                }
+                return py::make_tuple(status, depth, response);
+            },
+            py::arg("image_bgr_uint8"))
         .def(
             "extract_local_features",
             [](VisionService& self, const py::array& image) {

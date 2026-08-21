@@ -69,6 +69,7 @@ enum class InferIntent {
     kInferSequence,
     kOcr,
     kStereoDepth,
+    kMonocularDepth,
     kExtractLocalFeatures,
     kMatchLocalFeatures,
 };

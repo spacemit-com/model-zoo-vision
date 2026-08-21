@@ -42,6 +42,7 @@ using TrackingResult = vision::Tracking;
 using ActionResult = vision::Action;
 using TextResult = vision::Text;
 using DisparityResult = vision::Disparity;
+using DepthMapResult = vision::DepthMap;
 using LocalFeaturesResult = vision::LocalFeatures;
 using FeatureMatchResult = vision::FeatureMatch;
 
@@ -53,6 +54,7 @@ using PoseResultList = std::vector<PoseResult>;
 using SegmentationResultList = std::vector<SegmentationResult>;
 using TrackingResultList = std::vector<TrackingResult>;
 using TextResultList = std::vector<TextResult>;
+using DepthMapResultList = std::vector<DepthMapResult>;
 using FeatureMatchResultList = std::vector<FeatureMatchResult>;
 
 // ----------------------------------------------------------------------------
@@ -126,6 +128,9 @@ inline bool is_tracking(const ModelResult& r) {
 inline bool is_action(const ModelResult& r) {
     return std::holds_alternative<ActionResult>(r);
 }
+inline bool is_depth_map(const ModelResult& r) {
+    return std::holds_alternative<DepthMapResult>(r);
+}
 
 // ----------------------------------------------------------------------------
 // Type-safe accessors (returns nullptr if wrong type)
@@ -151,6 +156,9 @@ inline const TrackingResult* as_tracking(const ModelResult& r) {
 }
 inline const ActionResult* as_action(const ModelResult& r) {
     return std::get_if<ActionResult>(&r);
+}
+inline const DepthMapResult* as_depth_map(const ModelResult& r) {
+    return std::get_if<DepthMapResult>(&r);
 }
 
 // ----------------------------------------------------------------------------

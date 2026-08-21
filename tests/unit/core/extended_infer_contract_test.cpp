@@ -215,6 +215,50 @@ int main() {
         drawn.type() == CV_8UC3 && drawn.size() == stereo.image.size(),
         "drawn disparity should be BGR and keep input size");
 
+    VisionServiceResponse depth_response;
+    vision::DepthMap depth;
+    depth.map = std::make_shared<cv::Mat>(2, 3, CV_32FC1);
+    for (int y = 0; y < depth.map->rows; ++y) {
+        for (int x = 0; x < depth.map->cols; ++x) {
+            depth.map->at<float>(y, x) =
+                1.0f + static_cast<float>(y * depth.map->cols + x);
+        }
+    }
+    depth_response.results.emplace_back(std::move(depth));
+    check(
+        service->Draw(stereo.image, depth_response, &drawn) ==
+            VISION_SERVICE_OK,
+        "metric depth result should support Draw");
+    check(
+        drawn.type() == CV_8UC3 && drawn.size() == stereo.image.size(),
+        "drawn metric depth should be BGR and keep input size");
+
+    VisionServiceResponse wrong_size_depth_response;
+    vision::DepthMap wrong_size_depth;
+    wrong_size_depth.map =
+        std::make_shared<cv::Mat>(1, 1, CV_32FC1, cv::Scalar(1.0f));
+    wrong_size_depth_response.results.emplace_back(
+        std::move(wrong_size_depth));
+    check(
+        service->Draw(
+            stereo.image,
+            wrong_size_depth_response,
+            &drawn) == VISION_SERVICE_INFER_FAILED,
+        "metric depth draw should reject a map with the wrong size");
+
+    VisionServiceResponse wrong_size_disparity_response;
+    vision::Disparity wrong_size_disparity;
+    wrong_size_disparity.map =
+        std::make_shared<cv::Mat>(1, 1, CV_32FC1, cv::Scalar(1.0f));
+    wrong_size_disparity_response.results.emplace_back(
+        std::move(wrong_size_disparity));
+    check(
+        service->Draw(
+            stereo.image,
+            wrong_size_disparity_response,
+            &drawn) == VISION_SERVICE_INFER_FAILED,
+        "disparity draw should reject a map with the wrong size");
+
     VisionServiceRequest bad_stereo = stereo;
     bad_stereo.image2 = cv::Mat::zeros(2, 3, CV_32FC1);
     check(

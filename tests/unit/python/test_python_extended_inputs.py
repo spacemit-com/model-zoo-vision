@@ -21,6 +21,7 @@ def test_extended_types_and_methods_are_exported():
     assert module.VisionServiceLocalFeatures is not None
     for method in (
         "infer_stereo",
+        "infer_depth",
         "extract_local_features",
         "match_local_features",
         "track",
@@ -55,6 +56,7 @@ def test_flat_result_has_extended_fields():
     result_type = module.VisionServiceResult
     for field in (
         "disparity",
+        "depth",
         "descriptors",
         "descriptor_dim",
         "image_width",

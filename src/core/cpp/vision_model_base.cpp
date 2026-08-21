@@ -428,6 +428,7 @@ InferResponse BaseModel::unsupported_intent_response(
         case InferIntent::kInferSequence: return "kInferSequence";
         case InferIntent::kOcr: return "kOcr";
         case InferIntent::kStereoDepth: return "kStereoDepth";
+        case InferIntent::kMonocularDepth: return "kMonocularDepth";
         case InferIntent::kExtractLocalFeatures: return "kExtractLocalFeatures";
         case InferIntent::kMatchLocalFeatures: return "kMatchLocalFeatures";
         }

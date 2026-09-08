@@ -183,8 +183,8 @@ cmake ..
 make -j$(nproc)
 
 # 运行示例
-./examples/yolov8 examples/yolov8/config/yolov8.yaml
-./examples/yolov8 examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg
 ```
 
 更多模型（ByteTrack、OC-SORT、ArcFace、AdaFace、SigLIP2、MobileCLIP2 等）的用法与参数见**各示例子目录 README**。

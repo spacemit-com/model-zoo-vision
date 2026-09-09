@@ -25,6 +25,7 @@ def test_extended_types_and_methods_are_exported():
         "extract_local_features",
         "match_local_features",
         "track",
+        "infer_image_points",
     ):
         assert hasattr(module.VisionServiceNative, method)
 

@@ -437,6 +437,29 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             py::arg("conf") = -1.0f,
             py::arg("iou") = -1.0f)
         .def(
+            "infer_image_points",
+            [](VisionService& self, const py::array& arr,
+                const std::vector<std::vector<float>>& points,
+                const std::vector<int>& labels) {
+                VisionServiceRequest request{};
+                request.image = NumpyToMatBgr(arr);
+                for (const auto& point : points) {
+                    if (point.size() != 2) {
+                        throw std::invalid_argument(
+                            "Each point must contain x,y");
+                    }
+                    request.point_coords.emplace_back(point[0], point[1]);
+                }
+                request.point_labels = labels;
+                VisionServiceResponse response;
+                const auto status = self.Infer(request, &response);
+                return py::make_tuple(
+                    status, FlattenResults(response.results), response);
+            },
+            py::arg("image_bgr_uint8"),
+            py::arg("points"),
+            py::arg("labels"))
+        .def(
             "infer_stereo",
             [](VisionService& self,
                 const py::array& left,

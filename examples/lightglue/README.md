@@ -66,7 +66,7 @@ LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.
 
 ## 4. 运行示例
 
-在 cv 组件根目录完成编译后执行：
+**C++：** 在 `cv/build` 目录下：
 
 ```bash
 ./examples/lightglue ../examples/lightglue/config/lightglue.yaml

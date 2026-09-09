@@ -78,8 +78,8 @@ cmake --build build --target yolo26_depth --target _vision_service_cpp -j8
 运行 C++ 示例：
 
 ```bash
-./examples/yolo26_depth \
-  ../examples/yolo26_depth/config/yolo26_depth.yaml
+./build/examples/yolo26_depth \
+  examples/yolo26_depth/config/yolo26_depth.yaml
 ```
 
 使用已安装的 `spacemit_vision` wheel 运行 Python 示例：
@@ -101,8 +101,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=build/python:src/python \
 例如切换到 s 或 m 模型：
 
 ```bash
-./examples/yolo26_depth \
-  ../examples/yolo26_depth/config/yolo26_depth.yaml \
+./build/examples/yolo26_depth \
+  examples/yolo26_depth/config/yolo26_depth.yaml \
   --model-path ~/.cache/models/vision/yolo26_depth/yolo26s-depth.fp16.onnx
 
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=build/python:src/python \

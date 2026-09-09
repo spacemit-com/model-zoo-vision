@@ -567,6 +567,8 @@ VisionServiceStatus VisionService::Infer(
         infer_params.mask_threshold = request.params.mask_threshold;
         infer_params.max_det = request.params.max_det;
         infer_params.prompts = request.prompts;  // open-vocabulary text (YOLO-World)
+        infer_params.point_coords = request.point_coords;
+        infer_params.point_labels = request.point_labels;
 
         vision_core::InferRequest internal_request{std::move(input), intent, infer_params};
         if (!ValidateIntentInputPair(internal_request)) {

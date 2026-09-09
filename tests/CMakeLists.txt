@@ -87,6 +87,14 @@ configure_vision_cpp_test(
     unit/models/banet2d_postprocess_test.cpp
 )
 configure_vision_cpp_test(
+    vision_mobilesam_prompt_contract_test
+    unit/models/mobilesam_prompt_contract_test.cpp
+)
+add_test(
+    NAME vision_mobilesam_prompt_contract
+    COMMAND vision_mobilesam_prompt_contract_test
+)
+configure_vision_cpp_test(
     vision_local_feature_models_test
     unit/models/local_feature_models_test.cpp
 )

@@ -233,6 +233,18 @@ class VisionServiceNative:
             self._last_response = response
         return status, results
 
+    def infer_image_points(self, image, points, labels) -> Tuple[object, List]:
+        """Prompt segmentation using original-image (x,y) points and SAM labels."""
+        arr = np.ascontiguousarray(image)
+        if arr.dtype != np.uint8 or arr.ndim != 3 or arr.shape[2] != 3:
+            raise TypeError("image must be uint8 BGR (HxWx3)")
+        status, results, response = self._svc.infer_image_points(
+            image_bgr_uint8=arr, points=points, labels=labels
+        )
+        if status == VisionServiceStatus.OK:
+            self._last_response = response
+        return status, results
+
     def infer_embedding(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],

@@ -34,3 +34,17 @@ scripts/test/robot-test run components/model_zoo/vision \
 
 From the standalone vision repository, the equivalent golden entry point is
 `bash tests/golden/run_opencl_preprocess_golden.sh`.
+
+MobileSAM prompt API contracts do not require weights or an AI Core. They use
+lazy loading with missing model paths and verify prompt validation errors before
+model loading. With the current library built and the matching Python package
+installed:
+
+```bash
+cmake --build build --target vision_mobilesam_prompt_contract_test
+ctest --test-dir build -R vision_mobilesam_prompt_contract --output-on-failure
+python3 -m pytest -q tests/unit/python/test_python_prompt_inputs.py
+```
+
+The Python tests skip if the native extension is unavailable. An installed but
+outdated extension fails the tests rather than silently skipping.

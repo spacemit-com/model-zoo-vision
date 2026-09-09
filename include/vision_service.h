@@ -269,6 +269,11 @@ struct VisionServiceRequest {
     // ignore this field, so existing image/sequence callers are unaffected.
     std::vector<std::string> prompts;
 
+    // Prompt segmentation: original-image pixel coordinates and SAM labels
+    // (-1 padding, 0 background, 1 foreground, 2/3 box corners).
+    std::vector<cv::Point2f> point_coords;
+    std::vector<int> point_labels;
+
     VisionServiceInferParams params;
 };
 

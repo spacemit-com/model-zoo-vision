@@ -88,6 +88,8 @@ struct InferParams {
     // model's configured default vocabulary". Ignored by models that don't
     // consume text.
     std::vector<std::string> prompts;
+    std::vector<cv::Point2f> point_coords;
+    std::vector<int> point_labels;
 };
 
 struct InferRequest {

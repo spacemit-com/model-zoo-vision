@@ -59,16 +59,16 @@ python3 examples/siglip2/scripts/export_tokenizer_bin.py \
 ```bash
 # 默认：狗图 + 内置 dog/cat/car
 python examples/siglip2/python/siglip2.py --config examples/siglip2/config/siglip2.yaml
-./examples/siglip2 examples/siglip2/config/siglip2.yaml
+./examples/siglip2 ../examples/siglip2/config/siglip2.yaml
 
 # 30 类场景分类（建议换场景图）
 python examples/siglip2/python/siglip2.py --config examples/siglip2/config/siglip2.yaml \
   --labels assets/labels/siglip2_scene_labels.txt --image /path/to/scene.jpg
-./examples/siglip2 examples/siglip2/config/siglip2.yaml \
+./examples/siglip2 ../examples/siglip2/config/siglip2.yaml \
   --labels assets/labels/siglip2_scene_labels.txt --image /path/to/scene.jpg --topk 3
 
 # 自定义 prompt
-./examples/siglip2 examples/siglip2/config/siglip2.yaml --text "a photo of a dog,a photo of a cat"
+./examples/siglip2 ../examples/siglip2/config/siglip2.yaml --text "a photo of a dog,a photo of a cat"
 ```
 
 ## 5. 故障排查

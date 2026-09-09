@@ -73,7 +73,7 @@ python ppocr.py --config ../config/ppocr.yaml --image ~/.cache/assets/image/015_
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/ppocr examples/ppocr/config/ppocr.yaml \
+./examples/ppocr ../examples/ppocr/config/ppocr.yaml \
   --image ~/.cache/assets/image/015_ocr.jpg \
   --output ppocr_result.jpg
 ```

@@ -22,7 +22,7 @@ python examples/vit/python/vit.py --config examples/vit/config/vit.yaml
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/vit examples/vit/config/vit.yaml
+./examples/vit ../examples/vit/config/vit.yaml
 ```
 
 ## 3. 故障排查

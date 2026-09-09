@@ -42,9 +42,9 @@ python bytetrack.py --config ../config/bytetrack.yaml --use-camera
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/bytetrack examples/bytetrack/config/bytetrack.yaml
-./examples/bytetrack examples/bytetrack/config/bytetrack.yaml --video /path/to/video.mp4
-./examples/bytetrack examples/bytetrack/config/bytetrack.yaml --use-camera
+./examples/bytetrack ../examples/bytetrack/config/bytetrack.yaml
+./examples/bytetrack ../examples/bytetrack/config/bytetrack.yaml --video /path/to/video.mp4
+./examples/bytetrack ../examples/bytetrack/config/bytetrack.yaml --use-camera
 ```
 
 ## 5. 故障排查

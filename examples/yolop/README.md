@@ -55,11 +55,11 @@ C++ 示例的第一个参数必须是配置文件路径，并支持 `--image`、
 
 ## 4. 运行示例
 
-在组件根目录运行 C++ 示例：
+**C++：** 在 `cv/build` 目录下：
 
 ```bash
-./build/examples/yolop examples/yolop/config/yolop.yaml
-./build/examples/yolop examples/yolop/config/yolop.yaml \
+./examples/yolop ../examples/yolop/config/yolop.yaml
+./examples/yolop ../examples/yolop/config/yolop.yaml \
   --image /path/to/image.jpg --output yolop_result.jpg
 ```
 

@@ -24,7 +24,7 @@ python examples/efficientnet_v2s/python/efficientnet_v2s.py --config examples/ef
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/efficientnet_v2s examples/efficientnet_v2s/config/efficientnet_v2s.yaml
+./examples/efficientnet_v2s ../examples/efficientnet_v2s/config/efficientnet_v2s.yaml
 ```
 
 ## 3. 备注

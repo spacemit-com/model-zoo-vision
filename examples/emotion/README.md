@@ -46,7 +46,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/emotion/config/emotion.yaml`
+- 第一个参数：配置文件路径，如 `../examples/emotion/config/emotion.yaml`
 - 可选：`--image`、`--output`、`--model-path`
 
 ## 4. 运行示例
@@ -62,8 +62,8 @@ python emotion.py --config ../config/emotion.yaml --image /path/to/face.png --ou
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/emotion examples/emotion/config/emotion.yaml
-./examples/emotion examples/emotion/config/emotion.yaml --image /path/to/face.png --output result_emotion.jpg
+./examples/emotion ../examples/emotion/config/emotion.yaml
+./examples/emotion ../examples/emotion/config/emotion.yaml --image /path/to/face.png --output result_emotion.jpg
 ```
 
 ## 5. 故障排查

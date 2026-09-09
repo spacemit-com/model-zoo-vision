@@ -72,8 +72,8 @@ python yolo_world.py --config ../config/yolo_world.yaml --use-camera --prompts "
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolo_world examples/yolo_world/config/yolo_world.yaml
-./examples/yolo_world examples/yolo_world/config/yolo_world.yaml --prompts "person,bus,car" --output yolo_world_result.jpg
+./examples/yolo_world ../examples/yolo_world/config/yolo_world.yaml
+./examples/yolo_world ../examples/yolo_world/config/yolo_world.yaml --prompts "person,bus,car" --output yolo_world_result.jpg
 ```
 
 ## 5. 故障排查

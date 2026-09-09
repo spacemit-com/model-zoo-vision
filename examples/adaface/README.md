@@ -42,8 +42,8 @@ bash scripts/download_assets.sh
 **C++**（在 `build/` 目录编译后）：
 
 ```bash
-./examples/adaface examples/adaface/config/adaface.yaml
-./examples/adaface examples/adaface/config/adaface.yaml --image1 a.png --image2 b.png --threshold 0.35
+./examples/adaface ../examples/adaface/config/adaface.yaml
+./examples/adaface ../examples/adaface/config/adaface.yaml --image1 a.png --image2 b.png --threshold 0.35
 ```
 
 ## 4. 注意事项
@@ -59,7 +59,7 @@ bash scripts/download_assets.sh
 python examples/adaface/python/adaface.py --config examples/adaface/config/adaface.yaml
 
 # C++（build/ 目录）
-./examples/adaface examples/adaface/config/adaface.yaml
+./examples/adaface ../examples/adaface/config/adaface.yaml
 ```
 
 ## 6. 故障排查

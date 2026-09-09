@@ -76,15 +76,15 @@ C++ 示例的第一个参数必须是配置文件路径，并支持 `--image`、
 
 ## 4. 运行示例
 
-在组件根目录运行 C++ 示例：
+**C++：** 在 `cv/build` 目录下：
 
 ```bash
-./build/examples/deimv2 examples/deimv2/config/deimv2.yaml
-./build/examples/deimv2 examples/deimv2/config/deimv2.yaml \
+./examples/deimv2 ../examples/deimv2/config/deimv2.yaml
+./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
   --model-path ~/.cache/models/vision/deimv2/deimv2s.fp16.onnx
-./build/examples/deimv2 examples/deimv2/config/deimv2.yaml \
+./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
   --model-path ~/.cache/models/vision/deimv2/deimv2m.fp16.onnx
-./build/examples/deimv2 examples/deimv2/config/deimv2.yaml \
+./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
   --image /path/to/image.jpg --output deimv2_result.jpg
 ```
 

@@ -24,7 +24,7 @@ python examples/mobilenet/python/mobilenet.py --config examples/mobilenet/config
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/mobilenet examples/mobilenet/config/mobilenet.yaml
+./examples/mobilenet ../examples/mobilenet/config/mobilenet.yaml
 ```
 
 ## 3. 故障排查

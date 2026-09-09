@@ -59,11 +59,11 @@ bash scripts/download_assets.sh
 
 ## 4. 运行示例
 
-在 cv 组件根目录完成编译后执行：
+**C++：** 在 `cv/build` 目录下：
 
 ```bash
-./build/examples/mixformer examples/mixformer/config/mixformer.yaml
-./build/examples/mixformer examples/mixformer/config/mixformer.yaml \
+./examples/mixformer ../examples/mixformer/config/mixformer.yaml
+./examples/mixformer ../examples/mixformer/config/mixformer.yaml \
   /path/to/video.mp4
 ```
 

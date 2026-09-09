@@ -24,7 +24,7 @@ python examples/mobilenetv1/python/mobilenetv1.py --config examples/mobilenetv1/
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/mobilenetv1 examples/mobilenetv1/config/mobilenetv1.yaml
+./examples/mobilenetv1 ../examples/mobilenetv1/config/mobilenetv1.yaml
 ```
 
 ## 3. 故障排查

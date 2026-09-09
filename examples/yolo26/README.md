@@ -23,8 +23,8 @@ python examples/yolo26/python/yolo26.py --config examples/yolo26/config/yolo26.y
 C++（在 `build` 目录）:
 
 ```bash
-./examples/yolo26 examples/yolo26/config/yolo26.yaml
-./examples/yolo26 examples/yolo26/config/yolo26.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolo26 ../examples/yolo26/config/yolo26.yaml
+./examples/yolo26 ../examples/yolo26/config/yolo26.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
 ## 3. 故障排查

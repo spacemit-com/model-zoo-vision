@@ -49,7 +49,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/ocsort/config/ocsort.yaml`
+- 第一个参数：配置文件路径，如 `../examples/ocsort/config/ocsort.yaml`
 - 可选：`--video`、`--use-camera`、`--camera-id`、`--model-path`
 
 ## 4. 运行示例
@@ -66,9 +66,9 @@ python ocsort.py --config ../config/ocsort.yaml --use-camera
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/ocsort examples/ocsort/config/ocsort.yaml
-./examples/ocsort examples/ocsort/config/ocsort.yaml --video /path/to/video.mp4
-./examples/ocsort examples/ocsort/config/ocsort.yaml --use-camera
+./examples/ocsort ../examples/ocsort/config/ocsort.yaml
+./examples/ocsort ../examples/ocsort/config/ocsort.yaml --video /path/to/video.mp4
+./examples/ocsort ../examples/ocsort/config/ocsort.yaml --use-camera
 ```
 
 ## 5. 故障排查

@@ -47,7 +47,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/arcface/config/arcface.yaml`
+- 第一个参数：配置文件路径，如 `../examples/arcface/config/arcface.yaml`
 - 可选：`--image1`、`--image2`、`--threshold <浮点数>`、`--model-path <路径>`
 
 ## 4. 特殊配置与注意事项
@@ -71,8 +71,8 @@ python arcface.py --config ../config/arcface.yaml --image1 a.png --image2 b.png 
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/arcface examples/arcface/config/arcface.yaml
-./examples/arcface examples/arcface/config/arcface.yaml --image1 /path/to/face1.png --image2 /path/to/face2.png --threshold 0.6
+./examples/arcface ../examples/arcface/config/arcface.yaml
+./examples/arcface ../examples/arcface/config/arcface.yaml --image1 /path/to/face1.png --image2 /path/to/face2.png --threshold 0.6
 ```
 
 ## 6. 故障排查

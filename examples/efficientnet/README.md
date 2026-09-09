@@ -22,7 +22,7 @@ python examples/efficientnet/python/efficientnet.py --config examples/efficientn
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/efficientnet examples/efficientnet/config/efficientnet.yaml
+./examples/efficientnet ../examples/efficientnet/config/efficientnet.yaml
 ```
 
 ## 3. 故障排查

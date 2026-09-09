@@ -62,8 +62,8 @@ bash scripts/download_assets.sh
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/mixformer examples/mixformer/config/mixformer.yaml
-./build/examples/mixformer examples/mixformer/config/mixformer.yaml \
+./examples/mixformer ../examples/mixformer/config/mixformer.yaml
+./examples/mixformer ../examples/mixformer/config/mixformer.yaml \
   /path/to/video.mp4
 ```
 

@@ -47,8 +47,8 @@ bash examples/mobileclip2/scripts/download_models.sh
 python examples/mobileclip2/python/mobileclip2.py --config examples/mobileclip2/config/mobileclip2.yaml
 
 # C++（build/ 目录）
-./examples/mobileclip2 examples/mobileclip2/config/mobileclip2.yaml
-./examples/mobileclip2 examples/mobileclip2/config/mobileclip2.yaml --text "a photo of a cat,a photo of a dog"
+./examples/mobileclip2 ../examples/mobileclip2/config/mobileclip2.yaml
+./examples/mobileclip2 ../examples/mobileclip2/config/mobileclip2.yaml --text "a photo of a cat,a photo of a dog"
 ```
 
 在狗图 `007_dog.jpg` 上，预期 **dog** 得分最高（与参考 demo 一致，数值可能因 resize 插值略有差异）。

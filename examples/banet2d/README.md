@@ -60,8 +60,8 @@ bash scripts/download_assets.sh
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/banet2d examples/banet2d/config/banet2d.yaml
-./build/examples/banet2d examples/banet2d/config/banet2d.yaml \
+./examples/banet2d ../examples/banet2d/config/banet2d.yaml
+./examples/banet2d ../examples/banet2d/config/banet2d.yaml \
   /path/to/left.png /path/to/right.png
 ```
 

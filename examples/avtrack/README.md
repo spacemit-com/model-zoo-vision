@@ -60,8 +60,8 @@ bash scripts/download_assets.sh
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/avtrack examples/avtrack/config/avtrack.yaml
-./build/examples/avtrack examples/avtrack/config/avtrack.yaml \
+./examples/avtrack ../examples/avtrack/config/avtrack.yaml
+./examples/avtrack ../examples/avtrack/config/avtrack.yaml \
   /path/to/video.mp4
 ```
 

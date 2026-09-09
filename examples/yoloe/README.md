@@ -71,8 +71,8 @@ python yoloe.py --config ../config/yoloe.yaml --use-camera --prompts "person,dog
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yoloe examples/yoloe/config/yoloe.yaml
-./examples/yoloe examples/yoloe/config/yoloe.yaml --prompts "person,bus" --output yoloe_result.jpg
+./examples/yoloe ../examples/yoloe/config/yoloe.yaml
+./examples/yoloe ../examples/yoloe/config/yoloe.yaml --prompts "person,bus" --output yoloe_result.jpg
 ```
 
 ## 5. 故障排查

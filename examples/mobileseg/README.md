@@ -77,8 +77,8 @@ cmake --build build --target mobileseg --target _vision_service_cpp -j
 运行默认图片：
 
 ```bash
-./build/examples/mobileseg \
-  examples/mobileseg/config/mobileseg.yaml
+./examples/mobileseg \
+  ../examples/mobileseg/config/mobileseg.yaml
 ```
 
 Python 示例使用同一个 C++ `VisionService`。使用已安装的
@@ -98,8 +98,8 @@ PYTHONPATH=build/python:src/python \
 指定输入和输出：
 
 ```bash
-./build/examples/mobileseg \
-  examples/mobileseg/config/mobileseg.yaml \
+./examples/mobileseg \
+  ../examples/mobileseg/config/mobileseg.yaml \
   --image /path/to/image.jpg \
   --output mobileseg_result.jpg
 

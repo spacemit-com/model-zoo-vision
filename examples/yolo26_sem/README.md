@@ -79,8 +79,8 @@ cmake --build build --target yolo26_sem --target _vision_service_cpp -j8
 运行默认图片：
 
 ```bash
-./build/examples/yolo26_sem \
-  examples/yolo26_sem/config/yolo26_sem.yaml
+./examples/yolo26_sem \
+  ../examples/yolo26_sem/config/yolo26_sem.yaml
 ```
 
 Python 示例使用同一个 C++ `VisionService`。使用已安装的
@@ -100,8 +100,8 @@ PYTHONPATH=src/python \
 指定输入和输出：
 
 ```bash
-./build/examples/yolo26_sem \
-  examples/yolo26_sem/config/yolo26_sem.yaml \
+./examples/yolo26_sem \
+  ../examples/yolo26_sem/config/yolo26_sem.yaml \
   --image /path/to/image.jpg \
   --output yolo26_sem_result.jpg
 

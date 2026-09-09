@@ -65,7 +65,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/yolov8/config/yolov8.yaml`
+- 第一个参数：配置文件路径，如 `../examples/yolov8/config/yolov8.yaml`
 - 可选：`--image`、`--output`、`--use-camera`、`--camera-id`、`--model-path`
 
 ## 4. 运行示例
@@ -82,15 +82,15 @@ python yolov8.py --config ../config/yolov8.yaml --use-camera --camera-id 0
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolov8 examples/yolov8/config/yolov8.yaml
-./examples/yolov8 examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg --output result.jpg
-./examples/yolov8 examples/yolov8/config/yolov8.yaml --use-camera
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml --use-camera
 ```
 
 启用 MPP 原生 NV12 DMA 输入：
 
 ```bash
-./examples/yolov8 examples/yolov8/config/yolov8.yaml \
+./examples/yolov8 ../examples/yolov8/config/yolov8.yaml \
   --use-camera --use-mpp --mpp-vi
 ```
 

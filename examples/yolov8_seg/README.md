@@ -40,9 +40,9 @@ python yolov8_seg.py --config ../config/yolov8_seg.yaml --use-camera
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolov8_seg examples/yolov8_seg/config/yolov8_seg.yaml
-./examples/yolov8_seg examples/yolov8_seg/config/yolov8_seg.yaml --image /path/to/image.jpg --output result.jpg
-./examples/yolov8_seg examples/yolov8_seg/config/yolov8_seg.yaml --use-camera
+./examples/yolov8_seg ../examples/yolov8_seg/config/yolov8_seg.yaml
+./examples/yolov8_seg ../examples/yolov8_seg/config/yolov8_seg.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolov8_seg ../examples/yolov8_seg/config/yolov8_seg.yaml --use-camera
 ```
 
 ## 5. 故障排查

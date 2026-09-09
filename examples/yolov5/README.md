@@ -38,7 +38,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/yolov5/config/yolov5.yaml`
+- 第一个参数：配置文件路径，如 `../examples/yolov5/config/yolov5.yaml`
 - 可选：`--image`、`--output`、`--model-path`
 
 ## 4. 运行示例
@@ -46,8 +46,8 @@ bash scripts/download_assets.sh
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolov5 examples/yolov5/config/yolov5.yaml
-./examples/yolov5 examples/yolov5/config/yolov5.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolov5 ../examples/yolov5/config/yolov5.yaml
+./examples/yolov5 ../examples/yolov5/config/yolov5.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
 ## 5. 故障排查

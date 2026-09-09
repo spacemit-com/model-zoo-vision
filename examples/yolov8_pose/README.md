@@ -49,7 +49,7 @@ bash scripts/download_assets.sh
 
 **C++ 示例**（需在 `cv/build` 下先编译）：
 
-- 第一个参数：配置文件路径，如 `examples/yolov8_pose/config/yolov8_pose.yaml`
+- 第一个参数：配置文件路径，如 `../examples/yolov8_pose/config/yolov8_pose.yaml`
 - 可选：`--image`、`--output`、`--use-camera`、`--camera-id`、`--model-path`
 
 ## 4. 运行示例
@@ -66,9 +66,9 @@ python yolov8_pose.py --config ../config/yolov8_pose.yaml --use-camera
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolov8_pose examples/yolov8_pose/config/yolov8_pose.yaml
-./examples/yolov8_pose examples/yolov8_pose/config/yolov8_pose.yaml --image /path/to/image.jpg --output result.jpg
-./examples/yolov8_pose examples/yolov8_pose/config/yolov8_pose.yaml --use-camera
+./examples/yolov8_pose ../examples/yolov8_pose/config/yolov8_pose.yaml
+./examples/yolov8_pose ../examples/yolov8_pose/config/yolov8_pose.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolov8_pose ../examples/yolov8_pose/config/yolov8_pose.yaml --use-camera
 ```
 
 ## 5. 故障排查

@@ -54,9 +54,9 @@ python yolov11.py --config ../config/yolov11.yaml --use-camera
 **C++：** 在 `cv/build` 目录下：
 
 ```bash
-./examples/yolov11 examples/yolov11/config/yolov11.yaml
-./examples/yolov11 examples/yolov11/config/yolov11.yaml --image /path/to/image.jpg --output result.jpg
-./examples/yolov11 examples/yolov11/config/yolov11.yaml --use-camera
+./examples/yolov11 ../examples/yolov11/config/yolov11.yaml
+./examples/yolov11 ../examples/yolov11/config/yolov11.yaml --image /path/to/image.jpg --output result.jpg
+./examples/yolov11 ../examples/yolov11/config/yolov11.yaml --use-camera
 ```
 
 ## 5. 故障排查

@@ -69,8 +69,8 @@ LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/lightglue examples/lightglue/config/lightglue.yaml
-./build/examples/lightglue examples/lightglue/config/lightglue.yaml \
+./examples/lightglue ../examples/lightglue/config/lightglue.yaml
+./examples/lightglue ../examples/lightglue/config/lightglue.yaml \
   /path/to/image1.jpg /path/to/image2.jpg
 ```
 

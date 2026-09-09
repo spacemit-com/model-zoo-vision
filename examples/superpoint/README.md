@@ -64,8 +64,8 @@ bash scripts/download_assets.sh
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/superpoint examples/superpoint/config/superpoint.yaml
-./build/examples/superpoint examples/superpoint/config/superpoint.yaml \
+./examples/superpoint ../examples/superpoint/config/superpoint.yaml
+./examples/superpoint ../examples/superpoint/config/superpoint.yaml \
   /path/to/image.jpg
 ```
 

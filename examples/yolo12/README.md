@@ -23,8 +23,8 @@ python examples/yolo12/python/yolo12.py --config examples/yolo12/config/yolo12.y
 **C++：** 在 `build` 目录下：
 
 ```bash
-./examples/yolo12 examples/yolo12/config/yolo12.yaml
-./examples/yolo12 examples/yolo12/config/yolo12.yaml --image test.jpg --output result.jpg
+./examples/yolo12 ../examples/yolo12/config/yolo12.yaml
+./examples/yolo12 ../examples/yolo12/config/yolo12.yaml --image test.jpg --output result.jpg
 ```
 
 ## 3. 故障排查

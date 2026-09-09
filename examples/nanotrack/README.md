@@ -67,8 +67,8 @@ bash scripts/download_assets.sh
 在 cv 组件根目录完成编译后执行：
 
 ```bash
-./build/examples/nanotrack examples/nanotrack/config/nanotrack.yaml
-./build/examples/nanotrack examples/nanotrack/config/nanotrack.yaml \
+./examples/nanotrack ../examples/nanotrack/config/nanotrack.yaml
+./examples/nanotrack ../examples/nanotrack/config/nanotrack.yaml \
   /path/to/video.mp4
 ```
 

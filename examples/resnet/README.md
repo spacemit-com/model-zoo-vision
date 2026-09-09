@@ -23,6 +23,6 @@ python examples/resnet/python/resnet.py --config examples/resnet/config/resnet50
 - C++（在 build 目录）：
 
 ```bash
-./examples/resnet examples/resnet/config/resnet50.yaml
+./examples/resnet ../examples/resnet/config/resnet50.yaml
 ```
 

@@ -8,4 +8,4 @@ default_params:
   tokenizer_path: ~/.cache/models/vision/siglip2/tokenizer.bin
   num_threads: 4
   providers:
-    - CPUExecutionProvider
+    - SpaceMITExecutionProvider

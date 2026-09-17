@@ -13,7 +13,7 @@ for dir in examples/resnet examples/efficientnet examples/efficientnet_v2s examp
            examples/yolo12 examples/yolo26 examples/yolo26_sem examples/yolo26_depth examples/yolo_world examples/yoloe \
            examples/yolov5 examples/yolov5_gesture examples/yolov5-face examples/arcface examples/ocsort \
            examples/bytetrack examples/emotion examples/pp_liteseg examples/mobileseg examples/mobilesam1 \
-           examples/adaface examples/siglip2 examples/mobileclip2 \
+           examples/adaface examples/siglip2 examples/mobileclip2 examples/scrfd \
            examples/banet2d examples/superpoint examples/lightglue \
            examples/mixformer examples/avtrack examples/nanotrack \
            examples/yolop examples/yolopv2 examples/deimv2 examples/rfdetr; do

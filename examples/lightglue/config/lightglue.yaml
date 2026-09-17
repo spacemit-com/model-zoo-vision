@@ -3,6 +3,9 @@ superpoint_config_path: examples/superpoint/config/superpoint.yaml
 test_image1: ~/.cache/assets/image/016_lightglue1.jpg
 test_image2: ~/.cache/assets/image/017_lightglue2.jpg
 class: deploy.lightglue.LightGlueMatcher
+benchmark:
+  # SuperPoint setup is excluded; only repeated LightGlue matching is timed.
+  scenario: feature_matching
 default_params:
   feature_type: superpoint
   num_keypoints: 512

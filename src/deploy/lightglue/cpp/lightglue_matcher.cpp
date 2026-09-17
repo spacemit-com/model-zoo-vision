@@ -224,6 +224,7 @@ std::vector<vision::FeatureMatch> LightGlueMatcher::match(
     ensure_model_loaded();
     reset_runtime_profile();
     const auto total_begin = std::chrono::steady_clock::now();
+    const auto preprocess_begin = std::chrono::steady_clock::now();
     const std::string query_error = validate_lightglue_features(
         input.query,
         feature_type_,
@@ -243,7 +244,6 @@ std::vector<vision::FeatureMatch> LightGlueMatcher::match(
             "LightGlue train features: " + train_error);
     }
 
-    const auto preprocess_begin = std::chrono::steady_clock::now();
     std::vector<float> normalized_keypoints(
         static_cast<size_t>(2) * num_keypoints_ * 2);
     for (int i = 0; i < num_keypoints_; ++i) {
@@ -279,11 +279,6 @@ std::vector<vision::FeatureMatch> LightGlueMatcher::match(
         descriptors.end(),
         input.train.descriptors.begin(),
         input.train.descriptors.end());
-    const auto preprocess_end = std::chrono::steady_clock::now();
-    set_runtime_preprocess_ms(
-        std::chrono::duration<double, std::milli>(
-            preprocess_end - preprocess_begin).count());
-
     const std::array<int64_t, 3> keypoint_shape{
         2, num_keypoints_, 2};
     const std::array<int64_t, 3> descriptor_shape{
@@ -302,6 +297,10 @@ std::vector<vision::FeatureMatch> LightGlueMatcher::match(
         descriptors.size(),
         descriptor_shape.data(),
         descriptor_shape.size()));
+    const auto preprocess_end = std::chrono::steady_clock::now();
+    set_runtime_preprocess_ms(
+        std::chrono::duration<double, std::milli>(
+            preprocess_end - preprocess_begin).count());
 
     const auto infer_begin = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs = session_->Run(

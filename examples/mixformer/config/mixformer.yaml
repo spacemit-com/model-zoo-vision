@@ -1,5 +1,7 @@
 model_path: ~/.cache/models/vision/mixformer/mixformer_v2.q.onnx
 test_video: ~/.cache/assets/video/004_bag.avi
+benchmark:
+  scenario: video_tracking
 class: deploy.mixformer.MixFormerTracker
 initial_bbox:
   x: 315

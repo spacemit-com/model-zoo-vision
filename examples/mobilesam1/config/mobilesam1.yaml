@@ -1,6 +1,11 @@
 model_path: ~/.cache/models/vision/mobilesam1/mobilesam_encoder_tiny_sim.fp16.onnx
 class: deploy.mobilesam1.MobileSAMSegmentor
 test_image: ~/.cache/assets/image/008_picture.jpg
+benchmark:
+  scenario: prompt_segmentation
+  # Same default box used by the example executable (top-left, bottom-right).
+  point_coords: [[190, 70], [460, 280]]
+  point_labels: [2, 3]
 default_params:
   decoder_model_path: ~/.cache/models/vision/mobilesam1/mobilesam_decoder_sim.dynq.onnx
   num_threads: 4

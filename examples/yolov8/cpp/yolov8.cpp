@@ -26,6 +26,7 @@ void print_usage(const char* program_name) {
                 << "  --use-camera          Use camera input instead of image file\n"
                 << "  --camera-id <i>       Camera device ID (default: 0)\n"
                 << vision_mpp::MppUsage()
+                << "  Input may also be selected by YAML input.type/source/backend.\n"
                 << "  --help                Show this help message\n"
                 << "\nExample:\n"
                 << "  " << program_name << " examples/yolov8/config/yolov8.yaml\n"
@@ -46,7 +47,6 @@ int main(int argc, char* argv[]) {
     std::string output_path = "result.jpg";
     std::string model_path_override;
     bool use_camera = false;
-    int camera_id = 0;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -59,12 +59,22 @@ int main(int argc, char* argv[]) {
             output_path = argv[++i];
         } else if (arg == "--use-camera") {
             use_camera = true;
-        } else if (arg == "--camera-id" && i + 1 < argc) {
-            camera_id = std::stoi(argv[++i]);
         } else if (arg == "--model-path" && i + 1 < argc) {
             model_path_override = argv[++i];
         }
     }
+
+    vision_mpp::ExampleInputConfig input_options;
+    try {
+        input_options = vision_mpp::ParseExampleInput(config_path, argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "Error: " << error.what() << std::endl;
+        return 1;
+    }
+    use_camera = input_options.use_camera;
+    image_path = input_options.image_path;
+    const std::string camera_name = input_options.camera.v4l2_dev.empty()
+        ? std::to_string(input_options.camera.camera_id) : input_options.camera.v4l2_dev;
 
     std::unique_ptr<VisionService> service = VisionService::Create(
         config_path,
@@ -76,23 +86,23 @@ int main(int argc, char* argv[]) {
     }
 
     if (use_camera) {
-        vision_mpp::MppFrameSourceConfig src_cfg;
-        const bool use_mpp = vision_mpp::ParseMppArgs(argc, argv, camera_id, &src_cfg);
+        const auto& src_cfg = input_options.camera;
+        const bool use_mpp = src_cfg.use_mpp;
 
         cv::VideoCapture cap;
         std::unique_ptr<vision_mpp::MppFrameSource> mpp_cap;
         if (use_mpp) {
-            std::cout << "Using camera " << camera_id << " (MPP backend)..." << std::endl;
+            std::cout << "Using camera " << camera_name << " (MPP backend)..." << std::endl;
             mpp_cap = std::make_unique<vision_mpp::MppFrameSource>(src_cfg);
             if (!mpp_cap->open()) {
-                std::cerr << "Error: Could not open MPP camera " << camera_id << std::endl;
+                std::cerr << "Error: Could not open MPP camera " << camera_name << std::endl;
                 return 1;
             }
         } else {
-            std::cout << "Using camera " << camera_id << "..." << std::endl;
-            cap.open(camera_id);
+            std::cout << "Using camera " << camera_name << "..." << std::endl;
+            vision_mpp::OpenExampleCamera(&cap, input_options);
             if (!cap.isOpened()) {
-                std::cerr << "Error: Could not open camera " << camera_id << std::endl;
+                std::cerr << "Error: Could not open camera " << camera_name << std::endl;
                 return 1;
             }
         }

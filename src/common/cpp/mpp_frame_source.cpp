@@ -731,9 +731,9 @@ bool MppFrameSource::open() {
     impl_->close_mpp();
     return false;
 #else
-    std::cerr << "MppFrameSource: --use-mpp requested but built without VISION_WITH_MPP; "
-            << "falling back to cv::VideoCapture\n";
-    return impl_->open_opencv();
+    std::cerr << "MPP camera backend is not supported in this build. "
+            << "Use backend: opencv instead.\n";
+    return false;
 #endif
 }
 

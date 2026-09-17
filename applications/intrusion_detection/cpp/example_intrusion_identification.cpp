@@ -37,6 +37,7 @@
 #include <yaml-cpp/yaml.h>  // NOLINT(build/include_order)
 
 #include "vision_service.h"
+#include "mpp_example_helpers.h"
 #include "common/cpp/image_processing.h"
 
 namespace {
@@ -273,6 +274,7 @@ int main(int argc, char** argv) {
     std::string video_path;
     bool use_camera = false;
     int camera_id = 0;
+    bool camera_id_set = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -284,6 +286,7 @@ int main(int argc, char** argv) {
             use_camera = true;
         } else if (a == "--camera-id" && i + 1 < argc) {
             camera_id = std::stoi(argv[++i]);
+            camera_id_set = true;
         } else if (a == "-h" || a == "--help") {
             std::cout << "Usage: " << argv[0]
                 << " [config.yaml] [--config <app.yaml>] [--video <path>]"
@@ -309,6 +312,15 @@ int main(int argc, char** argv) {
     }
     const fs::path config_dir = app_config_path.parent_path();
 
+    vision_mpp::ExampleInputConfig input_options;
+    if (!vision_mpp::ConfigureLegacyDemoInput(
+            app_config_path.string(), use_camera, camera_id, camera_id_set,
+            video_path, true, false, &input_options)) {
+        return 1;
+    }
+    use_camera = input_options.use_camera;
+    camera_id = input_options.camera.camera_id;
+
     YAML::Node app_cfg;
     YAML::Node tracker_cfg;
     std::string tracker_cfg_abs;
@@ -327,8 +339,9 @@ int main(int argc, char** argv) {
     }
 
     if (use_camera) {
-        if (app_cfg["camera_id"]) {
+        if (!camera_id_set && app_cfg["camera_id"]) {
             camera_id = app_cfg["camera_id"].as<int>();
+            input_options.camera.camera_id = camera_id;
         }
     } else if (video_path.empty()) {
         const std::string test_video = YamlString(app_cfg, "test_video");
@@ -362,8 +375,7 @@ int main(int argc, char** argv) {
     try {
         cv::VideoCapture cap;
         if (use_camera) {
-            cap.open(camera_id);
-            if (!cap.isOpened()) {
+            if (!vision_mpp::OpenExampleCamera(&cap, input_options)) {
                 std::cerr << "Error: Could not open camera: " << camera_id << std::endl;
                 return -1;
             }
@@ -496,4 +508,3 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
-

@@ -1,4 +1,13 @@
 # Face recognition app entry (buffalo_l pipeline).
+# C++ demo input; existing command-line input options take precedence.
+input:
+  type: image                 # Uses the existing default image when source is omitted.
+  # For camera input, change type to camera and uncomment the options below.
+  # source: /dev/video0
+  # backend: opencv           # MPP is not supported by this application.
+  # width: 1280
+  # height: 720
+  # fps: 30
 
 scrfd_model: scrfd.yaml
 arcface_model: arcface_buffalo.yaml

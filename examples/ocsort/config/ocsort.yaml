@@ -1,4 +1,13 @@
 # OC-SORT 目标追踪模型配置（YOLOv8 detector + OC-SORT）
+# C++ camera input override; omit to retain the existing test_video default.
+# Existing --video / --use-camera / --camera-id options take precedence.
+# input:
+#   type: camera
+#   source: /dev/video0
+#   backend: mpp  # opencv (default) / mpp
+#   width: 1280
+#   height: 720
+#   fps: 30
 model_path: ~/.cache/models/vision/ocsort/yolov8n_no_dfl.q.onnx
 test_video: ~/.cache/assets/video/003_palace.mp4
 label_file_path: assets/labels/coco.txt

@@ -1,6 +1,15 @@
 # YOLOv5 目标检测模型配置
 model_path: ~/.cache/models/vision/yolov5/yolov5_gesture.q.onnx
 test_image: ~/.cache/assets/image/012_gesture.jpg
+# C++ demo input; command-line options take precedence.
+input:
+  type: image                 # image / camera; image source defaults to test_image
+  # To use a camera, change type above to camera and uncomment the options below.
+  # source: /dev/video0        # Select the actual camera device.
+  # backend: mpp              # Camera capture: opencv (default) / mpp; not preprocessing.
+  # width: 1280               # Optional capture requests, also supported by OpenCV.
+  # height: 720
+  # fps: 30
 label_file_path: assets/labels/gesture.txt
 image_size: [640, 640]
 class: deploy.yolov5_gesture.YOLOv5_GestureDetector

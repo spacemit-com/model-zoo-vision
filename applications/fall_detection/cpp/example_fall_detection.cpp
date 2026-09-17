@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "vision_service.h"
+#include "mpp_example_helpers.h"
 #include "common.h"
 
 #include <opencv2/opencv.hpp>
@@ -292,6 +293,15 @@ int main(int argc, char** argv) {
     }
     const fs::path config_dir = app_config_path.parent_path();
 
+    vision_mpp::ExampleInputConfig input_options;
+    if (!vision_mpp::ConfigureLegacyDemoInput(
+            app_config_path.string(), use_camera, camera_id, camera_id_set,
+            video_path, true, false, &input_options)) {
+        return 1;
+    }
+    use_camera = input_options.use_camera;
+    camera_id = input_options.camera.camera_id;
+
     YAML::Node app_cfg;
     try {
         app_cfg = YAML::LoadFile(app_config_path.string());
@@ -318,6 +328,7 @@ int main(int argc, char** argv) {
     } else if (!camera_id_set && app_cfg["camera_id"]) {
         // CLI --camera-id takes precedence over yaml (same as Python).
         camera_id = app_cfg["camera_id"].as<int>();
+        input_options.camera.camera_id = camera_id;
     }
 
     const std::string pose_rel = YamlString(app_cfg, "pose_model");
@@ -387,8 +398,7 @@ int main(int argc, char** argv) {
 
         cv::VideoCapture cap;
         if (use_camera) {
-            cap.open(camera_id);
-            if (!cap.isOpened()) {
+            if (!vision_mpp::OpenExampleCamera(&cap, input_options)) {
                 std::cerr << "Error: Could not open camera: " << camera_id << std::endl;
                 return -1;
             }

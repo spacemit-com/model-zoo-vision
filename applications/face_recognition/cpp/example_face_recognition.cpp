@@ -28,6 +28,7 @@
 #include "align_face.h"
 #include "face_recognition_runtime.h"
 #include "vision_service.h"
+#include "mpp_example_helpers.h"
 
 namespace fs = std::filesystem;
 
@@ -529,6 +530,7 @@ int main(int argc, char* argv[]) {
     bool save_image_value = false;
     bool use_camera_flag = false;
     int camera_id_flag = 0;
+    bool camera_id_set = false;
     int camera_width = 0;
     int camera_height = 0;
     int camera_skip = 0;
@@ -556,6 +558,7 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--camera-id" && i + 1 < argc) {
             try {
                 camera_id_flag = std::stoi(argv[++i]);
+                camera_id_set = true;
             } catch (const std::exception&) {
                 std::cerr << "Error: invalid --camera-id value" << std::endl;
                 return 1;
@@ -588,6 +591,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    const fs::path app_config_path(ResolveUserPath(project_root, app_config_rel));
+    vision_mpp::ExampleInputConfig input_options;
+    if (!vision_mpp::ConfigureLegacyDemoInput(
+            app_config_path.string(), use_camera_flag, camera_id_flag, camera_id_set,
+            image_path, false, false, &input_options)) {
+        return 1;
+    }
+    use_camera_flag = input_options.use_camera;
+    camera_id_flag = input_options.camera.camera_id;
+    image_path = input_options.image_path;
+
     if (!register_name.empty() && (do_recognize || use_camera_flag)) {
         std::cerr << "Error: --register cannot be combined with --recognize or --use-camera"
             << std::endl;
@@ -600,7 +614,6 @@ int main(int argc, char* argv[]) {
     // camera + --recognize: live matching; bare --recognize: image matching
     const bool enable_recognition = do_recognize;
 
-    const fs::path app_config_path(ResolveUserPath(project_root, app_config_rel));
     if (!fs::exists(app_config_path)) {
         std::cerr << "Error: app config not found: " << app_config_path << std::endl;
         std::cerr << "Hint: run from repo root or pass --config "
@@ -711,16 +724,12 @@ int main(int argc, char* argv[]) {
     }
 
     if (is_camera) {
-        cv::VideoCapture cap(camera_id_flag);
-        if (!cap.isOpened()) {
+        cv::VideoCapture cap;
+        if (camera_width > 0) input_options.width = camera_width;
+        if (camera_height > 0) input_options.height = camera_height;
+        if (!vision_mpp::OpenExampleCamera(&cap, input_options)) {
             std::cerr << "Error: failed to open camera index " << camera_id_flag << std::endl;
             return 1;
-        }
-        if (camera_width > 0) {
-            cap.set(cv::CAP_PROP_FRAME_WIDTH, static_cast<double>(camera_width));
-        }
-        if (camera_height > 0) {
-            cap.set(cv::CAP_PROP_FRAME_HEIGHT, static_cast<double>(camera_height));
         }
         int frame_idx = 0;
         constexpr int kCameraReadFailureLimit = 30;

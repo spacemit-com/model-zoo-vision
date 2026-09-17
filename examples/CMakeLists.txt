@@ -30,6 +30,11 @@ foreach(cpp_file IN LISTS EXAMPLE_CPP_FILES)
     link_vision_with_registration(${example_name})
     target_link_libraries(${example_name} PRIVATE ${LIBS})
 
+    # The MPP staging directory can also contain an older libvision.so.
+    # Prefer the library built alongside these examples before SDK paths.
+    set_property(TARGET ${example_name} PROPERTY BUILD_RPATH
+        "$<TARGET_FILE_DIR:vision>;${CMAKE_BUILD_RPATH}")
+
     target_include_directories(${example_name} PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/common/cpp

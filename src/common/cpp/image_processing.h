@@ -6,6 +6,8 @@
 #ifndef IMAGE_PROCESSING_H
 #define IMAGE_PROCESSING_H
 
+#include <array>
+#include <cstdint>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -14,6 +16,20 @@
 #include <opencv2/opencv.hpp>
 
 namespace vision_common {
+
+// Scan a CV_8UC1 label map once before producing per-class masks.
+// Iterating rows also supports non-contiguous ROI input.
+inline std::array<uint8_t, 256> collect_present_u8_labels(
+    const cv::Mat& label_map) {
+    std::array<uint8_t, 256> present{};
+    for (int y = 0; y < label_map.rows; ++y) {
+        const uint8_t* row = label_map.ptr<uint8_t>(y);
+        for (int x = 0; x < label_map.cols; ++x) {
+            present[row[x]] = 1;
+        }
+    }
+    return present;
+}
 
 /**
  * @brief Letterbox preprocessing for YOLO models

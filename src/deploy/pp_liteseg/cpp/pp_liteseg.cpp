@@ -22,6 +22,7 @@
 
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
+#include "common/cpp/image_processing.h"
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "operators/image_preprocess/image_preprocess_geometry.h"
 
@@ -272,9 +273,10 @@ cv::Mat PPLiteSeg::postprocess_to_label_map(std::vector<Ort::Value>& outputs,
         throw std::runtime_error("PPLiteSeg: unsupported int32 output rank");
     }
 
-    cv::Mat cropped = pred_small(cv::Rect(0, 0, valid_w, valid_h)).clone();
     cv::Mat pred_origin;
-    cv::resize(cropped, pred_origin, cv::Size(origin_w, origin_h), 0, 0, cv::INTER_NEAREST);
+    cv::resize(pred_small(cv::Rect(0, 0, valid_w, valid_h)),
+        pred_origin, cv::Size(origin_w, origin_h),
+        0, 0, cv::INTER_NEAREST);
     return pred_origin;
 }
 
@@ -284,20 +286,18 @@ vision_common::SegmentationResultList PPLiteSeg::split_semantic_masks(const cv::
         return out;
     }
 
+    const auto present = vision_common::collect_present_u8_labels(label_u8);
     for (int cid = 1; cid < num_classes_; ++cid) {
+        if (cid >= 256) break;
+        if (!present[cid]) continue;
         cv::Mat bin;
         cv::compare(label_u8, cid, bin, cv::CMP_EQ);
-        if (cv::countNonZero(bin) == 0) {
-            continue;
-        }
-        cv::Mat m255;
-        bin.convertTo(m255, CV_8U, 255.0);
 
         vision_common::SegmentationResult r;
         r.bbox = vision_common::BoundingBox{0, 0, static_cast<float>(bin.cols), static_cast<float>(bin.rows)};
         r.label = cid;
         r.score = 1.0f;
-        r.mask = std::make_shared<cv::Mat>(m255);
+        r.mask = std::make_shared<cv::Mat>(std::move(bin));
         out.push_back(std::move(r));
     }
     return out;

@@ -194,6 +194,11 @@ void ByteTrackTracker::configure_preprocess_backend(
     detector_->configure_preprocess_backend(backend);
 }
 
+void ByteTrackTracker::configure_preprocess_fallback(const std::string& fallback)
+{
+    detector_->configure_preprocess_fallback(fallback);
+}
+
 void ByteTrackTracker::configure_preprocess_opencl_sampling(
     const std::string& sampling)
 {

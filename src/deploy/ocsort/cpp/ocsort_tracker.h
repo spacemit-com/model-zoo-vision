@@ -82,6 +82,7 @@ public:
 
     void configure_preprocess_backend(
         const std::string& backend) override;
+    void configure_preprocess_fallback(const std::string& fallback) override;
     void configure_preprocess_opencl_sampling(
         const std::string& sampling) override;
 

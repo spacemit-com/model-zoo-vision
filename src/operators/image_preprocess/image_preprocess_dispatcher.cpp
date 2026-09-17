@@ -12,66 +12,59 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <utility>
+#include <vector>
 
 #include "image_preprocessor.h"
 
-namespace vision_operators {
+namespace vision_operators
+{
 
-namespace {
+namespace
+{
 
-bool same_preprocess_spec(
-    const ImagePreprocessSpec& left,
-    const ImagePreprocessSpec& right)
+bool same_preprocess_spec(const ImagePreprocessSpec& left,
+                            const ImagePreprocessSpec& right)
 {
     return left.batch_size == right.batch_size &&
-        left.output_width == right.output_width &&
-        left.output_height == right.output_height &&
-        left.crop_mode == right.crop_mode &&
-        left.resize_mode == right.resize_mode &&
-        left.resize_rounding == right.resize_rounding &&
-        left.resize_width == right.resize_width &&
-        left.resize_height == right.resize_height &&
-        left.output_rgb == right.output_rgb &&
-        left.interpolation == right.interpolation &&
-        left.opencl_sampling == right.opencl_sampling &&
-        left.output_type == right.output_type &&
-        left.mean == right.mean &&
-        left.scale == right.scale &&
-        left.padding == right.padding;
+            left.output_width == right.output_width &&
+            left.output_height == right.output_height &&
+            left.crop_mode == right.crop_mode && left.resize_mode == right.resize_mode &&
+            left.resize_rounding == right.resize_rounding &&
+            left.resize_width == right.resize_width &&
+            left.resize_height == right.resize_height &&
+            left.output_rgb == right.output_rgb &&
+            left.interpolation == right.interpolation &&
+            left.opencl_sampling == right.opencl_sampling &&
+            left.output_type == right.output_type && left.mean == right.mean &&
+            left.scale == right.scale && left.padding == right.padding;
 }
 
 void validate_input(const vision_core::ImageInput& input)
 {
     if (input.image.empty()) {
-        throw std::invalid_argument(
-            "image preprocess input is empty");
+        throw std::invalid_argument("image preprocess input is empty");
     }
     if (input.format == vision_core::ImagePixelFormat::kBgr8) {
         if (input.image.type() != CV_8UC3) {
-            throw std::invalid_argument(
-                "BGR8 input must have type CV_8UC3");
+            throw std::invalid_argument("BGR8 input must have type CV_8UC3");
         }
     } else {
         const int input_height = input.image.rows * 2 / 3;
-        if (input.image.type() != CV_8UC1 ||
-            input.image.rows % 3 != 0 ||
-            (input.image.cols & 1) != 0 ||
-            (input_height & 1) != 0) {
+        if (input.image.type() != CV_8UC1 || input.image.rows % 3 != 0 ||
+            (input.image.cols & 1) != 0 || (input_height & 1) != 0) {
             throw std::invalid_argument(
                 "NV12 input must be CV_8UC1 H*3/2 x W "
                 "with even H and W");
         }
     }
     if (input.image.step[0] == 0) {
-        throw std::invalid_argument(
-            "image preprocess input has an invalid row stride");
+        throw std::invalid_argument("image preprocess input has an invalid row stride");
     }
     if (input.dma_fd >= 0) {
-        struct stat info {};
+        struct stat info{};
         if (::fstat(input.dma_fd, &info) != 0) {
-            throw std::invalid_argument(
-                "invalid input dma-buf fd: " +
-                std::string(std::strerror(errno)));
+            throw std::invalid_argument("invalid input dma-buf fd: " +
+                                        std::string(std::strerror(errno)));
         }
     }
 }
@@ -82,8 +75,7 @@ void validate_spec(const ImagePreprocessSpec& spec)
         throw std::invalid_argument(
             "image preprocess output dimensions must be positive");
     }
-    if (spec.crop_mode ==
-            PreprocessCropMode::kResizeShortSideCenterCrop &&
+    if (spec.crop_mode == PreprocessCropMode::kResizeShortSideCenterCrop &&
         (spec.resize_width <= 0 || spec.resize_height <= 0)) {
         throw std::invalid_argument(
             "center-crop preprocessing requires resize dimensions");
@@ -93,205 +85,218 @@ void validate_spec(const ImagePreprocessSpec& spec)
 }  // namespace
 
 class ImagePreprocessDispatcher::Impl
-    : public std::enable_shared_from_this<
-        ImagePreprocessDispatcher::Impl> {
+    : public std::enable_shared_from_this<ImagePreprocessDispatcher::Impl>
+{
+    struct Backend {
+        PreprocessBackend kind;
+        ImagePreprocessorFactory factory;
+        bool compiled;
+        bool disabled = false;
+        bool has_spec = false;
+        bool warned = false;
+        ImagePreprocessSpec spec;
+        std::shared_ptr<ImagePreprocessor> processor;
+    };
+
 public:
-    Impl(
-        PreprocessBackendPolicy policy,
-        ImagePreprocessorFactory opencl_factory)
-        : state_(policy),
-        opencl_factory_(std::move(opencl_factory))
+    Impl(PreprocessBackendPolicy policy, ImagePreprocessorFactory opencl_factory,
+            bool with_v2d)
+        : policy_(policy)
     {
-        if (!opencl_factory_) {
-            throw std::invalid_argument(
-                "OpenCL image preprocessor factory is empty");
-        }
+        if (!opencl_factory) throw std::invalid_argument("empty OpenCL factory");
+        // The injectable constructor deliberately isolates OpenCL for existing
+        // callers/tests. Production registers each backend here, not in models.
+        if (with_v2d)
+            backends_.push_back({PreprocessBackend::kV2d, create_v2d_image_preprocessor,
+                                    v2d_image_preprocessor_compiled()});
+        backends_.push_back({PreprocessBackend::kOpenCl, std::move(opencl_factory),
+                                opencl_image_preprocessor_compiled()});
     }
 
-    void configure(const std::string& backend)
+    void configure(const std::string& name)
     {
-        PreprocessBackendPolicy policy =
-            parse_preprocess_backend_policy(backend);
-        if (!opencl_image_preprocessor_compiled()) {
-            if (policy == PreprocessBackendPolicy::kOpenCl) {
-                throw std::runtime_error(
-                    "OpenCL image preprocessing was not compiled");
-            }
-            if (policy == PreprocessBackendPolicy::kAuto) {
-                policy = PreprocessBackendPolicy::kCpu;
-            }
+        const auto policy = parse_preprocess_backend_policy(name);
+        if (policy != PreprocessBackendPolicy::kCpu &&
+            policy != PreprocessBackendPolicy::kAuto &&
+            fallback_ == PreprocessFallback::kError) {
+            bool available = false;
+            for (const auto& b : backends_)
+                if (selected(policy, b.kind)) available = b.compiled;
+            if (!available)
+                throw std::runtime_error(name + " preprocessing was not compiled");
         }
-        state_ = OpenClBackendState(policy);
-        reset_opencl();
+        policy_ = policy;
+        for (auto& b : backends_) {
+            b.disabled = false;
+            b.warned = false;
+        }
+        reset();
+    }
+
+    void configure_fallback(const std::string& value)
+    {
+        fallback_ = parse_preprocess_fallback(value);
     }
 
     void reset()
     {
-        reset_opencl();
+        for (auto& b : backends_) {
+            b.processor.reset();
+            b.has_spec = false;
+        }
     }
 
-    ImagePreprocessResult process(
-        const vision_core::ImageInput& input,
-        const ImagePreprocessSpec& spec,
-        const CpuImagePreprocess& cpu_preprocess)
+    ImagePreprocessResult process(const vision_core::ImageInput& input,
+                                    const ImagePreprocessSpec& spec,
+                                    const CpuImagePreprocess& cpu)
     {
-        // Input errors are independent of backend capability and must never
-        // disable OpenCL or trigger fallback.
         validate_input(input);
-
-        const bool is_nv12 =
-            input.format == vision_core::ImagePixelFormat::kNv12;
-        const bool is_bgr =
-            input.format == vision_core::ImagePixelFormat::kBgr8;
-        const bool is_nv12_dma =
-            is_nv12 && input.dma_fd >= 0;
-        // Keep auto behavior unchanged: host BGR remains on the CPU unless
-        // OpenCL is explicitly requested. This makes the new upload-based
-        // BGR path opt-in and avoids regressing existing camera pipelines.
-        const bool should_try_bgr_opencl =
-            is_bgr && state_.policy() ==
-                PreprocessBackendPolicy::kOpenCl;
-        const bool is_opencl_input =
-            should_try_bgr_opencl || is_nv12_dma;
-        if (state_.policy() ==
-                PreprocessBackendPolicy::kOpenCl &&
-            !is_opencl_input) {
-            throw std::invalid_argument(
-                "OpenCL image preprocessing requires "
-                "BGR8 host input or NV12 DMA-BUF input");
-        }
-        if (!should_try_bgr_opencl &&
-            !state_.should_try_opencl_for_input(
-                is_nv12, input.dma_fd >= 0)) {
-            return run_cpu_image_preprocess(
-                input, cpu_preprocess);
-        }
+        if (policy_ == PreprocessBackendPolicy::kCpu)
+            return run_cpu_image_preprocess(input, cpu);
+        const bool automatic = policy_ == PreprocessBackendPolicy::kAuto;
+        const bool nv12_dma =
+            input.format == vision_core::ImagePixelFormat::kNv12 && input.dma_fd >= 0;
+        // Auto never uploads host BGR, or converts BGR to NV12 merely to use V2D.
+        if (automatic && !nv12_dma) return run_cpu_image_preprocess(input, cpu);
         validate_spec(spec);
-
-        if (!opencl_preprocessor_ ||
-            !has_opencl_spec_ ||
-            !same_preprocess_spec(opencl_spec_, spec)) {
-            try {
-                opencl_preprocessor_ =
-                    opencl_factory_(spec);
-                opencl_spec_ = spec;
-                has_opencl_spec_ = true;
-            } catch (const std::exception& error) {
-                reset_opencl();
-                if (state_.policy() ==
-                    PreprocessBackendPolicy::kOpenCl) {
-                    throw;
-                }
-                disable_with_warning(error.what());
-                return run_cpu_image_preprocess(
-                    input, cpu_preprocess);
+        const bool can_fallback = automatic || fallback_ == PreprocessFallback::kCpu;
+        for (size_t i = 0; i < backends_.size(); ++i) {
+            auto& b = backends_[i];
+            if (!automatic && !selected(policy_, b.kind)) continue;
+            if (!b.compiled || b.disabled) {
+                if (!can_fallback)
+                    throw ImagePreprocessBackendUnavailable(
+                        std::string(preprocess_backend_name(b.kind)) + " unavailable");
+                if (!automatic) warn(b, "backend unavailable");
+                continue;
             }
-        }
-
-        try {
-            cv::Mat tensor = opencl_preprocessor_->process(input);
-            std::shared_ptr<ImagePreprocessor> retained =
-                opencl_preprocessor_;
-            std::shared_ptr<Impl> self =
-                shared_from_this();
-            return ImagePreprocessResult(
-                std::move(tensor),
-                PreprocessBackend::kOpenCl,
-                [self, retained]() {
-                    try {
-                        retained->complete();
-                    } catch (const std::exception& error) {
-                        if (self->state_.policy() ==
-                            PreprocessBackendPolicy::kAuto) {
-                            self->disable_with_warning(
-                                error.what());
-                            self->reset_opencl();
+            const bool supported_input =
+                nv12_dma || (b.kind == PreprocessBackend::kOpenCl &&
+                                input.format == vision_core::ImagePixelFormat::kBgr8);
+            if (!supported_input) {
+                if (!can_fallback)
+                    throw std::invalid_argument(
+                        std::string(preprocess_backend_name(b.kind)) +
+                        " does not support this input (V2D requires NV12 DMA)");
+                warn(b, "input unsupported; using CPU");
+                continue;
+            }
+            // Construction does not own the input buffer: safe to fall back.
+            try {
+                if (!b.processor || !b.has_spec ||
+                    !same_preprocess_spec(b.spec, spec)) {
+                    b.processor = b.factory(spec);
+                    if (!b.processor)
+                        throw std::runtime_error("empty backend instance");
+                    b.spec = spec;
+                    b.has_spec = true;
+                }
+            } catch (const std::invalid_argument&) {
+                throw;
+            } catch (const ImagePreprocessUnsupported& e) {
+                b.processor.reset();
+                b.has_spec = false;
+                if (!can_fallback) throw;
+                warn(b, e.what());
+                continue;
+            } catch (const std::exception& e) {
+                if (!can_fallback) throw;
+                disable(b, e.what());
+                continue;
+            }
+            try {
+                cv::Mat tensor = b.processor->process(input);
+                auto retained = b.processor;
+                auto self = shared_from_this();
+                return ImagePreprocessResult(
+                    std::move(tensor), b.kind, [self, retained, i, can_fallback]() {
+                        try {
+                            retained->complete();
+                        } catch (const std::exception& e) {
+                            if (can_fallback)
+                                self->disable(self->backends_[i], e.what());
+                            throw;
                         }
-                        throw;
-                    }
-                });
-        } catch (const std::invalid_argument&) {
-            // Request-specific input/layout errors do not indicate a
-            // persistent OpenCL backend failure.
-            throw;
-        } catch (
-            const ImagePreprocessBackendUnavailable& error) {
-            if (state_.policy() ==
-                PreprocessBackendPolicy::kOpenCl) {
+                    });
+            } catch (const std::invalid_argument&) {
+                throw;  // Invalid caller data is never a fallback condition.
+            } catch (const ImagePreprocessUnsupported& e) {
+                if (!can_fallback) throw;
+                warn(b, e.what());
+            } catch (const ImagePreprocessBackendUnavailable& e) {
+                // Backend promises no input acquisition/work was started.
+                if (!can_fallback) throw;
+                disable(b, e.what());
+            } catch (const std::exception& e) {
+                if (can_fallback) disable(b, e.what());
+                // Once work starts, ownership may be indeterminate. Never
+                // retry this request on another backend or on CPU.
                 throw;
             }
-            disable_with_warning(error.what());
-            reset_opencl();
-            return run_cpu_image_preprocess(
-                input, cpu_preprocess);
-        } catch (const std::exception& error) {
-            if (state_.policy() == PreprocessBackendPolicy::kAuto) {
-                disable_with_warning(error.what());
-                reset_opencl();
-            }
-            // Once execution begins, the current request is never retried on
-            // CPU because external-memory ownership may be indeterminate.
-            throw;
         }
+        return run_cpu_image_preprocess(input, cpu);
     }
 
 private:
-    void disable_with_warning(const std::string& reason)
+    static bool selected(PreprocessBackendPolicy p, PreprocessBackend k)
     {
-        if (!state_.disable(reason)) return;
-        std::cerr
-            << "[WARN] image_preprocess OpenCL disabled: "
-            << reason
-            << "; subsequent auto requests will use CPU\n";
+        return (p == PreprocessBackendPolicy::kOpenCl &&
+                k == PreprocessBackend::kOpenCl) ||
+                (p == PreprocessBackendPolicy::kV2d && k == PreprocessBackend::kV2d);
     }
-
-    void reset_opencl()
+    static void warn(Backend& b, const std::string& reason)
     {
-        opencl_preprocessor_.reset();
-        has_opencl_spec_ = false;
+        if (b.warned) return;
+        b.warned = true;
+        std::cerr << "[WARN] image_preprocess " << preprocess_backend_name(b.kind)
+                    << ": " << reason << "; fallback enabled\n";
     }
-
-    OpenClBackendState state_;
-    ImagePreprocessorFactory opencl_factory_;
-    std::shared_ptr<ImagePreprocessor> opencl_preprocessor_;
-    ImagePreprocessSpec opencl_spec_;
-    bool has_opencl_spec_{false};
+    static void disable(Backend& b, const std::string& reason)
+    {
+        b.disabled = true;
+        b.processor.reset();
+        b.has_spec = false;
+        warn(b, reason + (b.kind == PreprocessBackend::kOpenCl
+                                ? "; subsequent auto requests will use CPU"
+                                : "; subsequent requests skip this backend"));
+    }
+    PreprocessBackendPolicy policy_;
+    PreprocessFallback fallback_ = PreprocessFallback::kError;
+    std::vector<Backend> backends_;
 };
 
-ImagePreprocessDispatcher::ImagePreprocessDispatcher(
-    PreprocessBackendPolicy policy)
-    : ImagePreprocessDispatcher(
-        policy,
-        [](const ImagePreprocessSpec& spec) {
-            return create_opencl_image_preprocessor(spec);
-        })
+ImagePreprocessDispatcher::ImagePreprocessDispatcher(PreprocessBackendPolicy policy)
+    : impl_(std::make_shared<Impl>(
+            policy,
+            [](const ImagePreprocessSpec& spec) {
+                return create_opencl_image_preprocessor(spec);
+            },
+            true))
 {
 }
 
 ImagePreprocessDispatcher::ImagePreprocessDispatcher(
-    PreprocessBackendPolicy policy,
-    ImagePreprocessorFactory opencl_factory)
-    : impl_(std::make_shared<Impl>(
-        policy, std::move(opencl_factory)))
+    PreprocessBackendPolicy policy, ImagePreprocessorFactory opencl_factory)
+    : impl_(std::make_shared<Impl>(policy, std::move(opencl_factory), false))
 {
 }
 
 ImagePreprocessDispatcher::~ImagePreprocessDispatcher() = default;
 
-void ImagePreprocessDispatcher::configure(
-    const std::string& backend)
+void ImagePreprocessDispatcher::configure(const std::string& backend)
 {
     impl_->configure(backend);
 }
 
-void ImagePreprocessDispatcher::reset()
+void ImagePreprocessDispatcher::configure_fallback(const std::string& fallback)
 {
-    impl_->reset();
+    impl_->configure_fallback(fallback);
 }
 
+void ImagePreprocessDispatcher::reset() { impl_->reset(); }
+
 ImagePreprocessResult ImagePreprocessDispatcher::process(
-    const vision_core::ImageInput& input,
-    const ImagePreprocessSpec& spec,
+    const vision_core::ImageInput& input, const ImagePreprocessSpec& spec,
     const CpuImagePreprocess& cpu_preprocess)
 {
     return impl_->process(input, spec, cpu_preprocess);

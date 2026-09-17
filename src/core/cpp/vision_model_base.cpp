@@ -356,15 +356,26 @@ void BaseModel::configure_preprocess_backend(
     const vision_operators::PreprocessBackendPolicy policy =
         vision_operators::parse_preprocess_backend_policy(backend);
     if (!accelerated_image_preprocess_enabled_) {
-        if (policy ==
-            vision_operators::PreprocessBackendPolicy::kOpenCl) {
+        if (policy != vision_operators::PreprocessBackendPolicy::kCpu &&
+            policy != vision_operators::PreprocessBackendPolicy::kAuto &&
+            preprocess_fallback_ == vision_operators::PreprocessFallback::kError) {
             throw std::runtime_error(
                 "This model does not enable accelerated image preprocessing");
+        }
+        if (policy != vision_operators::PreprocessBackendPolicy::kCpu &&
+            policy != vision_operators::PreprocessBackendPolicy::kAuto) {
+            std::cerr << "[WARN] model has a dedicated CPU preprocessing path; using CPU\n";
         }
         image_preprocess_dispatcher_.configure("cpu");
         return;
     }
     image_preprocess_dispatcher_.configure(backend);
+}
+
+void BaseModel::configure_preprocess_fallback(const std::string& fallback)
+{
+    preprocess_fallback_ = vision_operators::parse_preprocess_fallback(fallback);
+    image_preprocess_dispatcher_.configure_fallback(fallback);
 }
 
 void BaseModel::configure_preprocess_opencl_sampling(
@@ -400,10 +411,8 @@ BaseModel::PreparedImage BaseModel::prepare_image(
         std::chrono::duration<double, std::milli>(
             end - start).count();
     add_runtime_component_timing(
-        prepared.backend_used() ==
-                vision_operators::PreprocessBackend::kOpenCl
-            ? "image_preprocess.opencl"
-            : "image_preprocess.cpu",
+        std::string("image_preprocess.") +
+            vision_operators::preprocess_backend_name(prepared.backend_used()),
         elapsed_ms);
     return prepared;
 }

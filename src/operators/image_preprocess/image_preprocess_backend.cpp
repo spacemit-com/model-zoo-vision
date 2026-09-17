@@ -22,8 +22,26 @@ PreprocessBackendPolicy parse_preprocess_backend_policy(
     if (value == "opencl") {
         return PreprocessBackendPolicy::kOpenCl;
     }
+    if (value == "v2d") return PreprocessBackendPolicy::kV2d;
     throw std::invalid_argument(
-        "preprocess.backend must be cpu, auto, or opencl");
+        "preprocess.backend must be cpu, auto, opencl, or v2d");
+}
+
+PreprocessFallback parse_preprocess_fallback(std::string_view value)
+{
+    if (value == "cpu") return PreprocessFallback::kCpu;
+    if (value == "error") return PreprocessFallback::kError;
+    throw std::invalid_argument("preprocess.fallback must be cpu or error");
+}
+
+const char* preprocess_backend_name(PreprocessBackend backend) noexcept
+{
+    switch (backend) {
+    case PreprocessBackend::kCpu: return "cpu";
+    case PreprocessBackend::kOpenCl: return "opencl";
+    case PreprocessBackend::kV2d: return "v2d";
+    }
+    return "unknown";
 }
 
 PreprocessOpenClSampling parse_preprocess_opencl_sampling(
@@ -53,7 +71,8 @@ PreprocessBackendPolicy OpenClBackendState::policy() const noexcept
 
 bool OpenClBackendState::should_try_opencl() const noexcept
 {
-    return policy_ != PreprocessBackendPolicy::kCpu &&
+    return (policy_ == PreprocessBackendPolicy::kAuto ||
+            policy_ == PreprocessBackendPolicy::kOpenCl) &&
         !disabled_;
 }
 

@@ -36,6 +36,7 @@ option(BUILD_PYTHON_BINDINGS "Build Python bindings (_vision_service_cpp) for th
 option(BUILD_PYTHON_WHEEL "Also build the spacemit_vision wheel as part of the default build (needs python -m build)" ON)
 option(VISION_WITH_MPP "Enable MPP camera capture backend (UVC/VI) in examples" OFF)
 option(VISION_WITH_OPENCL "Enable OpenCL preprocessing backend" OFF)
+option(VISION_WITH_V2D "Enable SpaceMIT V2D + CPU/RVV preprocessing" OFF)
 
 # ============================================================================
 # Dependencies Configuration
@@ -125,14 +126,14 @@ if(OpenCV_VERSION VERSION_GREATER_EQUAL 5)
     message(STATUS "OpenCV geometry: ${OPENCV_GEOMETRY_LIBRARY}")
 endif()
 
-if(VISION_WITH_MPP)
+if(VISION_WITH_MPP OR VISION_WITH_V2D)
     if(NOT DEFINED STAGING_DIR)
         set(STAGING_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../output/staging")
     endif()
     set(VISION_MPP_LIB "${STAGING_DIR}/lib/libmpp.so")
     if(NOT EXISTS "${VISION_MPP_LIB}")
         message(FATAL_ERROR
-            "VISION_WITH_MPP=ON but ${VISION_MPP_LIB} not found. "
+            "MPP/V2D requested but ${VISION_MPP_LIB} not found. "
             "Build MPP first or pass -DSTAGING_DIR=<output/staging>.")
     endif()
     set(VISION_MPP_RPATH "${STAGING_DIR}/lib")
@@ -144,7 +145,7 @@ if(VISION_WITH_MPP)
         "${STAGING_DIR}/include/v2d"
         "${STAGING_DIR}/include/vi"
     )
-    message(STATUS "Vision MPP enabled (staging: ${STAGING_DIR})")
+    message(STATUS "Vision MPP/V2D dependencies (staging: ${STAGING_DIR})")
 else()
     message(STATUS "Vision MPP disabled (pass -DVISION_WITH_MPP=ON to enable)")
 endif()
@@ -165,6 +166,21 @@ set(OPENCL_PREPROCESS_STUB
     "${CMAKE_CURRENT_SOURCE_DIR}/src/operators/image_preprocess/opencl_image_preprocessor_stub.cpp"
 )
 list(REMOVE_ITEM VISION_OPERATOR_SOURCES "${OPENCL_PREPROCESS_STUB}")
+set(V2D_PREPROCESS_STUB
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/operators/image_preprocess/v2d_image_preprocessor_stub.cpp")
+list(REMOVE_ITEM VISION_OPERATOR_SOURCES "${V2D_PREPROCESS_STUB}")
+if(VISION_WITH_V2D)
+    list(APPEND VISION_OPERATOR_SOURCES
+        src/backends/spacemit/dma_buffer.cpp
+        src/backends/spacemit/v2d_image_ops.cpp
+        src/backends/spacemit/v2d_image_preprocessor.cpp)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+        set_source_files_properties(src/backends/spacemit/v2d_image_preprocessor.cpp
+            PROPERTIES COMPILE_OPTIONS "-march=rv64gcv")
+    endif()
+else()
+    list(APPEND VISION_OPERATOR_SOURCES "${V2D_PREPROCESS_STUB}")
+endif()
 if(VISION_WITH_OPENCL)
     add_subdirectory(src/backends/opencl)
 else()
@@ -258,6 +274,9 @@ if(VISION_WITH_MPP)
         VISION_HAS_MPP=1
         VISION_MPP_STAGING_LIB="${VISION_MPP_RPATH}"
     )
+endif()
+target_compile_definitions(vision PRIVATE VISION_WITH_V2D=$<BOOL:${VISION_WITH_V2D}>)
+if(VISION_WITH_MPP OR VISION_WITH_V2D)
     target_include_directories(vision PRIVATE ${VISION_MPP_INCLUDE_DIRS})
     target_link_libraries(vision
         "${VISION_MPP_LIB}"
@@ -418,6 +437,9 @@ message(STATUS "  C++ Standard:         ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build type:           ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Build examples:       ${BUILD_EXAMPLES}")
 message(STATUS "  Build tests:           ${BUILD_TESTS}")
+message(STATUS "  OpenCL preprocessing:  ${VISION_WITH_OPENCL}")
+message(STATUS "  V2D preprocessing:     ${VISION_WITH_V2D}")
+message(STATUS "  MPP capture:           ${VISION_WITH_MPP}")
 message(STATUS "  Build python bindings: ${BUILD_PYTHON_BINDINGS}")
 message(STATUS "  Build python wheel:    ${BUILD_PYTHON_WHEEL}")
 message(STATUS "  OpenCV version:        ${OpenCV_VERSION}")

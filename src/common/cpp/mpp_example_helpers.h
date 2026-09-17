@@ -32,6 +32,9 @@ inline std::string FindImagePreprocessBackend(
     const VisionServiceProfile& profile)
 {
     for (const auto& component : profile.components) {
+        if (component.name == "image_preprocess.v2d") {
+            return "v2d";
+        }
         if (component.name == "image_preprocess.opencl") {
             return "opencl";
         }

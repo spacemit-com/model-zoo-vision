@@ -12,5 +12,9 @@ default_params:
   providers:
     - SpaceMITExecutionProvider
   preprocess:
+    # cpu / opencl / v2d / auto; auto: BGR -> CPU, NV12 DMA -> V2D/OpenCL/CPU
     backend: auto
+    # Explicit hardware backend unavailable/unsupported: error (default) / cpu
+    fallback: error
+    # Only affects OpenCL NV12 sampling, never enables V2D.
     opencl_sampling: opencv_compatible

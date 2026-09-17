@@ -49,10 +49,18 @@ int main()
         (void)parse_preprocess_backend_policy("vulkan");
     } catch (const std::invalid_argument& error) {
         rejected_unknown =
-            std::string(error.what()).find("cpu, auto, or opencl") !=
+            std::string(error.what()).find("cpu, auto, opencl, or v2d") !=
             std::string::npos;
     }
     check(rejected_unknown, "unknown backend values are rejected");
+    check(parse_preprocess_backend_policy("v2d") == PreprocessBackendPolicy::kV2d,
+            "v2d parses as an explicit backend");
+    check(vision_operators::parse_preprocess_fallback("cpu") ==
+                vision_operators::PreprocessFallback::kCpu,
+            "CPU fallback is opt-in");
+    check(vision_operators::parse_preprocess_fallback("error") ==
+                vision_operators::PreprocessFallback::kError,
+            "strict fallback policy parses");
 
     check(
         parse_preprocess_opencl_sampling(

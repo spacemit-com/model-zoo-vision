@@ -87,7 +87,7 @@ inline ClassificationResultList build_classification_top_k(
     }
 
     ClassificationResult summary;
-    summary.class_scores = scores;
+    summary.class_scores = std::move(scores);
     const auto ranked = top_k(summary, k);
 
     results.reserve(ranked.size());
@@ -96,9 +96,9 @@ inline ClassificationResultList build_classification_top_k(
         item.label = ranked[i].first;
         item.score = ranked[i].second;
         if (i == 0) {
-            item.class_scores = scores;
+            item.class_scores = std::move(summary.class_scores);
         }
-        results.push_back(item);
+        results.push_back(std::move(item));
     }
     return results;
 }

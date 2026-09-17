@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -257,8 +258,17 @@ vision_common::DetectionResultList RFDETRDetector::postprocess(
     candidates.reserve(static_cast<size_t>(num_queries_));
     const size_t value_count = static_cast<size_t>(
         num_queries_ * num_classes_);
+    // Reject only scores far below the threshold; keep the original sigmoid
+    // and score-based sorting for all remaining candidates, including ties.
+    float reject_logit = -std::numeric_limits<float>::infinity();
+    for (float bound : {-2.0F, -4.0F, -8.0F}) {
+        if (sigmoid(bound) <= conf_threshold * 0.5F) {
+            reject_logit = bound;
+            break;
+        }
+    }
     for (size_t index = 0; index < value_count; ++index) {
-        if (!std::isfinite(logits[index])) {
+        if (!std::isfinite(logits[index]) || logits[index] <= reject_logit) {
             continue;
         }
         const float score = sigmoid(logits[index]);

@@ -130,20 +130,6 @@ void require_shape(
     }
 }
 
-float score_at(const Ort::Value& scores, size_t index) {
-    const auto type =
-        scores.GetTensorTypeAndShapeInfo().GetElementType();
-    if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
-        return static_cast<float>(
-            scores.GetTensorData<Ort::Float16_t>()[index]);
-    }
-    if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-        return scores.GetTensorData<float>()[index];
-    }
-    throw std::runtime_error(
-        "DEIMv2 scores output must be float16 or float32");
-}
-
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> DEIMv2Detector::create(
@@ -348,6 +334,18 @@ vision_common::DetectionResultList DEIMv2Detector::postprocess(
     }
     const int64_t* labels = outputs[0].GetTensorData<int64_t>();
     const float* boxes = outputs[1].GetTensorData<float>();
+    const auto score_type =
+        outputs[2].GetTensorTypeAndShapeInfo().GetElementType();
+    const Ort::Float16_t* scores_fp16 = nullptr;
+    const float* scores_fp32 = nullptr;
+    if (score_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16) {
+        scores_fp16 = outputs[2].GetTensorData<Ort::Float16_t>();
+    } else if (score_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        scores_fp32 = outputs[2].GetTensorData<float>();
+    } else {
+        throw std::runtime_error(
+            "DEIMv2 scores output must be float16 or float32");
+    }
     const float max_x = static_cast<float>(original_size.width);
     const float max_y = static_cast<float>(original_size.height);
 
@@ -356,7 +354,9 @@ vision_common::DetectionResultList DEIMv2Detector::postprocess(
     for (size_t index = 0;
         index < static_cast<size_t>(kExpectedDetections);
         ++index) {
-        const float score = score_at(outputs[2], index);
+        const float score = scores_fp16 != nullptr
+            ? static_cast<float>(scores_fp16[index])
+            : scores_fp32[index];
         if (score < conf_threshold) {
             continue;
         }

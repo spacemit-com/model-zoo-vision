@@ -2,15 +2,6 @@
 # 单输出格式 [1, 84, 8400]，与 YOLOv8 官方导出一致
 model_path: ~/.cache/models/vision/yolo12/yolo12n.q.onnx
 test_image: ~/.cache/assets/image/006_test.jpg
-# C++ demo input; command-line options take precedence.
-input:
-  type: image                 # image / camera; image source defaults to test_image
-  # To use a camera, change type above to camera and uncomment the options below.
-  # source: /dev/video0        # Select the actual camera device.
-  # backend: mpp              # Camera capture: opencv (default) / mpp; not preprocessing.
-  # width: 1280               # Optional capture requests, also supported by OpenCV.
-  # height: 720
-  # fps: 30
 label_file_path: assets/labels/coco.txt
 image_size: [640, 640]
 class: deploy.yolov8.YOLOv8Detector
@@ -22,3 +13,11 @@ default_params:
     backend: auto
   providers:
     - SpaceMITExecutionProvider
+
+# Camera settings apply only with --use-camera; command-line options override them.
+camera:
+  backend: opencv           # Capture backend: opencv / mpp; not preprocessing. Use mpp or --use-mpp when available.
+  device: /dev/video0
+  width: 1280
+  height: 720
+  fps: 30

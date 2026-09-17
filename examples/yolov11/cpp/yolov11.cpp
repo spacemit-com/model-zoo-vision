@@ -26,7 +26,7 @@ void print_usage(const char* program_name) {
                 << "  --use-camera          Use camera input instead of image file\n"
                 << "  --camera-id <i>       Camera device ID (default: 0)\n"
                 << vision_mpp::MppUsage()
-                << "  Input may also be selected by YAML input.type/source/backend.\n"
+                << "  --use-camera enables YAML camera settings; otherwise use test_image.\n"
                 << "  --help                Show this help message\n"
                 << "\nExample:\n"
                 << "  " << program_name << " examples/yolov11/config/yolov11.yaml\n"

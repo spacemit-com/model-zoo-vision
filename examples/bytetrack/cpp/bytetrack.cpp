@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     vision_mpp::ExampleInputConfig input_options;
     if (!vision_mpp::ConfigureLegacyDemoInput(
             config_path, use_camera, camera_id, camera_id_set,
-            video_path, true, true, &input_options)) {
+            video_path, true, &input_options)) {
         return 1;
     }
     use_camera = input_options.use_camera;

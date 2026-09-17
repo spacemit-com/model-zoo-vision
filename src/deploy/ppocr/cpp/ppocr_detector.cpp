@@ -20,6 +20,9 @@
 #if __has_include(<opencv2/geometry.hpp>)
 #include <opencv2/geometry.hpp>  // OpenCV 5: contour/hull/minAreaRect/getPerspectiveTransform
 #endif
+#if defined(__riscv_vector)
+#include <riscv_vector.h>
+#endif
 
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 
@@ -581,6 +584,35 @@ static cv::Mat preprocess_ppocr_recognition_crop(
         const uint8_t* source = resized.ptr<uint8_t>(y);
         const size_t row_offset =
             static_cast<size_t>(y) * output_width;
+#if defined(__riscv_vector)
+        for (int x = 0; x < target_width;) {
+            const size_t vl =
+                __riscv_vsetvl_e8m1(target_width - x);
+            const auto pixels = __riscv_vlseg3e8_v_u8m1x3(
+                source + x * 3, vl);
+            const auto blue_values =
+                __riscv_vget_v_u8m1x3_u8m1(pixels, 0);
+            const auto green_values =
+                __riscv_vget_v_u8m1x3_u8m1(pixels, 1);
+            const auto red_values =
+                __riscv_vget_v_u8m1x3_u8m1(pixels, 2);
+            const auto normalize_channel = [&](
+                vuint8m1_t values, float* destination) {
+                auto floats = __riscv_vfwcvt_f_xu_v_f32m4(
+                    __riscv_vzext_vf2_u16m2(values, vl), vl);
+                floats = __riscv_vfsub_vf_f32m4(
+                    floats, kMean, vl);
+                floats = __riscv_vfmul_vf_f32m4(
+                    floats, kScale, vl);
+                __riscv_vse32_v_f32m4(
+                    destination + row_offset + x, floats, vl);
+            };
+            normalize_channel(red_values, red);
+            normalize_channel(green_values, green);
+            normalize_channel(blue_values, blue);
+            x += static_cast<int>(vl);
+        }
+#else
         for (int x = 0; x < target_width; ++x) {
             const uint8_t* pixel = source + x * 3;
             const size_t index = row_offset + x;
@@ -591,6 +623,7 @@ static cv::Mat preprocess_ppocr_recognition_crop(
             blue[index] =
                 (static_cast<float>(pixel[0]) - kMean) * kScale;
         }
+#endif
     }
     return tensor;
 }

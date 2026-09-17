@@ -33,6 +33,7 @@ public:
         const ImagePreprocessDispatcher&) = delete;
 
     void configure(const std::string& backend);
+    void configure_fallback(const std::string& fallback);
     void reset();
 
     ImagePreprocessResult process(

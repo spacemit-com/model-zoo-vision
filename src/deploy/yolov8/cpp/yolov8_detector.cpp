@@ -292,9 +292,14 @@ std::unique_ptr<vision_core::BaseModel> YOLOv8Detector::create(const YAML::Node&
         preprocess_backend = preprocess["backend"].as<std::string>();
     }
 
-    return std::make_unique<YOLOv8Detector>(
+    auto model = std::make_unique<YOLOv8Detector>(
         model_path, conf_threshold, iou_threshold, num_threads,
-        lazy_load, provider, preprocess_backend);
+        lazy_load, provider, "cpu");
+    if (preprocess && preprocess["fallback"]) {
+        model->configure_preprocess_fallback(preprocess["fallback"].as<std::string>());
+    }
+    model->configure_preprocess_backend(preprocess_backend);
+    return model;
 }
 
 YOLOv8Detector::YOLOv8Detector(const std::string& model_path,

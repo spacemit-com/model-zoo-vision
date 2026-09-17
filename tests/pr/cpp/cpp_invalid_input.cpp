@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
     check_invalid_preprocess_config(
         "  preprocess:\n"
         "    backend: vulkan\n",
-        "preprocess.backend must be cpu, auto, or opencl");
+        "preprocess.backend must be cpu, auto, opencl, or v2d");
 
     if (g_failures > 0) {
         std::cerr << g_failures << " assertion(s) failed" << std::endl;

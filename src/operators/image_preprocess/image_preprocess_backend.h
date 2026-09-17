@@ -15,12 +15,18 @@ enum class PreprocessBackendPolicy {
     kCpu,
     kAuto,
     kOpenCl,
+    kV2d,
 };
 
 enum class PreprocessBackend {
     kCpu,
     kOpenCl,
+    kV2d,
 };
+
+enum class PreprocessFallback { kError, kCpu };
+PreprocessFallback parse_preprocess_fallback(std::string_view value);
+const char* preprocess_backend_name(PreprocessBackend backend) noexcept;
 
 enum class PreprocessOpenClSampling {
     kOpenCvCompatible,

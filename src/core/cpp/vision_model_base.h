@@ -167,10 +167,11 @@ public:
     /**
      * @brief Select image preprocessing backend.
      *
-     * "cpu" preserves the existing behavior. "opencl" is explicit and never
-     * silently falls back to CPU.
+     * cpu / opencl / v2d / auto. Explicit hardware backends are strict by
+     * default; configure fallback before selecting a backend to opt into CPU.
      */
     virtual void configure_preprocess_backend(const std::string& backend);
+    virtual void configure_preprocess_fallback(const std::string& fallback);
 
     /**
      * @brief Select OpenCL NV12 sampling behavior.
@@ -182,6 +183,8 @@ public:
         const std::string& sampling);
 
 protected:
+    vision_operators::PreprocessFallback preprocess_fallback_{
+        vision_operators::PreprocessFallback::kError};
     std::string model_path_;
     std::unique_ptr<Ort::Session> session_;
     std::vector<int64_t> input_shape_;

@@ -23,6 +23,13 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// A valid request outside a backend's supported operations/layouts. Unlike
+// device failure this must not permanently disable it for later requests.
+class ImagePreprocessUnsupported : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class ImagePreprocessor {
 public:
     virtual ~ImagePreprocessor() = default;
@@ -42,6 +49,10 @@ create_opencl_image_preprocessor(
     int output_ring_depth = 3);
 
 bool opencl_image_preprocessor_compiled() noexcept;
+
+std::shared_ptr<ImagePreprocessor> create_v2d_image_preprocessor(
+    const ImagePreprocessSpec& spec);
+bool v2d_image_preprocessor_compiled() noexcept;
 
 }  // namespace vision_operators
 

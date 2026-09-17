@@ -131,6 +131,7 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
     }
 
     std::string preprocess_backend = "cpu";
+    std::string preprocess_fallback = "error";
     std::string preprocess_opencl_sampling =
         "opencv_compatible";
     if (dp && !dp.IsMap()) {
@@ -146,6 +147,13 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
                 "config file: " + config_path);
         }
         if (preprocess) {
+            const YAML::Node fallback = preprocess["fallback"];
+            if (fallback) {
+                if (!fallback.IsScalar()) throw std::runtime_error(
+                    "default_params.preprocess.fallback must be a scalar");
+                preprocess_fallback = fallback.as<std::string>();
+                (void)vision_operators::parse_preprocess_fallback(preprocess_fallback);
+            }
             const YAML::Node backend = preprocess["backend"];
             if (backend && !backend.IsScalar()) {
                 throw std::runtime_error(
@@ -179,6 +187,7 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
 
     std::unique_ptr<BaseModel> model =
         it->second(config, lazy_load);
+    model->configure_preprocess_fallback(preprocess_fallback);
     model->configure_preprocess_backend(preprocess_backend);
     model->configure_preprocess_opencl_sampling(
         preprocess_opencl_sampling);

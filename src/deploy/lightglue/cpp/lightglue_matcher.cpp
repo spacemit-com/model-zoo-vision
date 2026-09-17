@@ -83,43 +83,34 @@ std::vector<vision::FeatureMatch> filter_lightglue_matches(
     std::vector<int> query_to_train(keypoint_count, 0);
     std::vector<int> train_to_query(keypoint_count, 0);
     std::vector<float> query_scores(keypoint_count, 0.0f);
+    std::vector<float> train_scores(
+        log_scores, log_scores + keypoint_count);
     for (int query_index = 0;
         query_index < keypoint_count;
         ++query_index) {
+        const float* row =
+            log_scores + static_cast<size_t>(query_index) * keypoint_count;
         int best = 0;
-        float best_value =
-            log_scores[query_index * keypoint_count];
+        float best_value = row[0];
+        if (query_index > 0 && row[0] > train_scores[0]) {
+            train_scores[0] = row[0];
+            train_to_query[0] = query_index;
+        }
         for (int train_index = 1;
             train_index < keypoint_count;
             ++train_index) {
-            const float value =
-                log_scores[
-                    query_index * keypoint_count + train_index];
+            const float value = row[train_index];
             if (value > best_value) {
                 best_value = value;
                 best = train_index;
             }
+            if (query_index > 0 && value > train_scores[train_index]) {
+                train_scores[train_index] = value;
+                train_to_query[train_index] = query_index;
+            }
         }
         query_to_train[query_index] = best;
         query_scores[query_index] = best_value;
-    }
-    for (int train_index = 0;
-        train_index < keypoint_count;
-        ++train_index) {
-        int best = 0;
-        float best_value = log_scores[train_index];
-        for (int query_index = 1;
-            query_index < keypoint_count;
-            ++query_index) {
-            const float value =
-                log_scores[
-                    query_index * keypoint_count + train_index];
-            if (value > best_value) {
-                best_value = value;
-                best = query_index;
-            }
-        }
-        train_to_query[train_index] = best;
     }
 
     std::vector<vision::FeatureMatch> matches;
@@ -127,9 +118,11 @@ std::vector<vision::FeatureMatch> filter_lightglue_matches(
         query_index < keypoint_count;
         ++query_index) {
         const int train_index = query_to_train[query_index];
+        if (train_to_query[train_index] != query_index) {
+            continue;
+        }
         const float score = std::exp(query_scores[query_index]);
-        if (train_to_query[train_index] != query_index ||
-            !std::isfinite(score) ||
+        if (!std::isfinite(score) ||
             score <= filter_threshold) {
             continue;
         }

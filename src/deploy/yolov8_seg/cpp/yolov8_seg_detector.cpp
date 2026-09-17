@@ -656,10 +656,8 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
                     cv::Size(ox2 - ox1, oy2 - oy1), 0, 0, cv::INTER_LINEAR);
 
         // Threshold on raw logits: x > 0 <==> sigmoid(x) > 0.5
-        cv::Mat roi_binary;
-        cv::threshold(roi_resized, roi_binary, 0.0f, 255.0f, cv::THRESH_BINARY);
         cv::Mat roi_uint8;
-        roi_binary.convertTo(roi_uint8, CV_8U);
+        cv::compare(roi_resized, 0.0f, roi_uint8, cv::CMP_GT);
 
         // Paste into full-size output mask
         cv::Mat mask_out = cv::Mat::zeros(orig_h, orig_w, CV_8U);

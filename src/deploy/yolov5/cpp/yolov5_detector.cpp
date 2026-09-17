@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -293,21 +294,24 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
             }
         }
 
-        float best_conf = 0.0f;
+        float best_raw = -std::numeric_limits<float>::infinity();
         int best_cls = -1;
         for (int64_t c = 0; c < num_classes; ++c) {
-            float cls = get_val(i, cls_start + c);
-            if (need_sigmoid) {
-                cls = sigmoid(cls);
-            }
-            const float conf = has_objectness ? (cls * obj) : cls;
-            if (conf > best_conf) {
-                best_conf = conf;
+            const float raw = get_val(i, cls_start + c);
+            if (raw > best_raw) {
+                best_raw = raw;
                 best_cls = static_cast<int>(c);
             }
         }
 
-        if (best_cls < 0 || best_conf <= conf_threshold) {
+        const float best_score = need_sigmoid
+            ? sigmoid(best_raw) : best_raw;
+        const float best_conf = has_objectness
+            ? best_score * obj : best_score;
+
+        if (best_cls < 0 ||
+            !(best_conf > 0.0f) ||
+            !(best_conf > conf_threshold)) {
             continue;
         }
 

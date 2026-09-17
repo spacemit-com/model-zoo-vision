@@ -20,6 +20,7 @@
 #include "core/cpp/vision_model_base.h"
 #include "core/cpp/vision_model_config.h"
 #include "core/cpp/vision_model_factory.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 
 namespace vision_deploy {
 
@@ -141,17 +142,17 @@ public:
         ensure_model_loaded();
         reset_runtime_profile();
         const auto started = std::chrono::steady_clock::now();
-        cv::Mat padded(448, 448, CV_8UC3, cv::Scalar::all(0));
-        cv::Mat roi = padded(cv::Rect(0, 0, width, height));
-        cv::resize(image, roi, roi.size(), 0, 0, cv::INTER_LINEAR);
-        cv::Mat blob = cv::dnn::blobFromImage(
-            padded, 1.0, cv::Size(448, 448),
-            cv::Scalar(123.675, 116.28, 103.53), true, false, CV_32F);
-        const float stddev[] = {58.395F, 57.12F, 57.375F};
-        for (int c = 0; c < 3; ++c) {
-            cv::Mat channel(448, 448, CV_32F, blob.ptr<float>(0, c));
-            channel /= stddev[c];
-        }
+        // Reuse the exact dimensions used for prompt mapping above, including
+        // its rounding. The shared packer only pads and packs this resized ROI.
+        cv::Mat resized;
+        cv::resize(image, resized, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
+        vision_operators::ImagePreprocessSpec spec;
+        spec.output_width = 448;
+        spec.output_height = 448;
+        spec.resize_mode = vision_operators::PreprocessResizeMode::kFitTopLeft;
+        spec.mean = {123.675F, 116.28F, 103.53F};
+        spec.scale = {1.0F / 58.395F, 1.0F / 57.12F, 1.0F / 57.375F};
+        cv::Mat blob = vision_operators::preprocess_bgr_to_nchw(resized, spec);
         const auto preprocessed = std::chrono::steady_clock::now();
         auto embedding = run_session(blob);
         auto memory =

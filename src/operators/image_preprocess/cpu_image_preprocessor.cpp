@@ -22,6 +22,7 @@
 #endif
 
 #include "image_preprocess_geometry.h"
+#include "rvv_image_pack.h"
 
 namespace vision_operators {
 namespace {
@@ -306,27 +307,10 @@ cv::Mat preprocess_bgr_to_nchw(
             float* third = third_plane + offset;
 #if defined(__riscv_vector)
             if (direct_pack) {
-                for (int x = 0; x < geometry.dst_width;) {
-                    const size_t vl = __riscv_vsetvl_e8m1(geometry.dst_width - x);
-                    const auto pixels = __riscv_vlseg3e8_v_u8m1x3(source_row + x * 3, vl);
-                    const auto blue = __riscv_vget_v_u8m1x3_u8m1(pixels, 0);
-                    const auto green = __riscv_vget_v_u8m1x3_u8m1(pixels, 1);
-                    const auto red = __riscv_vget_v_u8m1x3_u8m1(pixels, 2);
-                    const auto write_channel = [&](vuint8m1_t values, int channel, float* dest) {
-                        auto floats = __riscv_vfwcvt_f_xu_v_f32m4(
-                            __riscv_vzext_vf2_u16m2(values, vl), vl);
-                        if (transform.input_scale[channel] != 1.0F) {
-                            floats = __riscv_vfmul_vf_f32m4(floats, transform.input_scale[channel], vl);
-                        }
-                        floats = __riscv_vfsub_vf_f32m4(floats, transform.mean[channel], vl);
-                        floats = __riscv_vfmul_vf_f32m4(floats, transform.output_scale[channel], vl);
-                        __riscv_vse32_v_f32m4(dest + x, floats, vl);
-                    };
-                    write_channel(spec.output_rgb ? red : blue, 0, first);
-                    write_channel(green, 1, second);
-                    write_channel(spec.output_rgb ? blue : red, 2, third);
-                    x += static_cast<int>(vl);
-                }
+                detail::pack_u8c3_to_f32_planes_rvv(
+                    source_row, geometry.dst_width, spec.output_rgb,
+                    first, second, third,
+                    transform.mean, transform.output_scale, transform.input_scale);
                 continue;
             }
 #endif

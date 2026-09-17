@@ -6,13 +6,11 @@
 #include "v2d_image_ops.h"
 #include "operators/image_preprocess/image_preprocessor.h"
 #include "operators/image_preprocess/image_preprocess_geometry.h"
+#include "operators/image_preprocess/rvv_image_pack.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <sys/stat.h>
-#if defined(__riscv_vector)
-#include <riscv_vector.h>
-#endif
 
 namespace vision_operators
 {
@@ -118,24 +116,12 @@ private:
                 static_cast<const uint8_t*>(rgb_->data()) + size_t(y) * stride;
             const size_t offset = size_t(g.dst_y + y) * spec_.output_width + g.dst_x;
 #if defined(__riscv_vector)
-            for (int x = 0; x < g.dst_width;) {
-                size_t vl = __riscv_vsetvl_e8m1(g.dst_width - x);
-                auto pix = __riscv_vlseg3e8_v_u8m1x3(row + 3 * x, vl);
-                auto red = __riscv_vget_v_u8m1x3_u8m1(pix, 0);
-                auto green = __riscv_vget_v_u8m1x3_u8m1(pix, 1);
-                auto blue = __riscv_vget_v_u8m1x3_u8m1(pix, 2);
-                for (int c = 0; c < 3; ++c) {
-                    auto u =
-                        c == 1 ? green : ((c == 0) == spec_.output_rgb ? red : blue);
-                    auto f =
-                        __riscv_vfwcvt_f_xu_v_f32m4(__riscv_vzext_vf2_u16m2(u, vl), vl);
-                    f = __riscv_vfsub_vf_f32m4(f, spec_.mean[c], vl);
-                    f = __riscv_vfmul_vf_f32m4(f, spec_.scale[c], vl);
-                    __riscv_vse32_v_f32m4(tensor_.ptr<float>() + c * plane + offset + x,
-                                            f, vl);
-                }
-                x += vl;
-            }
+            detail::pack_u8c3_to_f32_planes_rvv(
+                row, g.dst_width, !spec_.output_rgb,
+                tensor_.ptr<float>() + offset,
+                tensor_.ptr<float>() + plane + offset,
+                tensor_.ptr<float>() + 2 * plane + offset,
+                spec_.mean, spec_.scale);
 #else
             for (int x = 0; x < g.dst_width; ++x)
                 for (int c = 0; c < 3; ++c) {

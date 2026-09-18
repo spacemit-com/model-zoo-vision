@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
     std::string model_path_override;
     bool use_camera = false;
     int camera_id = 0;
+    bool camera_id_set = false;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -52,10 +53,20 @@ int main(int argc, char* argv[]) {
             use_camera = true;
         } else if (arg == "--camera-id" && i + 1 < argc) {
             camera_id = std::stoi(argv[++i]);
+            camera_id_set = true;
         } else if (arg == "--model-path" && i + 1 < argc) {
             model_path_override = argv[++i];
         }
     }
+
+    vision_mpp::ExampleInputConfig input_options;
+    if (!vision_mpp::ConfigureLegacyDemoInput(
+            config_path, use_camera, camera_id, camera_id_set,
+            video_path, true, true, &input_options)) {
+        return 1;
+    }
+    use_camera = input_options.use_camera;
+    camera_id = input_options.camera.camera_id;
 
     std::unique_ptr<VisionService> service = VisionService::Create(
         config_path,
@@ -77,7 +88,7 @@ int main(int argc, char* argv[]) {
     }
 
     cv::VideoCapture cap;
-    vision_mpp::MppFrameSourceConfig src_cfg;
+    auto src_cfg = input_options.camera;
     std::unique_ptr<vision_mpp::MppFrameSource> mpp_cap;
     bool use_mpp = false;
     int fps = 0;
@@ -92,8 +103,7 @@ int main(int argc, char* argv[]) {
             }
         } else {
             std::cout << "Using camera " << camera_id << "..." << std::endl;
-            cap.open(camera_id);
-            if (!cap.isOpened()) {
+            if (!vision_mpp::OpenExampleCamera(&cap, input_options)) {
                 std::cerr << "Error: Could not open camera" << std::endl;
                 return 1;
             }

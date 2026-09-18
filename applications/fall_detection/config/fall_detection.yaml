@@ -1,4 +1,13 @@
 # Fall detection app entry (demo + model refs).
+# C++ camera input override; omit to retain the existing test_video default.
+# Existing --video / --use-camera / --camera-id options take precedence.
+# input:
+#   type: camera
+#   source: /dev/video0
+#   backend: opencv  # MPP is not supported by this application.
+#   width: 1280
+#   height: 720
+#   fps: 30
 
 pose_model: pose.yaml
 stgcn_model: stgcn.yaml

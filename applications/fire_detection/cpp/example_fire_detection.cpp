@@ -16,6 +16,7 @@
 #include <yaml-cpp/yaml.h>  // NOLINT(build/include_order)
 
 #include "vision_service.h"
+#include "mpp_example_helpers.h"
 
 namespace {
 namespace fs = std::filesystem;
@@ -132,6 +133,7 @@ int main(int argc, char** argv) {
     std::string output_path = "result_fire_detection.jpg";
     bool use_camera = false;
     int camera_id = 0;
+    bool camera_id_set = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -143,6 +145,7 @@ int main(int argc, char** argv) {
             use_camera = true;
         } else if (arg == "--camera-id" && i + 1 < argc) {
             camera_id = std::stoi(argv[++i]);
+            camera_id_set = true;
         } else if (arg == "-h" || arg == "--help") {
             std::cout << "Usage: " << argv[0]
                 << " [config.yaml] [--config <app.yaml>] [--image <path>] [output_path]"
@@ -164,6 +167,16 @@ int main(int argc, char** argv) {
         std::cerr << "Error: config not found: " << app_config_path << std::endl;
         return -1;
     }
+    vision_mpp::ExampleInputConfig input_options;
+    if (!vision_mpp::ConfigureLegacyDemoInput(
+            app_config_path.string(), use_camera, camera_id, camera_id_set,
+            image_path, false, false, &input_options)) {
+        return 1;
+    }
+    use_camera = input_options.use_camera;
+    camera_id = input_options.camera.camera_id;
+    image_path = input_options.image_path;
+
     YAML::Node app_cfg;
     try {
         app_cfg = YAML::LoadFile(app_config_path.string());
@@ -210,8 +223,8 @@ int main(int argc, char** argv) {
     };
 
     if (use_camera) {
-        cv::VideoCapture cap(camera_id);
-        if (!cap.isOpened()) {
+        cv::VideoCapture cap;
+        if (!vision_mpp::OpenExampleCamera(&cap, input_options)) {
             std::cerr << "Error: Could not open camera " << camera_id << std::endl;
             return -1;
         }

@@ -77,7 +77,9 @@ void draw_keypoints(
         cv::rectangle(image, cv::Point(x1, y1), cv::Point(x2, y2), box_color, line_thickness);
 
         // Draw label and score
-        std::string labelText = "Person: " + std::to_string(result.score).substr(0, 4);
+        const bool is_face = result.keypoints.size() == 5;
+        std::string labelText = std::string(is_face ? "Face: " : "Person: ") +
+            std::to_string(result.score).substr(0, 4);
         cv::putText(image, labelText, cv::Point(x1, y1 - 10),
                     cv::FONT_HERSHEY_SIMPLEX, 0.9, box_color, line_thickness);
 
@@ -91,6 +93,9 @@ void draw_keypoints(
             cv::circle(image, cv::Point(static_cast<int>(kp.x), static_cast<int>(kp.y)),
                         kp_radius, kp_color, -1);
         }
+
+        // Five facial landmarks do not use the COCO body skeleton.
+        if (is_face) continue;
 
         // Draw keypoint connections (skeleton)
         for (const auto& connection : kp_connections) {

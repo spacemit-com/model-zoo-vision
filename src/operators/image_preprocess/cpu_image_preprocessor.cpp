@@ -17,6 +17,10 @@
 #include <linux/dma-buf.h>
 #include <opencv2/imgproc.hpp>
 
+#if defined(__riscv_vector)
+#include <riscv_vector.h>
+#endif
+
 #include "image_preprocess_geometry.h"
 
 namespace vision_operators {
@@ -229,9 +233,20 @@ cv::Mat preprocess_bgr_to_nchw(
     float* output = tensor.ptr<float>();
     const size_t plane_size =
         static_cast<size_t>(spec.output_width) * spec.output_height;
+    bool direct_pack = false;
+#if defined(__riscv_vector)
+    // Keep explicit division on the reference LUT path. Vector arithmetic
+    // preserves input scaling, subtraction and output scaling as separate steps.
+    direct_pack = true;
+    for (int channel = 0; channel < 3; ++channel) {
+        direct_pack = direct_pack &&
+            transform.input_divisor[channel] == 1.0F &&
+            transform.output_divisor[channel] == 1.0F;
+    }
+#endif
     std::array<std::array<float, 256>, 3> channel_lut{};
     for (int channel = 0; channel < 3; ++channel) {
-        for (int value = 0; value < 256; ++value) {
+        for (int value = 0; !direct_pack && value < 256; ++value) {
             // Preserve the reference pipeline's rounding point between its
             // uint8 scaling and normalization stages. The volatile temporary
             // prevents contraction into a fused multiply-add; this work is
@@ -289,6 +304,32 @@ cv::Mat preprocess_bgr_to_nchw(
             float* first = first_plane + offset;
             float* second = second_plane + offset;
             float* third = third_plane + offset;
+#if defined(__riscv_vector)
+            if (direct_pack) {
+                for (int x = 0; x < geometry.dst_width;) {
+                    const size_t vl = __riscv_vsetvl_e8m1(geometry.dst_width - x);
+                    const auto pixels = __riscv_vlseg3e8_v_u8m1x3(source_row + x * 3, vl);
+                    const auto blue = __riscv_vget_v_u8m1x3_u8m1(pixels, 0);
+                    const auto green = __riscv_vget_v_u8m1x3_u8m1(pixels, 1);
+                    const auto red = __riscv_vget_v_u8m1x3_u8m1(pixels, 2);
+                    const auto write_channel = [&](vuint8m1_t values, int channel, float* dest) {
+                        auto floats = __riscv_vfwcvt_f_xu_v_f32m4(
+                            __riscv_vzext_vf2_u16m2(values, vl), vl);
+                        if (transform.input_scale[channel] != 1.0F) {
+                            floats = __riscv_vfmul_vf_f32m4(floats, transform.input_scale[channel], vl);
+                        }
+                        floats = __riscv_vfsub_vf_f32m4(floats, transform.mean[channel], vl);
+                        floats = __riscv_vfmul_vf_f32m4(floats, transform.output_scale[channel], vl);
+                        __riscv_vse32_v_f32m4(dest + x, floats, vl);
+                    };
+                    write_channel(spec.output_rgb ? red : blue, 0, first);
+                    write_channel(green, 1, second);
+                    write_channel(spec.output_rgb ? blue : red, 2, third);
+                    x += static_cast<int>(vl);
+                }
+                continue;
+            }
+#endif
             for (int x = 0; x < geometry.dst_width; ++x) {
                 const uint8_t* pixel = source_row + x * 3;
                 first[x] = channel_lut[0][pixel[first_source]];
@@ -372,9 +413,13 @@ cv::Mat preprocess_bgr_to_gray_nchw(
         geometry,
         padding);
 
+    bool direct_pack = false;
+#if defined(__riscv_vector)
+    direct_pack = true;
+#endif
     std::array<std::array<float, 256>, 3> channel_lut{};
     for (int channel = 0; channel < 3; ++channel) {
-        for (int value = 0; value < 256; ++value) {
+        for (int value = 0; !direct_pack && value < 256; ++value) {
             volatile float scaled_input =
                 value * transform.input_scale;
             channel_lut[channel][value] =
@@ -390,6 +435,46 @@ cv::Mat preprocess_bgr_to_gray_nchw(
                 static_cast<size_t>(geometry.dst_y + y) *
                     spec.output_width +
                 geometry.dst_x;
+#if defined(__riscv_vector)
+            if (direct_pack) {
+                for (int x = 0; x < geometry.dst_width;) {
+                    const size_t vl =
+                        __riscv_vsetvl_e8m1(geometry.dst_width - x);
+                    const auto pixels = __riscv_vlseg3e8_v_u8m1x3(
+                        source_row + x * 3, vl);
+                    const auto blue =
+                        __riscv_vget_v_u8m1x3_u8m1(pixels, 0);
+                    const auto green =
+                        __riscv_vget_v_u8m1x3_u8m1(pixels, 1);
+                    const auto red =
+                        __riscv_vget_v_u8m1x3_u8m1(pixels, 2);
+                    const auto weighted_channel = [&](
+                        vuint8m1_t values, int channel) {
+                        auto floats = __riscv_vfwcvt_f_xu_v_f32m4(
+                            __riscv_vzext_vf2_u16m2(values, vl), vl);
+                        floats = __riscv_vfmul_vf_f32m4(
+                            floats, transform.input_scale, vl);
+                        return __riscv_vfmul_vf_f32m4(
+                            floats, transform.bgr_weights[channel], vl);
+                    };
+                    const auto weighted_red = weighted_channel(red, 2);
+                    const auto weighted_green = weighted_channel(green, 1);
+                    const auto weighted_blue = weighted_channel(blue, 0);
+                    auto grayscale = __riscv_vfadd_vv_f32m4(
+                        weighted_red, weighted_green, vl);
+                    grayscale = __riscv_vfadd_vv_f32m4(
+                        grayscale, weighted_blue, vl);
+                    grayscale = __riscv_vfsub_vf_f32m4(
+                        grayscale, transform.mean, vl);
+                    grayscale = __riscv_vfmul_vf_f32m4(
+                        grayscale, transform.output_scale, vl);
+                    __riscv_vse32_v_f32m4(
+                        destination + x, grayscale, vl);
+                    x += static_cast<int>(vl);
+                }
+                continue;
+            }
+#endif
             for (int x = 0; x < geometry.dst_width; ++x) {
                 const uint8_t* pixel = source_row + x * 3;
                 volatile float red_green =

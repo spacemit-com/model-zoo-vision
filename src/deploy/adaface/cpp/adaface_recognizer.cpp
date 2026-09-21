@@ -11,6 +11,7 @@
 #include <utility>
 #include <variant>
 
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -60,11 +61,6 @@ cv::Mat AdaFaceRecognizer::preprocess(const cv::Mat& image) {
 
     ensure_model_loaded();
 
-    const int crop = std::min(image.cols, image.rows);
-    const int crop_x = (image.cols - crop) / 2;
-    const int crop_y = (image.rows - crop) / 2;
-    cv::Mat cropped = image(cv::Rect(crop_x, crop_y, crop, crop));
-
     int input_width = static_cast<int>(input_shape_[3]);
     int input_height = static_cast<int>(input_shape_[2]);
     if (input_width <= 0 || input_height <= 0) {
@@ -72,11 +68,14 @@ cv::Mat AdaFaceRecognizer::preprocess(const cv::Mat& image) {
         input_height = 112;
     }
 
-    cv::Mat resized;
-    cv::resize(cropped, resized, cv::Size(input_width, input_height), 0, 0, cv::INTER_LINEAR);
-
-    return cv::dnn::blobFromImage(resized, 1.0 / 127.5, cv::Size(input_width, input_height),
-                                cv::Scalar(127.5, 127.5, 127.5), true, false, CV_32F);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_width;
+    spec.output_height = input_height;
+    spec.crop_mode = vision_operators::PreprocessCropMode::kCenterSquare;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    const float scale = static_cast<float>(1.0 / 127.5);
+    spec.scale = {scale, scale, scale};
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::EmbeddingResult AdaFaceRecognizer::infer_embedding(const cv::Mat& image) {

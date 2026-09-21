@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "common.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -69,15 +70,13 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
 
     ensure_model_loaded();
 
-    // Resize to target size (224, 224)
-    cv::Mat resized;
-    cv::resize(image, resized, target_size_, 0, 0, cv::INTER_NEAREST);
-
-    // blobFromImage: float conversion, mean subtraction, and HWC->CHW in one call
-    // swapRB=false because emotion model expects BGR order
-    return cv::dnn::blobFromImage(resized, 1.0, target_size_,
-                                    cv::Scalar(91.4953, 103.8827, 131.0912),
-                                    false, false, CV_32F);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = target_size_.width;
+    spec.output_height = target_size_.height;
+    spec.output_rgb = false;
+    spec.interpolation = vision_operators::PreprocessInterpolation::kNearest;
+    spec.mean = {91.4953F, 103.8827F, 131.0912F};
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Mat& image) {

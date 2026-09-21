@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "common.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -72,17 +73,14 @@ cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
     int inputWidth = static_cast<int>(input_shape_[3]);  // width
     int inputHeight = static_cast<int>(input_shape_[2]);  // height
 
-    cv::Mat resized = image;
-    if (image.cols != inputWidth || image.rows != inputHeight) {
-        cv::resize(image, resized, cv::Size(inputWidth, inputHeight), 0, 0, cv::INTER_LINEAR);
-    }
-
     // Official ArcFace preprocess: direct resize, BGR->RGB, (x - 127.5) / norm_std.
     const float inv_std = 1.0f / norm_std_;
-    return cv::dnn::blobFromImage(resized, inv_std,
-                                    cv::Size(inputWidth, inputHeight),
-                                    cv::Scalar(127.5, 127.5, 127.5),
-                                    true, false, CV_32F);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = inputWidth;
+    spec.output_height = inputHeight;
+    spec.mean = {127.5F, 127.5F, 127.5F};
+    spec.scale = {inv_std, inv_std, inv_std};
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::EmbeddingResult ArcFaceRecognizer::infer_embedding(const cv::Mat& image) {

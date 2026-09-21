@@ -12,6 +12,7 @@
 #include <utility>
 #include <variant>
 
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
@@ -121,6 +122,16 @@ cv::Mat Siglip2Encoder::preprocess(const cv::Mat& image) {
     if (input_width <= 0 || input_height <= 0) {
         input_width = kImageSize;
         input_height = kImageSize;
+    }
+
+    if (image.type() == CV_8UC3) {
+        vision_operators::ImagePreprocessSpec spec;
+        spec.output_width = input_width;
+        spec.output_height = input_height;
+        spec.mean = {127.5F, 127.5F, 127.5F};
+        const float scale = static_cast<float>(1.0 / 127.5);
+        spec.scale = {scale, scale, scale};
+        return vision_operators::preprocess_bgr_to_nchw(image, spec);
     }
 
     cv::Mat resized;

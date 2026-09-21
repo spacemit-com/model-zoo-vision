@@ -125,7 +125,8 @@ cv::Mat Mobileclip2Encoder::preprocess(const cv::Mat& image) {
     // OpenCV images are BGR; CLIP mean/std expect RGB (same as reference stbi_load RGB).
     cv::Mat rgb;
     if (resized.channels() == 3) {
-        cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+        // Split BGR directly; select RGB planes when writing the tensor.
+        rgb = resized;
     } else if (resized.channels() == 4) {
         cv::cvtColor(resized, rgb, cv::COLOR_BGRA2RGB);
     } else {
@@ -139,10 +140,11 @@ cv::Mat Mobileclip2Encoder::preprocess(const cv::Mat& image) {
     const int plane = input_height * input_width;
     cv::Mat blob(1, 3 * plane, CV_32F);
     for (int c = 0; c < 3; ++c) {
-        cv::Mat plane_f;
+        cv::Mat plane_f(input_height, input_width, CV_32F,
+            blob.ptr<float>() + c * plane);
         const double inv_std = 1.0 / kClipStd[c];
-        channels[c].convertTo(plane_f, CV_32F, inv_std, -kClipMean[c] * inv_std);
-        plane_f.reshape(1, 1).copyTo(blob.colRange(c * plane, (c + 1) * plane));
+        const int source_channel = resized.channels() == 3 ? 2 - c : c;
+        channels[source_channel].convertTo(plane_f, CV_32F, inv_std, -kClipMean[c] * inv_std);
     }
     return blob.reshape(1, {1, 3, input_height, input_width});
 }

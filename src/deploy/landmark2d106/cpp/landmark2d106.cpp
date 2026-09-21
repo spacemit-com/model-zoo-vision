@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "common.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -73,16 +74,14 @@ cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    cv::Mat resized;
-    cv::resize(image, resized, cv::Size(input_size_, input_size_), 0, 0, cv::INTER_LINEAR);
-
-    cv::Mat rgb;
-    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
     const float std_safe = (std::abs(input_std_) > 1e-6f) ? input_std_ : 1.0f;
-    return cv::dnn::blobFromImage(rgb, 1.0 / std_safe,
-                                cv::Size(input_size_, input_size_),
-                                cv::Scalar(input_mean_, input_mean_, input_mean_),
-                                false, false, CV_32F);
+    const float inv_std = static_cast<float>(1.0 / std_safe);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_size_;
+    spec.output_height = input_size_;
+    spec.mean = {input_mean_, input_mean_, input_mean_};
+    spec.scale = {inv_std, inv_std, inv_std};
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::PoseResultList Landmark2d106::estimate_pose(const cv::Mat& image,

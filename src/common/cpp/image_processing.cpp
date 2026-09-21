@@ -16,6 +16,8 @@
 
 #include <filesystem>  // NOLINT(build/c++17)
 
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
+
 namespace fs = std::filesystem;
 
 namespace vision_common {
@@ -198,12 +200,29 @@ cv::Mat preprocess_classification(
     if (center_crop && (resize_size.width > 0 && resize_size.height > 0)) {
         int y0 = (img.rows - input_shape.first) / 2;
         int x0 = (img.cols - input_shape.second) / 2;
-        img = img(cv::Rect(x0, y0, input_shape.second, input_shape.first)).clone();
+        img = img(cv::Rect(x0, y0, input_shape.second, input_shape.first));
     } else {
         cv::resize(img, img, cv::Size(input_shape.second, input_shape.first),
                     0, 0, interpolation);
     }
 
+    if (img.type() == CV_8UC3) {
+        vision_operators::ImagePreprocessSpec spec;
+        spec.output_width = input_shape.second;
+        spec.output_height = input_shape.first;
+        vision_operators::CpuChannelTransform transform;
+        transform.input_scale = {1.0F / 255.0F, 1.0F / 255.0F, 1.0F / 255.0F};
+        for (int channel = 0; channel < 3; ++channel) {
+            transform.mean[channel] = static_cast<float>(mean[channel]) / 255.0F;
+            transform.output_scale[channel] = 255.0F / static_cast<float>(std[channel]);
+        }
+        return vision_operators::preprocess_bgr_to_nchw(img, spec, transform);
+    }
+
+    // Preserve the existing non-BGR8 path, including owned cropped storage.
+    if (center_crop && resize_size.width > 0 && resize_size.height > 0) {
+        img = img.clone();
+    }
     // blobFromImage: BGR->RGB (swapRB), float conversion, 1/255 scale,
     // and HWC->CHW in one optimized call
     cv::Mat blob = cv::dnn::blobFromImage(img, 1.0 / 255.0,

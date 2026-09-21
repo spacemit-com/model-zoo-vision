@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "common.h"
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -71,20 +72,14 @@ cv::Mat GenderAgeClassifier::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    cv::Mat resized;
-    if (image.cols != target_size_.width || image.rows != target_size_.height) {
-        cv::resize(image, resized, target_size_, 0, 0, cv::INTER_LINEAR);
-    } else {
-        resized = image;
-    }
-
-    cv::Mat rgb;
-    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
     const float std_safe = (std::abs(input_std_) > 1e-6f) ? input_std_ : 1.0f;
-    return cv::dnn::blobFromImage(rgb, 1.0 / std_safe,
-                                target_size_,
-                                cv::Scalar(input_mean_, input_mean_, input_mean_),
-                                false, false, CV_32F);
+    const float inv_std = static_cast<float>(1.0 / std_safe);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = target_size_.width;
+    spec.output_height = target_size_.height;
+    spec.mean = {input_mean_, input_mean_, input_mean_};
+    spec.scale = {inv_std, inv_std, inv_std};
+    return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
 vision_common::ClassificationResultList GenderAgeClassifier::classify(const cv::Mat& image) {

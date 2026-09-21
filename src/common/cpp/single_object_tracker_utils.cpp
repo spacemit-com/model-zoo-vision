@@ -7,10 +7,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <stdexcept>
 
 #include <opencv2/imgproc.hpp>
+
+#include "operators/image_preprocess/cpu_image_preprocessor.h"
 
 namespace vision_deploy {
 
@@ -154,25 +155,28 @@ TrackingTensor preprocess_tracking_patch(
         0.0,
         0.0,
         cv::INTER_LINEAR);
-    cv::cvtColor(patch, patch, cv::COLOR_BGR2RGB);
-    patch.convertTo(patch, CV_32FC3, 1.0 / 255.0);
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = output_size;
+    spec.output_height = output_size;
+    spec.output_rgb = true;
+    vision_operators::CpuChannelTransform transform;
+    transform.input_scale = {
+        1.0F / 255.0F,
+        1.0F / 255.0F,
+        1.0F / 255.0F};
+    transform.mean = mean;
+    transform.output_scale = {
+        1.0F / standard_deviation[0],
+        1.0F / standard_deviation[1],
+        1.0F / standard_deviation[2]};
+    const cv::Mat tensor =
+        vision_operators::preprocess_bgr_to_nchw(
+            patch, spec, transform);
 
-    std::vector<cv::Mat> channels;
-    cv::split(patch, channels);
     TrackingTensor output;
-    output.values.resize(
-        static_cast<size_t>(3) * output_size * output_size);
-    const size_t plane =
-        static_cast<size_t>(output_size) * output_size;
-    for (size_t channel = 0; channel < channels.size(); ++channel) {
-        channels[channel] =
-            (channels[channel] - mean[channel]) /
-            standard_deviation[channel];
-        std::memcpy(
-            output.values.data() + channel * plane,
-            channels[channel].ptr<float>(),
-            plane * sizeof(float));
-    }
+    output.values.assign(
+        tensor.ptr<float>(),
+        tensor.ptr<float>() + tensor.total());
     output.resize_factor =
         static_cast<float>(output_size) / crop_size;
     return output;

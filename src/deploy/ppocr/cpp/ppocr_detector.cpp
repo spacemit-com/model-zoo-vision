@@ -20,13 +20,11 @@
 #if __has_include(<opencv2/geometry.hpp>)
 #include <opencv2/geometry.hpp>  // OpenCV 5: contour/hull/minAreaRect/getPerspectiveTransform
 #endif
-#if defined(__riscv_vector)
-#include <riscv_vector.h>
-#endif
 
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "operators/image_preprocess/rvv_image_pack.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -585,33 +583,10 @@ static cv::Mat preprocess_ppocr_recognition_crop(
         const size_t row_offset =
             static_cast<size_t>(y) * output_width;
 #if defined(__riscv_vector)
-        for (int x = 0; x < target_width;) {
-            const size_t vl =
-                __riscv_vsetvl_e8m1(target_width - x);
-            const auto pixels = __riscv_vlseg3e8_v_u8m1x3(
-                source + x * 3, vl);
-            const auto blue_values =
-                __riscv_vget_v_u8m1x3_u8m1(pixels, 0);
-            const auto green_values =
-                __riscv_vget_v_u8m1x3_u8m1(pixels, 1);
-            const auto red_values =
-                __riscv_vget_v_u8m1x3_u8m1(pixels, 2);
-            const auto normalize_channel = [&](
-                vuint8m1_t values, float* destination) {
-                auto floats = __riscv_vfwcvt_f_xu_v_f32m4(
-                    __riscv_vzext_vf2_u16m2(values, vl), vl);
-                floats = __riscv_vfsub_vf_f32m4(
-                    floats, kMean, vl);
-                floats = __riscv_vfmul_vf_f32m4(
-                    floats, kScale, vl);
-                __riscv_vse32_v_f32m4(
-                    destination + row_offset + x, floats, vl);
-            };
-            normalize_channel(red_values, red);
-            normalize_channel(green_values, green);
-            normalize_channel(blue_values, blue);
-            x += static_cast<int>(vl);
-        }
+        vision_operators::detail::pack_u8c3_to_f32_planes_rvv(
+            source, target_width, true,
+            red + row_offset, green + row_offset, blue + row_offset,
+            {kMean, kMean, kMean}, {kScale, kScale, kScale});
 #else
         for (int x = 0; x < target_width; ++x) {
             const uint8_t* pixel = source + x * 3;

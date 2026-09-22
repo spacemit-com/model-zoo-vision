@@ -1,13 +1,4 @@
 # ByteTrack 目标追踪模型配置
-# C++ camera input override; omit to retain the existing test_video default.
-# Existing --video / --use-camera / --camera-id options take precedence.
-# input:
-#   type: camera
-#   source: /dev/video0
-#   backend: mpp  # opencv (default) / mpp
-#   width: 1280
-#   height: 720
-#   fps: 30
 model_path: ~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx
 test_video: ~/.cache/assets/video/003_palace.mp4
 image_size: [640, 640]
@@ -23,3 +14,11 @@ default_params:
     backend: auto
   providers:
     - SpaceMITExecutionProvider
+
+# Camera settings apply only with --use-camera; command-line options override them.
+camera:
+  backend: opencv           # Capture backend: opencv / mpp; not preprocessing. Use mpp or --use-mpp when available.
+  device: /dev/video0
+  width: 1280
+  height: 720
+  fps: 30

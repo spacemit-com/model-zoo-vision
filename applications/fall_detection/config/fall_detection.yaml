@@ -1,13 +1,4 @@
 # Fall detection app entry (demo + model refs).
-# C++ camera input override; omit to retain the existing test_video default.
-# Existing --video / --use-camera / --camera-id options take precedence.
-# input:
-#   type: camera
-#   source: /dev/video0
-#   backend: opencv  # MPP is not supported by this application.
-#   width: 1280
-#   height: 720
-#   fps: 30
 
 pose_model: pose.yaml
 stgcn_model: stgcn.yaml
@@ -21,3 +12,11 @@ camera_id: 1
 # This is a business decision of this app, not a property of the model
 # (the same STGCN could drive a "sit down" detector with a different index).
 fall_down_index: 6
+
+# Camera settings apply only with --use-camera; command-line options override them.
+camera:
+  backend: opencv              # This application supports OpenCV capture only.
+  device: /dev/video1
+  width: 1280
+  height: 720
+  fps: 30

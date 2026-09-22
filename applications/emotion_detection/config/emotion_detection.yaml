@@ -1,13 +1,4 @@
 # Emotion detection app entry. Model yaml use src/ schema.
-# C++ demo input; existing command-line input options take precedence.
-input:
-  type: image                 # Uses the existing default image when source is omitted.
-  # For camera input, change type to camera and uncomment the options below.
-  # source: /dev/video0
-  # backend: opencv           # MPP is not supported by this application.
-  # width: 1280
-  # height: 720
-  # fps: 30
 # image mode:  face_model + emotion_model (static ResNet50, single frame)
 # camera mode: face_model + feature_model (ResNet50 features) + lstm_model (LSTM)
 
@@ -21,3 +12,11 @@ camera_id: 0
 # Faces smaller than this (min of bbox width/height, in pixels) are detected
 # but skipped for emotion recognition — small faces give unreliable emotion.
 min_face_size: 64
+
+# Camera settings apply only with --use-camera; command-line options override them.
+camera:
+  backend: opencv              # This application supports OpenCV capture only.
+  device: /dev/video0
+  width: 1280
+  height: 720
+  fps: 30

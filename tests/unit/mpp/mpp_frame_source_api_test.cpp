@@ -43,76 +43,72 @@ void check_input_options() {
         catch (const std::exception&) { rejected = true; }
         require(rejected);
     };
-    const std::string camera =
-        "input:\n  type: camera\n  source: /dev/video2\n  backend: mpp\n"
-        "  width: 1280\n  height: 720\n  fps: 30\n";
     auto input = parse("test_image: old.jpg\n");
     require(!input.use_camera && input.image_path.empty() && input.width == 0);
-    input = parse(camera);
-    require(input.use_camera && input.camera.use_mpp &&
-        input.camera.v4l2_dev == "/dev/video2" && input.camera.width == 1280 &&
-        input.camera.height == 720 && input.camera.fps == 30);
-    input = parse(camera, {"--image", "cli.jpg"});
-    require(!input.use_camera && !input.camera.use_mpp && input.image_path == "cli.jpg");
-    input = parse(camera, {"--use-camera", "--camera-id", "3", "--mpp-width", "640"});
-    require(input.camera.v4l2_dev.empty() && input.camera.camera_id == 3 &&
-        input.width == 640 && input.height == 720 && input.camera.use_mpp);
-    input = parse(camera, {"--v4l2-dev", "/dev/video4", "--camera-id", "1"});
-    require(input.camera.v4l2_dev == "/dev/video4");
-    input = parse("input: {type: image, source: sample.jpg}\n");
-    require(input.image_path == "/tmp/sample.jpg" && !input.use_camera);
-    input = parse("input: {type: image, source: sample.jpg}\n", {"--use-camera"});
-    require(input.use_camera && !input.camera.use_mpp && input.camera.v4l2_dev.empty());
-    input = parse("{}", {"--use-camera", "--use-mpp", "--mpp-height", "480"});
-    require(input.use_camera && input.camera.use_mpp && input.camera.height == 480);
-    input = parse("input: {type: camera, backend: opencv, width: 640}\n");
-    require(input.use_camera && !input.camera.use_mpp && input.width == 640 && !input.fps);
-    rejects("input: camera\n");
-    rejects("input: {type: video, source: movie.mp4}\n");
-    rejects("input: {type: image, backend: mpp}\n");
-    rejects("input: {type: camera, backend: invalid}\n");
-    rejects("input: {type: camera, source: 'rtsp://example'}\n");
-    rejects("input: {type: camera, width: 0}\n");
-    rejects("input: {type: image, width: 640}\n");
-    rejects(camera, {"--image", "a.jpg", "--use-camera"});
-    rejects(camera, {"--use-camera", "--image", "a.jpg"});
-    rejects(camera, {"--camera-id", "-1"});
-    rejects(camera, {"--mpp-width", "640oops"});
-    rejects(camera, {"--mpp-fps"});
+    input = parse("{}", {"--use-camera"});
+    require(input.use_camera && !input.camera.use_mpp);
+    input = parse("{}", {"--use-camera", "--use-mpp"});
+    require(input.use_camera && input.camera.use_mpp);
     rejects("{}", {"--use-mpp"});
     rejects("{}", {"--no-display"});
     rejects("{}", {"--video", "a.mp4"});
 
+    const std::string camera_defaults =
+        "camera:\n  backend: mpp\n  device: /dev/video2\n"
+        "  width: 1280\n  height: 720\n  fps: 30\n";
+    input = parse(camera_defaults);
+    require(!input.use_camera && !input.camera.use_mpp && input.image_path.empty());
+    input = parse(camera_defaults, {"--image", "photo.jpg"});
+    require(!input.use_camera && !input.camera.use_mpp && input.image_path == "photo.jpg");
+    input = parse(camera_defaults, {"--use-camera"});
+    require(input.use_camera && input.camera.use_mpp &&
+        input.camera.v4l2_dev == "/dev/video2" && input.camera.width == 1280 &&
+        input.camera.height == 720 && input.camera.fps == 30);
+    input = parse(camera_defaults,
+        {"--use-camera", "--camera-id", "5", "--mpp-width", "640", "--mpp-fps", "25"});
+    require(input.camera.v4l2_dev.empty() && input.camera.camera_id == 5 &&
+        input.width == 640 && input.height == 720 && input.fps == 25);
+    input = parse("camera: {backend: opencv, width: 800}\n", {"--use-camera"});
+    require(input.use_camera && !input.camera.use_mpp && input.width == 800);
+    input = parse(camera_defaults, {"--use-camera", "--v4l2-dev", "/dev/video4"});
+    require(input.camera.v4l2_dev == "/dev/video4");
+    rejects("camera: invalid\n");
+    rejects("camera: {backend: invalid}\n");
+    rejects("camera: {width: 0}\n");
+    rejects("camera: {device: 'rtsp://example'}\n", {"--use-camera"});
+    rejects(camera_defaults, {"--image", "a.jpg", "--use-camera"});
+    rejects(camera_defaults, {"--use-camera", "--image", "a.jpg"});
+    rejects(camera_defaults, {"--use-camera", "--camera-id", "-1"});
+    rejects(camera_defaults, {"--use-camera", "--mpp-width", "640oops"});
+    rejects(camera_defaults, {"--use-camera", "--mpp-fps"});
+    // Obsolete input.type no longer selects a camera or supplies an image.
+    input = parse("input: {type: camera, source: /dev/video9}\n");
+    require(!input.use_camera && !input.camera.use_mpp && input.camera.v4l2_dev.empty());
+
     // Existing application/tracking parsers retain their business arguments
     // and pass only resolved input overrides to the common configuration code.
     auto legacy = [&](const std::string& yaml, bool camera_requested,
-                        bool id_set, const std::string& media, bool video,
+                        bool id_set, const std::string& media,
                         bool mpp_supported) {
         std::ofstream config(file.path);
         config << yaml;
         config.close();
         return vision_mpp::ConfigureLegacyDemoInput(
-            file.path, camera_requested, 3, id_set, media, video,
+            file.path, camera_requested, 3, id_set, media,
             mpp_supported, &input);
     };
-    require(legacy("{}", false, false, "", true, true));
+    require(legacy("{}", false, false, "", true));
     require(!input.use_camera && input.image_path.empty());
-    require(legacy(camera, false, false, "", true, true));
-    require(input.use_camera && input.camera.use_mpp && input.width == 1280);
-    require(legacy(camera, false, true, "", true, true));
-    require(input.camera.v4l2_dev.empty() && input.camera.camera_id == 3);
-    require(legacy(camera, false, true, "clip.mp4", true, true));
+    require(legacy(camera_defaults, false, false, "", false));
     require(!input.use_camera && !input.camera.use_mpp);
-    require(!legacy(camera, false, false, "", false, false));
-    require(legacy(camera, false, false, "photo.jpg", false, false));
-    require(!input.use_camera && input.image_path == "photo.jpg");
-    require(legacy("input: {type: image}\n", true, true, "", false, false));
-    require(input.use_camera && !input.camera.use_mpp && input.camera.camera_id == 3);
-    require(legacy("input: {type: camera, backend: opencv, width: 800}\n",
-        false, false, "", false, false));
-    require(input.use_camera && input.width == 800);
-    require(!legacy("input: {type: image}\n", false, false, "", true, true));
-    require(legacy("input: {type: image}\n", false, false, "clip.mp4", true, true));
+    require(legacy(camera_defaults, false, false, "", true));
+    require(!input.use_camera && !input.camera.use_mpp);
+    require(!legacy(camera_defaults, true, false, "", false));
+    require(legacy(camera_defaults, true, true, "", true));
+    require(input.use_camera && input.camera.use_mpp &&
+        input.camera.v4l2_dev.empty() && input.camera.camera_id == 3);
+    require(legacy(camera_defaults, false, true, "clip.mp4", true));
+    require(!input.use_camera && !input.camera.use_mpp && input.image_path == "clip.mp4");
 }
 
 }  // namespace

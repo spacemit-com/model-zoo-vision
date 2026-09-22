@@ -31,7 +31,7 @@ void print_usage(const char* program_name) {
                 << "  --output <path>       Output image path (default: result_face.jpg)\n"
                 << "  --use-camera          Use camera input\n"
                 << "  --camera-id <i>       Camera device ID (default: 0)\n"
-                << "  Input may also be selected by YAML input.type/source/backend.\n"
+                << "  --use-camera enables YAML camera settings; otherwise use test_image.\n"
                 << "  --help                Show this help\n"
                 << "\nExample:\n"
                 << "  " << program_name << " examples/yolov5-face/config/yolov5-face.yaml\n"

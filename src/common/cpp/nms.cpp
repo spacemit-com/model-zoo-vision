@@ -51,6 +51,7 @@ std::vector<int> nms(
         [&scores](int i, int j) { return scores[i] > scores[j]; });
 
     std::vector<int> keep;
+    keep.reserve(indices.size());
     while (!indices.empty()) {
         int current = indices[0];
         keep.push_back(current);
@@ -59,14 +60,14 @@ std::vector<int> nms(
             break;
         }
 
-        std::vector<int> new_indices;
+        size_t remaining = 0;
         for (size_t i = 1; i < indices.size(); ++i) {
             float iou = calculate_iou(boxes[current], boxes[indices[i]]);
             if (iou < iou_threshold) {
-                new_indices.push_back(indices[i]);
+                indices[remaining++] = indices[i];
             }
         }
-        indices = new_indices;
+        indices.resize(remaining);
     }
 
     return keep;
@@ -90,9 +91,11 @@ std::vector<T> multi_class_nms_impl(
     }
 
     std::vector<T> final_results;
+    std::vector<T> results_class;
+    std::vector<bool> suppressed;
     for (int label : unique_labels) {
         // Collect results for this class
-        std::vector<T> results_class;
+        results_class.clear();
         for (const auto& result : objects) {
             if (result.label == label) {
                 results_class.push_back(result);
@@ -104,7 +107,7 @@ std::vector<T> multi_class_nms_impl(
             [](const T& a, const T& b) { return a.score > b.score; });
 
         // Apply NMS
-        std::vector<bool> suppressed(results_class.size(), false);
+        suppressed.assign(results_class.size(), false);
         for (size_t i = 0; i < results_class.size(); ++i) {
             if (suppressed[i]) continue;
 
@@ -144,4 +147,3 @@ std::vector<SegmentationResult> multi_class_nms(
 }
 
 }  // namespace vision_common
-

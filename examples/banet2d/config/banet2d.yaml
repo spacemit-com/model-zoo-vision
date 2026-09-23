@@ -2,6 +2,8 @@ model_path: ~/.cache/models/vision/banet2d/banet_2d_small_512x640_resize_mode_ne
 test_image1: ~/.cache/assets/image/018_banet2d_left.png
 test_image2: ~/.cache/assets/image/019_banet2d_right.png
 class: deploy.banet2d.BANet2D
+benchmark:
+  scenario: stereo
 default_params:
   num_threads: 4
   providers:

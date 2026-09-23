@@ -90,11 +90,15 @@ private:
     // --- recognition (CRNN + CTC) ---
     static cv::Mat crop_text_box(const cv::Mat& image, const std::vector<cv::Point>& box);
     std::string ctc_decode(const float* logits, int seq_len, int num_classes, float* out_score) const;
+    struct RecognitionTiming {
+        double preprocess_ms = 0.0;
+        double model_infer_ms = 0.0;
+        uint64_t model_infer_calls = 0;
+    };
     std::string rec_run(
         const cv::Mat& crop,
         float* out_score,
-        double* model_infer_ms,
-        uint64_t* model_infer_calls);
+        RecognitionTiming* timing);
 
     void load_dict(const std::string& dict_path);
     void validate_dict_size();

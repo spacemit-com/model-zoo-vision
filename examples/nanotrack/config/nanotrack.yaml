@@ -1,5 +1,7 @@
 model_path: ~/.cache/models/vision/nanotrack/nanotrack_backbone2.q.onnx
 test_video: ~/.cache/assets/video/004_bag.avi
+benchmark:
+  scenario: video_tracking
 class: deploy.nanotrack.NanoTracker
 initial_bbox:
   x: 315

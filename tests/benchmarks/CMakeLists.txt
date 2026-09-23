@@ -18,6 +18,7 @@ endfunction()
 
 add_executable(vision_infer_benchmark
     infer_benchmark.cpp
+    benchmark_scenario.cpp
     benchmark_stats.cpp
 )
 

@@ -630,15 +630,14 @@ std::string PPOCRDetector::ctc_decode(
 std::string PPOCRDetector::rec_run(
     const cv::Mat& crop,
     float* out_score,
-    double* model_infer_ms,
-    uint64_t* model_infer_calls) {
+    RecognitionTiming* timing) {
     *out_score = 0.0f;
-    *model_infer_ms = 0.0;
-    *model_infer_calls = 0;
+    *timing = RecognitionTiming{};
     if (crop.empty()) {
         return "";
     }
 
+    const auto t_rec_pre0 = std::chrono::steady_clock::now();
     cv::Mat blob = preprocess_ppocr_recognition_crop(
         crop, rec_img_w_max_, rec_img_h_);
 
@@ -648,12 +647,15 @@ std::string PPOCRDetector::rec_run(
         memory_info_, blob.ptr<float>(), static_cast<size_t>(3) * plane,
         shape.data(), shape.size());
     const auto t_rec_infer0 = std::chrono::steady_clock::now();
+    timing->preprocess_ms =
+        std::chrono::duration<double, std::milli>(
+            t_rec_infer0 - t_rec_pre0).count();
     std::vector<Ort::Value> outs = rec_session_->Run(
         Ort::RunOptions{nullptr}, rec_input_names_.data(), &input, 1,
         rec_output_names_.data(), rec_output_names_.size());
     const auto t_rec_infer1 = std::chrono::steady_clock::now();
-    *model_infer_calls = 1;
-    *model_infer_ms =
+    timing->model_infer_calls = 1;
+    timing->model_infer_ms =
         std::chrono::duration<double, std::milli>(
             t_rec_infer1 - t_rec_infer0).count();
 
@@ -752,8 +754,9 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
             return tensor;
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
-    set_runtime_preprocess_ms(
-        std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
+    const double detector_preprocess_ms =
+        std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count();
+    add_runtime_component_timing("detector.preprocess", detector_preprocess_ms);
 
     const auto t_inf0 = std::chrono::steady_clock::now();
     const std::vector<int64_t> det_shape = {1, 3, net_h, net_w};
@@ -781,31 +784,43 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
         prob_map, original_height, original_width,
         net_h, net_w);
     boxes = nms_boxes(std::move(boxes), det_box_nms_thresh_);
+    const auto t_rec_begin = std::chrono::steady_clock::now();
+    add_runtime_component_timing(
+        "ocr.detect",
+        std::chrono::duration<double, std::milli>(
+            t_rec_begin - t0).count());
+    const double detector_postprocess_ms =
+        std::chrono::duration<double, std::milli>(
+            t_rec_begin - t_post0).count();
+    add_runtime_component_timing("detector.postprocess", detector_postprocess_ms);
 
     // --- recognition per box ---
+    const auto t_source0 = std::chrono::steady_clock::now();
     cv::Mat source_bgr =
         input.format == vision_core::ImagePixelFormat::kNv12
         ? vision_operators::image_input_to_bgr_cpu(input)
         : input.image;
+    const auto t_source1 = std::chrono::steady_clock::now();
     vision_common::TextResultList results;
     results.reserve(boxes.size());
+    double recognizer_preprocess_total_ms =
+        std::chrono::duration<double, std::milli>(
+            t_source1 - t_source0).count();
     double recognizer_infer_total_ms = 0.0;
+    uint64_t recognizer_infer_calls_total = 0;
     for (const TextBox& box : boxes) {
+        const auto t_crop0 = std::chrono::steady_clock::now();
         cv::Mat crop = crop_text_box(source_bgr, box.points);
+        const auto t_crop1 = std::chrono::steady_clock::now();
         float rec_score = 0.0f;
-        double recognizer_infer_ms = 0.0;
-        uint64_t recognizer_infer_calls = 0;
-        std::string text = rec_run(
-            crop,
-            &rec_score,
-            &recognizer_infer_ms,
-            &recognizer_infer_calls);
-        if (recognizer_infer_calls > 0) {
-            add_runtime_component_timing(
-                "recognizer.infer",
-                recognizer_infer_ms,
-                recognizer_infer_calls);
-            recognizer_infer_total_ms += recognizer_infer_ms;
+        RecognitionTiming rec_timing;
+        std::string text = rec_run(crop, &rec_score, &rec_timing);
+        recognizer_preprocess_total_ms +=
+            std::chrono::duration<double, std::milli>(
+                t_crop1 - t_crop0).count() + rec_timing.preprocess_ms;
+        if (rec_timing.model_infer_calls > 0) {
+            recognizer_infer_total_ms += rec_timing.model_infer_ms;
+            recognizer_infer_calls_total += rec_timing.model_infer_calls;
         }
         if (text.empty()) {
             continue;
@@ -825,12 +840,38 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
         results.push_back(std::move(tr));
     }
     const auto t1 = std::chrono::steady_clock::now();
+    add_runtime_component_timing(
+        "ocr.recognize",
+        std::chrono::duration<double, std::milli>(
+            t1 - t_rec_begin).count());
+    const double recognition_phase_ms =
+        std::chrono::duration<double, std::milli>(
+            t1 - t_rec_begin).count();
+    // Decode, result creation, and loop bookkeeping are recognition
+    // postprocess. The residual makes this phase a complete partition.
+    const double recognizer_postprocess_ms = std::max(
+        0.0, recognition_phase_ms - recognizer_preprocess_total_ms -
+                recognizer_infer_total_ms);
+    if (!boxes.empty()) {
+        const uint64_t crop_calls = static_cast<uint64_t>(boxes.size());
+        add_runtime_component_timing(
+            "recognizer.preprocess", recognizer_preprocess_total_ms,
+            crop_calls);
+        if (recognizer_infer_calls_total > 0) {
+            add_runtime_component_timing(
+                "recognizer.infer", recognizer_infer_total_ms,
+                recognizer_infer_calls_total);
+        }
+        add_runtime_component_timing(
+            "recognizer.postprocess", recognizer_postprocess_ms,
+            crop_calls);
+    }
+    set_runtime_preprocess_ms(
+        detector_preprocess_ms + recognizer_preprocess_total_ms);
     set_runtime_model_infer_ms(
         detector_infer_ms + recognizer_infer_total_ms);
-    const double postprocess_with_rec_infer_ms =
-        std::chrono::duration<double, std::milli>(t1 - t_post0).count();
-    set_runtime_postprocess_ms(std::max(
-        0.0, postprocess_with_rec_infer_ms - recognizer_infer_total_ms));
+    set_runtime_postprocess_ms(
+        detector_postprocess_ms + recognizer_postprocess_ms);
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(t1 - t0).count());
 
     return results;

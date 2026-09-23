@@ -418,6 +418,8 @@ K3:
 
 > 以上命令默认使用 yolov8n_no_dfl 模型；如需指定其他模型，可使用 `--model-path` 参数，例如：`--model-path /path/to/yolov8s_no_dfl.q.onnx`。
 
+特殊输入模型通过 `benchmark.scenario` 指定场景；追踪模型默认读取 `test_video`，可用 `--image` 覆盖。计时范围见输出中的 `Scope`。
+
 **不包含前后处理：**
 
 > 说明：以下数据基于 K1/K3 平台实测（推理引擎 2.0.6），为阶段性信息，持续优化中，请以最新文档为准。
@@ -503,6 +505,3 @@ onnxruntime_perf_test ~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx  -e sp
 ```
 
 详细说明见 SpacemiT 社区文档 [AI 计算栈 · ONNX Runtime](https://www.spacemit.com/community/document/info?lang=zh&nodepath=ai/compute_stack/ai_compute_stack/onnxruntime.md) 中的 **onnxruntime_perf_test** 章节。
-
-
-

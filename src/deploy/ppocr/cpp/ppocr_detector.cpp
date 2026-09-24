@@ -389,8 +389,7 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::db_postprocess(
     const cv::Mat& prob_map, int ori_h, int ori_w, int net_h, int net_w) {
     // Binarize, then dilate 3x3 to connect nearby strokes (PaddleOCR default).
     cv::Mat bin_map;
-    cv::threshold(prob_map, bin_map, det_db_thresh_, 255.0, cv::THRESH_BINARY);
-    bin_map.convertTo(bin_map, CV_8UC1);
+    cv::compare(prob_map, det_db_thresh_, bin_map, cv::CMP_GT);
     cv::Mat dilated;
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, {3, 3});
     cv::dilate(bin_map, dilated, kernel);
@@ -459,10 +458,11 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::nms_boxes(
     std::sort(boxes.begin(), boxes.end(),
         [](const TextBox& a, const TextBox& b) { return a.score > b.score; });
 
-    auto aabb = [](const std::vector<cv::Point>& pts) {
-        cv::Rect r = cv::boundingRect(pts);
-        return r;
-    };
+    std::vector<cv::Rect> bounds;
+    bounds.reserve(boxes.size());
+    for (const TextBox& box : boxes) {
+        bounds.push_back(cv::boundingRect(box.points));
+    }
     auto iou = [](const cv::Rect& a, const cv::Rect& b) {
         const int x1 = std::max(a.x, b.x);
         const int y1 = std::max(a.y, b.y);
@@ -483,12 +483,12 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::nms_boxes(
             continue;
         }
         kept.push_back(boxes[i]);
-        const cv::Rect ri = aabb(boxes[i].points);
+        const cv::Rect& ri = bounds[i];
         for (size_t j = i + 1; j < boxes.size(); ++j) {
             if (suppressed[j]) {
                 continue;
             }
-            if (iou(ri, aabb(boxes[j].points)) > nms_thresh) {
+            if (iou(ri, bounds[j]) > nms_thresh) {
                 suppressed[j] = 1;
             }
         }
@@ -611,7 +611,15 @@ std::string PPOCRDetector::ctc_decode(
     int last_idx = -1;
     for (int t = 0; t < seq_len; ++t) {
         const float* step = logits + static_cast<size_t>(t) * num_classes;
-        const int best = static_cast<int>(std::max_element(step, step + num_classes) - step);
+        int best = 0;
+        if (!std::isnan(step[0])) {
+            cv::Point max_location;
+            cv::minMaxLoc(
+                cv::Mat(1, num_classes, CV_32FC1,
+                        const_cast<float*>(step)),
+                nullptr, nullptr, nullptr, &max_location);
+            best = max_location.x;
+        }
         if (best != 0 && best != last_idx) {
             if (best < static_cast<int>(dict_.size())) {
                 text += dict_[static_cast<size_t>(best)];

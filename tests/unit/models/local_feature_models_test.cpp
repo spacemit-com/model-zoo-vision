@@ -123,6 +123,18 @@ int main() {
         "second match should be 1->1");
     check(close(matches[1].score, 0.8f), "second match score should be 0.8");
 
+    const float tied_log_scores[4] = {
+        std::log(0.9f), std::log(0.9f),
+        std::log(0.9f), std::log(0.9f),
+    };
+    const auto tied_matches = vision_deploy::filter_lightglue_matches(
+        tied_log_scores, 2, features, features, 0.5f);
+    check(
+        tied_matches.size() == 1 &&
+            tied_matches[0].query_index == 0 &&
+            tied_matches[0].train_index == 0,
+        "tied scores should retain the first mutual match");
+
     vision::LocalFeatures drawable_features;
     drawable_features.keypoints = {
         {0.0f, 0.0f, 0.0f},

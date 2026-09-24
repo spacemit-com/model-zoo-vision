@@ -19,8 +19,13 @@
 
 #include <opencv2/imgproc.hpp>
 
+#if defined(__riscv_vector)
+#include <riscv_vector.h>
+#endif
+
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "operators/image_preprocess/image_preprocess_geometry.h"
+#include "common/cpp/image_processing.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -255,7 +260,6 @@ cv::Mat YOLO26SemanticSegmentor::decode_label_map(
         CV_8UC1,
         cv::Scalar(0));
     cv::Mat restored;
-    cv::Mat update_mask;
     for (int class_id = 0;
         class_id < num_classes_;
         ++class_id) {
@@ -276,13 +280,33 @@ cv::Mat YOLO26SemanticSegmentor::decode_label_map(
             restored.copyTo(best_scores);
             continue;
         }
-        cv::compare(
-            restored,
-            best_scores,
-            update_mask,
-            cv::CMP_GT);
-        restored.copyTo(best_scores, update_mask);
-        label_map.setTo(class_id, update_mask);
+        for (int y = 0; y < original_size.height; ++y) {
+            const float* candidate = restored.ptr<float>(y);
+            float* best = best_scores.ptr<float>(y);
+            uint8_t* label = label_map.ptr<uint8_t>(y);
+#if defined(__riscv_vector)
+            int x = 0;
+            while (x < original_size.width) {
+                const size_t vl =
+                    __riscv_vsetvl_e32m4(original_size.width - x);
+                const auto next = __riscv_vle32_v_f32m4(candidate + x, vl);
+                const auto current = __riscv_vle32_v_f32m4(best + x, vl);
+                const auto greater = __riscv_vmfgt_vv_f32m4_b8(
+                    next, current, vl);
+                __riscv_vse32_v_f32m4_m(greater, best + x, next, vl);
+                const auto classes = __riscv_vmv_v_x_u8m1(class_id, vl);
+                __riscv_vse8_v_u8m1_m(greater, label + x, classes, vl);
+                x += static_cast<int>(vl);
+            }
+#else
+            for (int x = 0; x < original_size.width; ++x) {
+                if (candidate[x] > best[x]) {
+                    best[x] = candidate[x];
+                    label[x] = static_cast<uint8_t>(class_id);
+                }
+            }
+#endif
+        }
     }
     return label_map;
 }
@@ -295,15 +319,14 @@ YOLO26SemanticSegmentor::split_semantic_masks(
             "YOLO26-Sem label map must be CV_8UC1");
     }
 
+    const auto present = vision_common::collect_present_u8_labels(label_map);
     std::vector<vision::Segmentation> results;
     for (int class_id = 0;
         class_id < num_classes_;
         ++class_id) {
+        if (!present[class_id]) continue;
         cv::Mat mask;
         cv::compare(label_map, class_id, mask, cv::CMP_EQ);
-        if (cv::countNonZero(mask) == 0) {
-            continue;
-        }
         vision::Segmentation result;
         result.bbox = {-1.0F, -1.0F, -1.0F, -1.0F};
         result.score = 1.0F;

@@ -18,6 +18,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "common/cpp/image_processing.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -151,19 +152,18 @@ split_mobileseg_semantic_masks(
             "MobileSeg semantic-mask arguments are invalid");
     }
 
+    const auto present = vision_common::collect_present_u8_labels(label_map);
     std::vector<vision::Segmentation> results;
     for (int class_id = 0;
         class_id < num_classes;
         ++class_id) {
+        if (!present[class_id]) continue;
         cv::Mat mask;
         cv::compare(
             label_map,
             class_id,
             mask,
             cv::CMP_EQ);
-        if (cv::countNonZero(mask) == 0) {
-            continue;
-        }
         vision::Segmentation result;
         result.bbox = {-1.0F, -1.0F, -1.0F, -1.0F};
         result.score = 1.0F;

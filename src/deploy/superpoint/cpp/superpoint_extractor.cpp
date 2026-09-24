@@ -28,9 +28,16 @@ namespace vision_deploy {
 
 namespace {
 
-float bilinear_descriptor(
-    const float* descriptor_map,
-    int channel,
+struct DescriptorSample {
+    int top_left;
+    int top_right;
+    int bottom_left;
+    int bottom_right;
+    float wx;
+    float wy;
+};
+
+DescriptorSample make_descriptor_sample(
     int descriptor_height,
     int descriptor_width,
     float x,
@@ -45,18 +52,26 @@ float bilinear_descriptor(
     const int y1c = std::clamp(y1, 0, descriptor_height - 1);
     const float wx = x - x0;
     const float wy = y - y0;
-    const size_t plane =
-        static_cast<size_t>(descriptor_height) * descriptor_width;
-    const float* values =
-        descriptor_map + static_cast<size_t>(channel) * plane;
-    return values[y0c * descriptor_width + x0c] *
-            (1.0f - wx) * (1.0f - wy) +
-        values[y0c * descriptor_width + x1c] *
-            wx * (1.0f - wy) +
-        values[y1c * descriptor_width + x0c] *
-            (1.0f - wx) * wy +
-        values[y1c * descriptor_width + x1c] *
-            wx * wy;
+    return {
+        y0c * descriptor_width + x0c,
+        y0c * descriptor_width + x1c,
+        y1c * descriptor_width + x0c,
+        y1c * descriptor_width + x1c,
+        wx,
+        wy};
+}
+
+float bilinear_descriptor(
+    const float* values,
+    const DescriptorSample& sample) {
+    return values[sample.top_left] *
+            (1.0f - sample.wx) * (1.0f - sample.wy) +
+        values[sample.top_right] *
+            sample.wx * (1.0f - sample.wy) +
+        values[sample.bottom_left] *
+            (1.0f - sample.wx) * sample.wy +
+        values[sample.bottom_right] *
+            sample.wx * sample.wy;
 }
 
 }  // namespace
@@ -86,7 +101,11 @@ vision::LocalFeatures build_superpoint_features(
             "SuperPoint postprocess dimensions must be valid");
     }
 
-    std::vector<int> order;
+    struct Candidate {
+        float score;
+        int index;
+    };
+    std::vector<Candidate> order;
     order.reserve(static_cast<size_t>(image_height) * image_width);
     for (int y = remove_borders;
         y < image_height - remove_borders;
@@ -96,15 +115,15 @@ vision::LocalFeatures build_superpoint_features(
             ++x) {
             const int index = y * image_width + x;
             if (std::isfinite(scores[index]) && scores[index] > 0.0f) {
-                order.push_back(index);
+                order.push_back({scores[index], index});
             }
         }
     }
     std::sort(
         order.begin(),
         order.end(),
-        [scores](int lhs, int rhs) {
-            return scores[lhs] > scores[rhs];
+        [](const Candidate& lhs, const Candidate& rhs) {
+            return lhs.score > rhs.score;
         });
 
     std::vector<uint8_t> suppressed(
@@ -112,7 +131,8 @@ vision::LocalFeatures build_superpoint_features(
         0);
     std::vector<int> selected;
     selected.reserve(num_keypoints);
-    for (const int index : order) {
+    for (const Candidate& candidate : order) {
+        const int index = candidate.index;
         if (suppressed[index] != 0) {
             continue;
         }
@@ -152,6 +172,8 @@ vision::LocalFeatures build_superpoint_features(
     const float descriptor_scale_y =
         static_cast<float>(descriptor_height - 1) / image_height;
 
+    std::vector<DescriptorSample> samples;
+    samples.reserve(selected.size());
     for (size_t i = 0; i < selected.size(); ++i) {
         const int index = selected[i];
         const int model_x = index % image_width;
@@ -160,19 +182,30 @@ vision::LocalFeatures build_superpoint_features(
             model_x * coordinate_scale_x,
             model_y * coordinate_scale_y,
             scores[index]};
-        float norm_squared = 0.0f;
-        for (int channel = 0;
-            channel < descriptor_channels;
-            ++channel) {
+        samples.push_back(make_descriptor_sample(
+            descriptor_height,
+            descriptor_width,
+            model_x * descriptor_scale_x,
+            model_y * descriptor_scale_y));
+    }
+
+    const size_t plane =
+        static_cast<size_t>(descriptor_height) * descriptor_width;
+    for (int channel = 0; channel < descriptor_channels; ++channel) {
+        const float* values =
+            descriptor_map + static_cast<size_t>(channel) * plane;
+        for (size_t i = 0; i < selected.size(); ++i) {
             const float value = bilinear_descriptor(
-                descriptor_map,
-                channel,
-                descriptor_height,
-                descriptor_width,
-                model_x * descriptor_scale_x,
-                model_y * descriptor_scale_y);
+                values, samples[i]);
             output.descriptors[
                 i * descriptor_channels + channel] = value;
+        }
+    }
+    for (size_t i = 0; i < selected.size(); ++i) {
+        float norm_squared = 0.0f;
+        for (int channel = 0; channel < descriptor_channels; ++channel) {
+            const float value = output.descriptors[
+                i * descriptor_channels + channel];
             norm_squared += value * value;
         }
         const float norm = std::sqrt(norm_squared);

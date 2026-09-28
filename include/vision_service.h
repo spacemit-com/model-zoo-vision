@@ -37,7 +37,8 @@ struct BoundingBox {
 struct KeyPoint {
     float x = 0.0f;
     float y = 0.0f;
-    float visibility = 0.0f;  // 0.0-1.0 confidence
+    // Model-dependent keypoint score; raw SimCC may exceed 1.0.
+    float visibility = 0.0f;
 };
 
 // Object detection (YOLOv5/8/11/12, face, gesture, fire...).

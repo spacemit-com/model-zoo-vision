@@ -76,7 +76,14 @@ def main():
 
     # Create service
     print(f"Loading model from config: {config_path}")
-    service = VisionServiceNative.create(config_path, args.model_path or "")
+    try:
+        service = VisionServiceNative.create(config_path, args.model_path or "")
+        if service is None:
+            print(f"Error: Failed to create service from {config_path}")
+            return 1
+    except Exception as e:
+        print(f"Error: Failed to create service: {e}")
+        return 1
 
     # Read defaults from config if not provided via command line
     query_path = args.query if args.query else service.get_config_path_value("test_query")
@@ -157,7 +164,12 @@ def main():
 
     # Compute L2 distances
     distances = []
+    query_dim = len(query_emb)
     for i, db_emb in enumerate(db_embeddings):
+        if len(db_emb) != query_dim:
+            print(f"\nWarning: Skipping {valid_db_paths[i]} "
+                  f"(embedding dim {len(db_emb)} != query dim {query_dim})")
+            continue
         dist = compute_l2_distance(query_emb, db_emb)
         distances.append((dist, i, valid_db_paths[i]))
 

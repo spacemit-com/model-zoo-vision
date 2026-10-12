@@ -10,6 +10,9 @@
 #include <variant>     // NOLINT(build/include_order)
 #include <vector>      // NOLINT(build/include_order)
 #include <algorithm>   // NOLINT(build/include_order)
+#include <cmath>       // NOLINT(build/include_order)
+#include <stdexcept>   // NOLINT(build/include_order)
+#include <filesystem>  // NOLINT(build/c++17) NOLINT(build/include_order)
 
 #include "vision_service.h"  // NOLINT(build/include_order)
 
@@ -47,7 +50,16 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--database" && i + 1 < argc) {
             database_dir = argv[++i];
         } else if (arg == "--top-k" && i + 1 < argc) {
-            top_k = std::stoi(argv[++i]);
+            try {
+                top_k = std::stoi(argv[++i]);
+                if (top_k <= 0) {
+                    std::cerr << "Error: --top-k must be a positive integer" << std::endl;
+                    return 1;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid --top-k value. Expected a positive integer." << std::endl;
+                return 1;
+            }
         } else if (arg == "--model-path" && i + 1 < argc) {
             model_path_override = argv[++i];
         }
@@ -106,20 +118,22 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Query embedding dimension: " << query_emb->embedding.size() << std::endl;
 
-    // Get database images
+    // Get database images using filesystem (avoids shell injection)
     std::vector<std::string> db_paths;
-    std::string cmd = "find " + database_dir + " -type f \\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \\) | sort";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (pipe) {
-        char buffer[1024];
-        while (fgets(buffer, sizeof(buffer), pipe)) {
-            std::string path(buffer);
-            path.erase(path.find_last_not_of(" \n\r\t") + 1);
-            if (!path.empty()) {
-                db_paths.push_back(path);
+    try {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(database_dir)) {
+            if (entry.is_regular_file()) {
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
+                    db_paths.push_back(entry.path().string());
+                }
             }
         }
-        pclose(pipe);
+        std::sort(db_paths.begin(), db_paths.end());
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error reading database directory: " << e.what() << std::endl;
+        return 1;
     }
 
     if (db_paths.empty()) {
@@ -130,9 +144,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Found " << db_paths.size() << " images in database" << std::endl;
     std::cout << "Extracting database embeddings..." << std::endl;
 
-    // Extract database embeddings
+    // Extract database embeddings (with valid path tracking)
     std::vector<std::vector<float>> db_embeddings;
+    std::vector<std::string> valid_db_paths;
     db_embeddings.reserve(db_paths.size());
+    valid_db_paths.reserve(db_paths.size());
 
     for (size_t i = 0; i < db_paths.size(); ++i) {
         VisionServiceResponse db_response;
@@ -145,6 +161,7 @@ int main(int argc, char* argv[]) {
         const vision::Embedding* db_emb = std::get_if<vision::Embedding>(&db_response.results[0]);
         if (db_emb) {
             db_embeddings.push_back(db_emb->embedding);
+            valid_db_paths.push_back(db_paths[i]);
         }
 
         if ((i + 1) % 10 == 0 || i + 1 == db_paths.size()) {
@@ -154,7 +171,7 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
 
     if (db_embeddings.size() != db_paths.size()) {
-        std::cerr << "Warning: Only extracted " << db_embeddings.size() << " embeddings" << std::endl;
+        std::cerr << "Warning: Only extracted " << db_embeddings.size() << " of " << db_paths.size() << " embeddings" << std::endl;
     }
 
     // Compute L2 distances
@@ -170,7 +187,7 @@ int main(int argc, char* argv[]) {
         PlaceMatch match;
         match.index = static_cast<int>(i);
         match.distance = distance;
-        match.path = db_paths[i];
+        match.path = valid_db_paths[i];
         matches.push_back(match);
     }
 

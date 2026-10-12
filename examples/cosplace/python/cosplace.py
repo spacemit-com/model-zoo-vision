@@ -81,8 +81,21 @@ def main():
     # Read defaults from config if not provided via command line
     query_path = args.query if args.query else service.get_config_path_value("test_query")
     database_dir = args.database if args.database else service.get_config_path_value("test_database")
-    top_k_str = service.get_config_path_value("top_k")
-    top_k = args.top_k if args.top_k is not None else (int(top_k_str) if top_k_str else 5)
+    if args.top_k is not None:
+        top_k = args.top_k
+    else:
+        top_k_str = service.get_config_path_value("top_k")
+        if not top_k_str:
+            top_k = 5
+        else:
+            try:
+                top_k = int(top_k_str)
+                if top_k <= 0:
+                    print(f"Error: Config 'top_k' must be a positive integer, got: {top_k_str}")
+                    return 1
+            except ValueError:
+                print(f"Error: Invalid 'top_k' in config. Expected a positive integer, got: {top_k_str}")
+                return 1
 
     if not query_path:
         print("Error: Query image required. Use --query <path> or set test_query in config")

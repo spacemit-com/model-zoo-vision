@@ -179,14 +179,26 @@ std::vector<vision_core::ModelCapability> CosPlaceRecognizer::get_capabilities()
 }
 
 std::vector<float> CosPlaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    // Extract embedding from outputs
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
+    if (outputs.empty()) {
+        throw std::runtime_error("CosPlaceRecognizer::postprocess: no output tensors returned");
+    }
+
     auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
     std::vector<int64_t> dims = tensor_info.GetShape();
 
+    // Use all dimensions after the batch dimension (a 1-D output is treated as
+    // the full descriptor, so no batch dimension is stripped).
     size_t embedding_size = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        embedding_size *= dims[i];
+    for (size_t i = (dims.size() > 1 ? 1 : 0); i < dims.size(); ++i) {
+        embedding_size *= static_cast<size_t>(dims[i]);
+    }
+    if (embedding_size == 0) {
+        throw std::runtime_error("CosPlaceRecognizer::postprocess: empty output tensor");
+    }
+
+    const float* output_data = outputs[0].GetTensorMutableData<float>();
+    if (output_data == nullptr) {
+        throw std::runtime_error("CosPlaceRecognizer::postprocess: null output data");
     }
 
     // Copy embedding data

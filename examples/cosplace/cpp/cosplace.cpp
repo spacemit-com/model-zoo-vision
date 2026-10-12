@@ -83,7 +83,22 @@ int main(int argc, char* argv[]) {
     }
     if (top_k == -1) {
         std::string top_k_str = service->GetConfigPathValue("top_k");
-        top_k = top_k_str.empty() ? 5 : std::stoi(top_k_str);
+        if (top_k_str.empty()) {
+            top_k = 5;
+        } else {
+            try {
+                top_k = std::stoi(top_k_str);
+                if (top_k <= 0) {
+                    std::cerr << "Error: Config 'top_k' must be a positive integer, got: "
+                            << top_k_str << std::endl;
+                    return 1;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid 'top_k' in config. Expected a positive integer, got: "
+                        << top_k_str << std::endl;
+                return 1;
+            }
+        }
     }
 
     if (query_path.empty()) {
@@ -176,9 +191,16 @@ int main(int argc, char* argv[]) {
 
     // Compute L2 distances
     std::vector<PlaceMatch> matches;
+    const size_t query_dim = query_emb->embedding.size();
     for (size_t i = 0; i < db_embeddings.size(); ++i) {
+        if (db_embeddings[i].size() != query_dim) {
+            std::cerr << "Warning: Skipping " << valid_db_paths[i]
+                    << " (embedding dim " << db_embeddings[i].size()
+                    << " != query dim " << query_dim << ")" << std::endl;
+            continue;
+        }
         float distance = 0.0f;
-        for (size_t d = 0; d < query_emb->embedding.size(); ++d) {
+        for (size_t d = 0; d < query_dim; ++d) {
             float diff = query_emb->embedding[d] - db_embeddings[i][d];
             distance += diff * diff;
         }

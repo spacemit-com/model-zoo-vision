@@ -106,5 +106,7 @@ Top-5 Place Matches (by L2 distance)
 - **模型未找到**：确认已执行 `scripts/download_models.sh`，且 `model_path` 指向 `~/.cache/models/vision/cosplace/cosplace_resnet50_512.q.onnx`。
 - **测试数据未找到**：确认已执行 `scripts/download_assets.sh`，或在配置文件中设置正确的 `test_query` 和 `test_database`。
 - **Query/Database 未指定**：必须在配置文件中设置 `test_query` 和 `test_database`，或通过命令行参数 `--query` 和 `--database` 指定。
-- **数据库目录为空**：确保数据库目录包含图像文件（.jpg、.jpeg、.png）。
+- **数据库目录为空**：确保数据库目录（递归查找）包含图像文件。C++ 示例支持 .jpg、.jpeg、.png；Python 示例额外支持 .bmp。
+- **--top-k / top_k 非法**：必须为正整数，否则两个示例都会报错并以非零码退出。
+- **下载中断**：下载脚本先写入临时文件，成功后才移动到最终路径；中断后直接重新执行脚本即可。
 - **内存不足**：大规模数据库会占用较多内存，可分批处理或减少数据库大小。

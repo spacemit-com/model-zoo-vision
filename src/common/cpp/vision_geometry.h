@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "vision_service.h"  // public POD result types (namespace vision)
+#include "embedding_utils.h"
 
 /**
  * @file vision_geometry.h
@@ -81,14 +82,7 @@ inline std::vector<std::pair<int, float>> top_k(const vision::Classification& c,
 
 inline float similarity(const vision::Embedding& a, const vision::Embedding& b) {
     if (a.embedding.size() != b.embedding.size() || a.embedding.empty()) return 0.0f;
-    float dot = 0.0f, na = 0.0f, nb = 0.0f;
-    for (size_t i = 0; i < a.embedding.size(); ++i) {
-        dot += a.embedding[i] * b.embedding[i];
-        na += a.embedding[i] * a.embedding[i];
-        nb += b.embedding[i] * b.embedding[i];
-    }
-    float denom = std::sqrt(na) * std::sqrt(nb);
-    return denom > 0 ? dot / denom : 0.0f;
+    return compute_similarity(a.embedding, b.embedding);
 }
 
 inline float distance(const vision::Embedding& a, const vision::Embedding& b) {

@@ -19,9 +19,10 @@ std::vector<float> normalize_embedding(const std::vector<float>& embedding);
 
 /**
  * @brief Compute cosine similarity between two embeddings
- * @param embedding1 First embedding vector (should be L2-normalized)
- * @param embedding2 Second embedding vector (should be L2-normalized)
- * @return Similarity score (-1 to 1, higher means more similar)
+ * @param embedding1 First embedding vector (normalization is not required)
+ * @param embedding2 Second embedding vector (normalization is not required)
+ * @return Similarity score (-1 to 1); 0 for zero-norm or non-finite inputs
+ * @throws std::runtime_error if the vector dimensions differ
  */
 float compute_similarity(const std::vector<float>& embedding1,
                         const std::vector<float>& embedding2);

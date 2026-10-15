@@ -344,16 +344,12 @@ const std::string& VisionService::LastCreateError() {
 }
 
 VisionServiceStatus VisionService::SetError(VisionServiceStatus code, const std::string& message) {
-    g_last_error_ = message;
     last_error_ = message;
     return code;
 }
 
 const std::string& VisionService::LastError() const {
-    if (!last_error_.empty()) {
-        return last_error_;
-    }
-    return g_last_error_;
+    return last_error_;
 }
 
 VisionServiceStatus VisionService::Infer(
@@ -384,6 +380,9 @@ VisionServiceStatus VisionService::Infer(
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, message);
     };
 
+    if (has_sequence && request.sequence_count <= 0) {
+        return invalid("sequence_count must be positive when sequence_pts is set");
+    }
     if (has_features0 != has_features1) {
         return invalid(
             "local_features0 and local_features1 must be provided together");
@@ -475,8 +474,7 @@ VisionServiceStatus VisionService::Infer(
                     VISION_SERVICE_INFER_FAILED,
                     response->error_message);
             }
-            if (request.sequence_count > 0 &&
-                static_cast<size_t>(request.sequence_count) < seq_size) {
+            if (static_cast<size_t>(request.sequence_count) < seq_size) {
                 response->error_message =
                     "sequence_count (" +
                     std::to_string(request.sequence_count) +
@@ -744,6 +742,7 @@ VisionServiceStatus VisionService::EncodeText(const std::string& text,
             MaybePrintEmbeddingTiming(impl_->timing_options, impl_->last_timing);
         }
 
+        last_error_.clear();
         return VISION_SERVICE_OK;
     } catch (const std::exception& e) {
         return SetError(VISION_SERVICE_INFER_FAILED, e.what());

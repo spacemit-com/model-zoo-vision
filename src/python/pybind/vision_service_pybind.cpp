@@ -9,6 +9,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -131,9 +132,11 @@ cv::Mat NumpyToMatBgr(const py::array& arr) {
     if (info.itemsize != 1 || info.format != py::format_descriptor<uint8_t>::format()) {
         throw std::invalid_argument("image dtype must be uint8");
     }
-    const ssize_t row_stride = info.strides[0];
-    const ssize_t col_stride = info.strides[1];
-    if (col_stride != 3 || row_stride != info.shape[1] * 3) {
+    if (info.shape[0] > std::numeric_limits<int>::max() ||
+        info.shape[1] > std::numeric_limits<int>::max()) {
+        throw std::invalid_argument("image dimensions exceed OpenCV limits");
+    }
+    if ((arr.flags() & py::array::c_style) == 0) {
         throw std::invalid_argument("image must be C-contiguous HxWx3 (use numpy.ascontiguousarray)");
     }
     const int rows = static_cast<int>(info.shape[0]);
@@ -191,6 +194,14 @@ cv::Mat NumpyToMat(const py::array& obj) {
         throw std::invalid_argument("mask dtype must be uint8");
     }
     if (info.ndim == 2) {
+        if (info.shape[0] > std::numeric_limits<int>::max() ||
+            info.shape[1] > std::numeric_limits<int>::max()) {
+            throw std::invalid_argument("mask dimensions exceed OpenCV limits");
+        }
+        if ((obj.flags() & py::array::c_style) == 0) {
+            throw std::invalid_argument(
+                "mask must be C-contiguous (use numpy.ascontiguousarray)");
+        }
         const int rows = static_cast<int>(info.shape[0]);
         const int cols = static_cast<int>(info.shape[1]);
         return cv::Mat(rows, cols, CV_8UC1, info.ptr).clone();
@@ -624,6 +635,9 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 }
                 if (info.shape[0] == 0) {
                     throw std::invalid_argument("pts must not be empty");
+                }
+                if (info.shape[0] > std::numeric_limits<int>::max()) {
+                    throw std::invalid_argument("pts length exceeds sequence_count limits");
                 }
                 VisionServiceRequest request{};
                 request.sequence_pts = static_cast<const float*>(info.ptr);

@@ -11,6 +11,7 @@
 
 #include <limits>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 /** Column-reduction and reduction transfer for a dense cost matrix.
@@ -151,7 +152,7 @@ int_t _carr_dense(
 
 /** Find columns with minimum d[j] and put them on the SCAN list.
  */
-uint_t _find_dense(const uint_t n, uint_t lo, cost_t* d, int_t* cols, int_t* y) {
+uint_t _find_dense(const uint_t n, uint_t lo, cost_t* d, int_t* cols, int_t* /* y */) {
     uint_t hi = lo + 1;
     cost_t mind = d[cols[lo]];
     for (uint_t k = hi; k < n; k++) {
@@ -343,9 +344,15 @@ float execLapjv(const std::vector<std::vector<float>>& cost, std::vector<int>& r
     cost_c.assign(cost.begin(), cost.end());
     std::vector<std::vector<float>> cost_c_extended;
     int n_rows = cost.size();
-    int n_cols = cost[0].size();
-    rowsol.resize(n_rows);
-    colsol.resize(n_cols);
+    int n_cols = cost.empty() ? 0 : cost.front().size();
+    for (const auto& row : cost) {
+        if (row.size() != static_cast<size_t>(n_cols)) {
+            throw std::invalid_argument("OC-SORT assignment cost must be rectangular");
+        }
+    }
+    rowsol.assign(n_rows, -1);
+    colsol.assign(n_cols, -1);
+    if (n_rows == 0 || n_cols == 0) return 0.0f;
     int n = 0;
     if (n_rows == n_cols) {
         n = n_rows;
@@ -393,57 +400,27 @@ float execLapjv(const std::vector<std::vector<float>>& cost, std::vector<int>& r
             }
         }
 
-        cost_c.clear();
-        cost_c.assign(cost_c_extended.begin(), cost_c_extended.end());
+        cost_c = std::move(cost_c_extended);
     }
-    float** cost_ptr;
-    cost_ptr = new float* [sizeof(float*) * n];
-    for (int i = 0; i < n; i++)
-        cost_ptr[i] = new float[sizeof(float) * n];
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            cost_ptr[i][j] = cost_c[i][j];
-        }
-    }
-    int* x_c = new int[sizeof(int) * n];
-    int* y_c = new int[sizeof(int) * n];
-    int ret = lapjv_internal(n, cost_ptr, x_c, y_c);
+    // Borrow the already-owned cost rows; RAII also cleans up on solver errors.
+    std::vector<float*> cost_ptr(n);
+    for (int i = 0; i < n; ++i) cost_ptr[i] = cost_c[i].data();
+    std::vector<int> x_c(n), y_c(n);
+    const int ret = lapjv_internal(n, cost_ptr.data(), x_c.data(), y_c.data());
     if (ret != 0) {
         throw std::runtime_error("The result of lapjv_internal() is invalid.");
     }
-    float opt = 0.0;
-    if (n != n_rows) {
-        for (int i = 0; i < n; i++) {
-            if (x_c[i] >= n_cols)
-                x_c[i] = -1;
-            if (y_c[i] >= n_rows)
-                y_c[i] = -1;
-        }
-        for (int i = 0; i < n_rows; i++) {
-            rowsol[i] = x_c[i];
-        }
-        for (int i = 0; i < n_cols; i++) {
-            colsol[i] = y_c[i];
-        }
-
-        if (return_cost) {
-            for (size_t i = 0; i < rowsol.size(); i++) {
-                if (rowsol[i] != -1) {
-                    opt += cost_ptr[i][rowsol[i]];
-                }
-            }
-        }
-    } else if (return_cost) {
-        for (size_t i = 0; i < rowsol.size(); i++) {
-            opt += cost_ptr[i][rowsol[i]];
+    for (int i = 0; i < n_rows; ++i) {
+        if (x_c[i] >= 0 && x_c[i] < n_cols) rowsol[i] = x_c[i];
+    }
+    for (int i = 0; i < n_cols; ++i) {
+        if (y_c[i] >= 0 && y_c[i] < n_rows) colsol[i] = y_c[i];
+    }
+    float opt = 0.0f;
+    if (return_cost) {
+        for (int i = 0; i < n_rows; ++i) {
+            if (rowsol[i] >= 0) opt += cost[i][rowsol[i]];
         }
     }
-
-    for (int i = 0; i < n; i++) {
-        delete[] cost_ptr[i];
-    }
-    delete[] cost_ptr;
-    delete[] x_c;
-    delete[] y_c;
     return opt;
 }

@@ -5,157 +5,124 @@
 
 #include "../include/KalmanFilter.hpp"
 
-#include <iostream>
+#include <cmath>
+#include <stdexcept>
 
 namespace ocsort {
-    KalmanFilterNew::KalmanFilterNew() {}
-    KalmanFilterNew::KalmanFilterNew(int dim_x_, int dim_z_) {
-        dim_x = dim_x_;
-        dim_z = dim_z_;
-        x = Eigen::VectorXf::Zero(dim_x_, 1);
-        P = Eigen::MatrixXf::Identity(dim_x_, dim_x_);
-        Q = Eigen::MatrixXf::Identity(dim_x_, dim_x_);
-        B = Eigen::MatrixXf::Identity(dim_x_, dim_x_);
-        F = Eigen::MatrixXf::Identity(dim_x_, dim_x_);
-        H = Eigen::MatrixXf::Zero(dim_z_, dim_x_);
-        R = Eigen::MatrixXf::Identity(dim_z_, dim_z_);
-        M = Eigen::MatrixXf::Zero(dim_x_, dim_z_);
-        z = Eigen::VectorXf::Zero(dim_z_, 1);
-        K = Eigen::MatrixXf::Zero(dim_x_, dim_z_);
-        y = Eigen::VectorXf::Zero(dim_x_, 1);
-        S = Eigen::MatrixXf::Zero(dim_z_, dim_z_);
-        SI = Eigen::MatrixXf::Zero(dim_z_, dim_z_);
 
-        x_prior = x;
-        P_prior = P;
-        x_post = x;
-        P_post = P;
-    }
-    void KalmanFilterNew::predict() {
-        x = F * x;
-        P = _alpha_sq * ((F * P), F.transpose()) + Q;
-        x_prior = x;
-        P_prior = P;
-    }
-    void KalmanFilterNew::update(Eigen::VectorXf* z_) {
-        history_obs.push_back(z_);
-        if (z_ == nullptr) {
-            if (true == observed) freeze();
-            observed = false;
-            z = Eigen::VectorXf::Zero(dim_z, 1);
-            x_post = x;
-            P_post = P;
-            y = Eigen::VectorXf::Zero(dim_z, 1);
-            return;
-        }
-        if (false == observed) unfreeze();
-        observed = true;
-        y = *z_ - H * x;
-        auto PHT = P * H.transpose();
-        S = H * PHT + R;
-        K = PHT * SI;
-        x = x + K * y;
-        auto I_KH = I - K * H;
-        P = ((I_KH * P) * I_KH.transpose()) + ((K * R) * K.transpose());
-        z = *z_;
-        x_post = x;
-        P_post = P;
-    }
-    void KalmanFilterNew::freeze() {
-        attr_saved.IsInitialized = true;
-        attr_saved.x = x;
-        attr_saved.P = P;
-        attr_saved.Q = Q;
-        attr_saved.B = B;
-        attr_saved.F = F;
-        attr_saved.H = H;
-        attr_saved.R = R;
-        attr_saved._alpha_sq = _alpha_sq;
-        attr_saved.M = M;
-        attr_saved.z = z;
-        attr_saved.K = K;
-        attr_saved.y = y;
-        attr_saved.S = S;
-        attr_saved.SI = SI;
-        attr_saved.x_prior = x_prior;
-        attr_saved.P_prior = P_prior;
-        attr_saved.x_post = x_post;
-        attr_saved.P_post = P_post;
-        attr_saved.history_obs = history_obs;
-    }
-    void KalmanFilterNew::unfreeze() {
-        if (true == attr_saved.IsInitialized) {
-            new_history = history_obs;
-            x = attr_saved.x;
-            P = attr_saved.P;
-            Q = attr_saved.Q;
-            B = attr_saved.B;
-            F = attr_saved.F;
-            H = attr_saved.H;
-            R = attr_saved.R;
-            _alpha_sq = attr_saved._alpha_sq;
-            M = attr_saved.M;
-            z = attr_saved.z;
-            K = attr_saved.K;
-            y = attr_saved.y;
-            S = attr_saved.S;
-            SI = attr_saved.SI;
-            x_prior = attr_saved.x_prior;
-            P_prior = attr_saved.P_prior;
-            x_post = attr_saved.x_post;
-            history_obs.erase(history_obs.end() - 1);
-            Eigen::VectorXf box1;
-            Eigen::VectorXf box2;
-            int lastNotNullIndex = -1;
-            int secondLastNotNullIndex = -1;
-            for (int i = new_history.size() - 1; i >= 0; i--) {
-                if (new_history[i] != nullptr) {
-                    if (lastNotNullIndex == -1) {
-                        lastNotNullIndex = i;
-                        box2 = *(new_history.at(lastNotNullIndex));
-                    } else if (secondLastNotNullIndex == -1) {
-                        secondLastNotNullIndex = i;
-                        box1 = *(new_history.at(secondLastNotNullIndex));
-                        break;
-                    }
-                }
-            }
-            double time_gap = lastNotNullIndex - secondLastNotNullIndex;
-            double x1 = box1[0];
-            double x2 = box2[0];
-            double y1 = box1[1];
-            double y2 = box2[1];
-            double w1 = std::sqrt(box1[2] * box1[3]);
-            double h1 = std::sqrt(box1[2] / box1[3]);
-            double w2 = std::sqrt(box1[2] * box1[3]);
-            double h2 = std::sqrt(box1[2] / box1[3]);
-            double dx = (x2 - x1) / time_gap;
-            double dy = (y1 - y2) / time_gap;
-            double dw = (w2 - w1) / time_gap;
-            double dh = (h2 - h1) / time_gap;
+KalmanFilterNew::KalmanFilterNew() : KalmanFilterNew(7, 4) {}
 
-            for (int i = 0; i < time_gap; i++) {
-                double x = x1 + (i + 1) * dx;
-                double y = y1 + (i + 1) * dy;
-                double w = w1 + (i + 1) * dw;
-                double h = h1 + (i + 1) * dh;
-                double s = w * h;
-                double r = w / (h * 1.0);
-                Eigen::VectorXf new_box(4, 1);
-                new_box << x, y, s, r;
-                this->y = new_box - this->H * this->x;
-                auto PHT = this->P * this->H.transpose();
-                this->S = this->H * PHT + this->R;
-                this->SI = (this->S).inverse();
-                this->K = PHT * this->SI;
-                this->x = this->x + this->K * this->y;
-                auto I_KH = this->I - this->K * this->H;
-                this->P = ((I_KH * this->P) * I_KH.transpose()) + ((this->K * this->R) * (this->K).transpose());
-                this->z = new_box;
-                this->x_post = this->x;
-                this->P_post = this->P;
-                if (i != (time_gap - 1)) predict();
-            }
+KalmanFilterNew::KalmanFilterNew(int dim_x_, int dim_z_)
+    : I(Eigen::MatrixXf::Identity(7, 7)) {
+    if (dim_x_ != 7 || dim_z_ != 4) {
+        throw std::invalid_argument(
+            "OC-SORT requires a 7-state, 4-observation filter");
+    }
+    x = Eigen::VectorXf::Zero(dim_x);
+    P = Eigen::MatrixXf::Identity(dim_x, dim_x);
+    Q = P;
+    F.setIdentity();
+    H.setZero();
+    R.setIdentity();
+    z = Eigen::VectorXf::Zero(dim_z);
+    K = Eigen::MatrixXf::Zero(dim_x, dim_z);
+    y = Eigen::VectorXf::Zero(dim_z);
+    S = Eigen::MatrixXf::Zero(dim_z, dim_z);
+    x_prior = x;
+    P_prior = P;
+    x_post = x;
+    P_post = P;
+}
+
+void KalmanFilterNew::predict() {
+    x = (F * x).eval();
+    P = (_alpha_sq * F * P * F.transpose() + Q).eval();
+    x_prior = x;
+    P_prior = P;
+}
+
+void KalmanFilterNew::correct(const Eigen::VectorXf& measurement) {
+    y = measurement - H * x;
+    const Eigen::MatrixXf pht = P * H.transpose();
+    S = H * pht + R;
+    const Eigen::LDLT<Eigen::MatrixXf> solver(S);
+    if (solver.info() != Eigen::Success || !solver.isPositive()) {
+        throw std::runtime_error(
+            "OC-SORT innovation covariance is not positive definite");
+    }
+    K = solver.solve(pht.transpose()).transpose();
+    x += K * y;
+    const Eigen::MatrixXf residual = I - K * H;
+    // Joseph form retains a symmetric, positive covariance under rounding.
+    P = (residual * P * residual.transpose() + K * R * K.transpose()).eval();
+    P = (0.5f * (P + P.transpose())).eval();
+    z = measurement;
+    x_post = x;
+    P_post = P;
+}
+
+void KalmanFilterNew::recover(const Eigen::VectorXf& measurement) {
+    const Eigen::VectorXf& previous = *last_observation_;
+    if (previous[2] <= 0.0f || previous[3] <= 0.0f || measurement[2] <= 0.0f ||
+        measurement[3] <= 0.0f) {
+        throw std::invalid_argument(
+            "OC-SORT recovery requires positive box area and aspect ratio");
+    }
+    const float width1 = std::sqrt(previous[2] * previous[3]);
+    const float height1 = std::sqrt(previous[2] / previous[3]);
+    const float width2 = std::sqrt(measurement[2] * measurement[3]);
+    const float height2 = std::sqrt(measurement[2] / measurement[3]);
+    const int gap = missed_updates_ + 1;
+    x = frozen_state_->x;
+    P = frozen_state_->P;
+    // Rebuild each missed frame, ending with the current real measurement
+    // exactly once. The caller's prediction for this frame is replaced here.
+    for (int frame = 1; frame <= gap; ++frame) {
+        predict();
+        if (frame == gap) {
+            correct(measurement);
+        } else {
+            const float alpha = static_cast<float>(frame) / gap;
+            const float width = width1 + alpha * (width2 - width1);
+            const float height = height1 + alpha * (height2 - height1);
+            Eigen::VectorXf interpolated(4);
+            interpolated << previous[0] +
+                                alpha * (measurement[0] - previous[0]),
+                previous[1] + alpha * (measurement[1] - previous[1]),
+                width * height, width / height;
+            correct(interpolated);
         }
     }
+}
+
+void KalmanFilterNew::update(const Eigen::VectorXf* measurement) {
+    if (measurement == nullptr) {
+        if (observed) {
+            // x_post/P_post still belong to the last observed frame, even
+            // though predict() has already advanced the current state.
+            frozen_state_ = State{x_post, P_post};
+        }
+        observed = false;
+        ++missed_updates_;
+        z.setZero();
+        y.setZero();
+        x_post = x;
+        P_post = P;
+        return;
+    }
+    if (measurement->size() != dim_z || !measurement->allFinite()) {
+        throw std::invalid_argument(
+            "OC-SORT observation must contain four finite values");
+    }
+    if (frozen_state_ && last_observation_) {
+        recover(*measurement);
+    } else {
+        correct(*measurement);
+    }
+    last_observation_ = *measurement;
+    frozen_state_.reset();
+    missed_updates_ = 0;
+    observed = true;
+}
+
 }  // namespace ocsort

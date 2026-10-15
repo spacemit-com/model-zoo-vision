@@ -36,17 +36,14 @@ namespace ocsort {
         bbox << x(0) - w / 2, x(1) - h / 2, x(0) + w / 2, x(1) + h / 2;
         return bbox;
     }
-    Eigen::VectorXf k_previous_obs(std::unordered_map<int, Eigen::VectorXf> observations_,
+    Eigen::VectorXf k_previous_obs(const std::map<int, Eigen::VectorXf>& observations_,
                                     int cur_age, int k) {
         if (observations_.size() == 0) return Eigen::VectorXf::Constant(5, -1.0);
         for (int i = 0; i < k; i++) {
             int dt = k - i;
-            if (observations_.count(cur_age - dt) > 0) return observations_.at(cur_age - dt);
+            const auto found = observations_.find(cur_age - dt);
+            if (found != observations_.end()) return found->second;
         }
-        auto iter = std::max_element(observations_.begin(), observations_.end(),
-            [](const std::pair<int, Eigen::VectorXf>& p1,
-                const std::pair<int, Eigen::VectorXf>& p2) { return p1.first < p2.first; });
-        int max_age = iter->first;
-        return observations_[max_age];
+        return observations_.rbegin()->second;
     }
 }  // namespace ocsort

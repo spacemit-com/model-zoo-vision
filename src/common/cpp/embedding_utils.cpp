@@ -5,6 +5,7 @@
 
 #include "embedding_utils.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
@@ -34,13 +35,22 @@ float compute_similarity(const std::vector<float>& embedding1,
         throw std::runtime_error("Embedding dimensions do not match");
     }
 
-    // Compute cosine similarity (dot product of normalized embeddings)
-    float similarity = 0.0f;
+    // Double accumulation avoids overflow/underflow for finite float inputs.
+    double dot = 0.0;
+    double norm1 = 0.0;
+    double norm2 = 0.0;
     for (size_t i = 0; i < embedding1.size(); ++i) {
-        similarity += embedding1[i] * embedding2[i];
+        const double a = embedding1[i];
+        const double b = embedding2[i];
+        if (!std::isfinite(a) || !std::isfinite(b)) return 0.0f;
+        dot += a * b;
+        norm1 += a * a;
+        norm2 += b * b;
     }
-
-    return similarity;
+    if (norm1 == 0.0 || norm2 == 0.0) return 0.0f;
+    return std::clamp(
+        static_cast<float>(dot / (std::sqrt(norm1) * std::sqrt(norm2))),
+        -1.0f, 1.0f);
 }
 
 }  // namespace vision_common

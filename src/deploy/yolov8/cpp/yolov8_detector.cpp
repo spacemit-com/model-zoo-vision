@@ -187,6 +187,12 @@ vision_common::DetectionResultList nms_and_scale(
             x2 = std::clamp(x2, 0.0f, max_x);
             y2 = std::clamp(y2, 0.0f, max_y);
 
+            if (!std::isfinite(x1) || !std::isfinite(y1) ||
+                !std::isfinite(x2) || !std::isfinite(y2) ||
+                x2 <= x1 || y2 <= y1) {
+                continue;
+            }
+
             vision_common::DetectionResult r;
             r.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
             r.score = scores[idx];

@@ -259,9 +259,9 @@ struct VisionServiceRequest {
     vision::BoundingBox initial_bbox;
 
     const float* sequence_pts = nullptr;  // sequence models: skeleton points
-    int sequence_count = 0;               // length of sequence_pts; if > 0 it is
-                                          // validated against the model's expected
-                                          // size to prevent out-of-bounds reads
+    int sequence_count = 0;               // required when sequence_pts is set;
+                                          // must be positive and at least the
+                                          // model's expected number of floats
     int sequence_width = 0;               // source frame width
     int sequence_height = 0;              // source frame height
 
@@ -355,7 +355,7 @@ public:
                                                 bool lazy_load = false);
 
     /**
-     * @brief Get last creation error
+     * @brief Get the current thread's last creation error; instance calls do not change it
      * @thread_safety Thread-safe (uses thread_local storage)
      */
     static const std::string& LastCreateError();
@@ -400,6 +400,7 @@ public:
 
     /**
      * @brief Compute cosine similarity between two embeddings
+     * @return Score in [-1,1]; 0 for empty, mismatched, zero-norm or non-finite inputs
      * @thread_safety Thread-safe (pure function)
      */
     static float EmbeddingSimilarity(const std::vector<float>& embedding_a,
@@ -473,7 +474,7 @@ public:
 
     /**
      * @brief Get last error message
-     * @thread_safety Thread-safe (uses instance-local storage)
+     * @thread_safety Do not call concurrently with operations on the same instance.
      */
     const std::string& LastError() const;
 

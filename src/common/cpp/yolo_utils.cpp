@@ -19,22 +19,24 @@ std::tuple<float, float, float, float> dfl_decode(
     float scale2orign, int pad_w, int pad_h) {
     constexpr int kDflLen = 16;
     float xywh[4] = {0, 0, 0, 0};
+    const size_t stride = static_cast<size_t>(anchors);
 
     for (int i = 0; i < 4; i++) {
         float exp_sum = 0.0f;
-        size_t offset = i * kDflLen * anchors + anchor_idx;
+        const size_t base = static_cast<size_t>(i) * kDflLen * stride + anchor_idx;
         float exp_dfl[kDflLen];
-
-        for (int dfl_idx = 0; dfl_idx < kDflLen; dfl_idx++) {
-            exp_dfl[dfl_idx] = exp(boxes[offset]);
-            exp_sum += exp_dfl[dfl_idx];
-            offset += anchors;
+        float max_logit = boxes[base];
+        for (int dfl_idx = 1; dfl_idx < kDflLen; ++dfl_idx) {
+            max_logit = std::max(max_logit, boxes[base + dfl_idx * stride]);
         }
 
-        offset = i * kDflLen * anchors + anchor_idx;  // Reset offset for weighted sum
+        for (int dfl_idx = 0; dfl_idx < kDflLen; dfl_idx++) {
+            exp_dfl[dfl_idx] = std::exp(boxes[base + dfl_idx * stride] - max_logit);
+            exp_sum += exp_dfl[dfl_idx];
+        }
+
         for (int dfl_idx = 0; dfl_idx < kDflLen; dfl_idx++) {
             xywh[i] += (exp_dfl[dfl_idx] / exp_sum) * dfl_idx;
-            offset += anchors;
         }
     }
 
@@ -100,17 +102,19 @@ std::vector<std::vector<float>> flatten_yolo_tensor(
     const float* tensor,
     int batch, int channels, int height, int width) {
     std::vector<std::vector<float>> flattened;
-    flattened.reserve(batch * height * width);
+    const size_t spatial_size = static_cast<size_t>(height) * width;
+    flattened.reserve(static_cast<size_t>(batch) * spatial_size);
 
     for (int b = 0; b < batch; ++b) {
         for (int h = 0; h < height; ++h) {
             for (int w = 0; w < width; ++w) {
                 std::vector<float> row;
                 row.reserve(channels);
-                size_t base_idx = b * channels * height * width +
-                                    h * width * channels + w * channels;
+                const size_t pixel = static_cast<size_t>(h) * width + w;
                 for (int c = 0; c < channels; ++c) {
-                    row.push_back(tensor[base_idx + c]);
+                    const size_t offset =
+                        (static_cast<size_t>(b) * channels + c) * spatial_size + pixel;
+                    row.push_back(tensor[offset]);
                 }
                 flattened.push_back(row);
             }
@@ -127,7 +131,6 @@ std::vector<std::vector<float>> process_box_dfl(
     // position shape: (1, 4*reg_max, grid_h, grid_w)
     int grid_h = input_shape.first;
     int grid_w = input_shape.second;
-    int channels = 4 * reg_max;
 
     // Create grid
     std::vector<std::vector<float>> grid;
@@ -138,8 +141,9 @@ std::vector<std::vector<float>> process_box_dfl(
     }
 
     // Process DFL for each position
+    const size_t spatial_size = static_cast<size_t>(grid_h) * grid_w;
     std::vector<std::vector<float>> boxes;
-    boxes.reserve(grid_h * grid_w);
+    boxes.reserve(spatial_size);
 
     for (int h = 0; h < grid_h; ++h) {
         for (int w = 0; w < grid_w; ++w) {
@@ -151,18 +155,18 @@ std::vector<std::vector<float>> process_box_dfl(
                 std::vector<float> exp_vals(reg_max);
 
                 // Compute softmax
-                size_t base_idx = coord * reg_max * grid_h * grid_w +
-                                    h * grid_w * reg_max + w * reg_max;
+                const size_t base_idx = static_cast<size_t>(coord) * reg_max * spatial_size +
+                    static_cast<size_t>(h) * grid_w + w;
 
                 float max_val = position[base_idx];
                 for (int i = 1; i < reg_max; ++i) {
-                    if (position[base_idx + i] > max_val) {
-                        max_val = position[base_idx + i];
+                    if (position[base_idx + i * spatial_size] > max_val) {
+                        max_val = position[base_idx + i * spatial_size];
                     }
                 }
 
                 for (int i = 0; i < reg_max; ++i) {
-                    exp_vals[i] = std::exp(position[base_idx + i] - max_val);
+                    exp_vals[i] = std::exp(position[base_idx + i * spatial_size] - max_val);
                     exp_sum += exp_vals[i];
                 }
 

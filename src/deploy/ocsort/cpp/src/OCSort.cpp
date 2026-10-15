@@ -6,7 +6,9 @@
 #include "../include/OCSort.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -37,29 +39,41 @@ namespace ocsort {
                                                         const Eigen::MatrixXf&)>;
         std::unordered_map<std::string, AssoFunc> ASSO_FUNCS{{"iou", iou_batch},
                                                             {"giou", giou_batch}};
-        AssoFunc asso_func = ASSO_FUNCS[asso_func_];
+        const auto association = ASSO_FUNCS.find(asso_func_);
+        if (association == ASSO_FUNCS.end()) {
+            throw std::invalid_argument("OC-SORT asso_func must be iou or giou");
+        }
+        asso_func = association->second;
+        if (!std::isfinite(det_thresh) || det_thresh < 0 || det_thresh > 1 ||
+            !std::isfinite(iou_threshold) || iou_threshold < 0 || iou_threshold > 1 ||
+            !std::isfinite(inertia_) || inertia_ < 0 ||
+            max_age < 0 || min_hits < 0 || delta_t < 1) {
+            throw std::invalid_argument("Invalid OC-SORT tracker parameters");
+        }
         inertia = inertia_;
         use_byte = use_byte_;
-        KalmanBoxTracker::count = 0;
     }
     std::ostream& precision(std::ostream& os) {
         os << std::fixed << std::setprecision(2);
         return os;
     }
     std::vector<Eigen::RowVectorXf> OCSort::update(Eigen::MatrixXf dets) {
-        frame_count += 1;
         if (dets.rows() == 0) {
             dets.resize(0, 6);
         }
-        Eigen::Matrix<float, Eigen::Dynamic, 4> xyxys = dets.leftCols(4);
+        if (dets.cols() != 6 || !dets.allFinite() ||
+            (dets.col(2).array() <= dets.col(0).array()).any() ||
+            (dets.col(3).array() <= dets.col(1).array()).any()) {
+            throw std::invalid_argument("OC-SORT detections must be finite [N,6] positive-area boxes");
+        }
+        frame_count += 1;
         Eigen::Matrix<float, 1, Eigen::Dynamic> confs = dets.col(4);
-        Eigen::Matrix<float, 1, Eigen::Dynamic> clss = dets.col(5);
         Eigen::MatrixXf output_results = dets;
         auto inds_low = confs.array() > 0.1;
         auto inds_high = confs.array() < det_thresh;
         auto inds_second = inds_low && inds_high;
         Eigen::Matrix<float, Eigen::Dynamic, 6> dets_second;
-        Eigen::Matrix<bool, 1, Eigen::Dynamic> remain_inds = (confs.array() > det_thresh);
+        Eigen::Matrix<bool, 1, Eigen::Dynamic> remain_inds = (confs.array() >= det_thresh);
         Eigen::Matrix<float, Eigen::Dynamic, 6> dets_first;
         for (int i = 0; i < output_results.rows(); i++) {
             if (true == inds_second(i)) {
@@ -78,7 +92,6 @@ namespace ocsort {
             dets_second.resize(0, 6);
         }
         Eigen::MatrixXf trks = Eigen::MatrixXf::Zero(trackers.size(), 5);
-        std::vector<int> to_del;
         std::vector<Eigen::RowVectorXf> ret;
         for (int i = 0; i < trks.rows(); i++) {
             Eigen::RowVectorXf pos = trackers[i].predict();
@@ -87,7 +100,7 @@ namespace ocsort {
         Eigen::MatrixXf velocities = Eigen::MatrixXf::Zero(trackers.size(), 2);
         Eigen::MatrixXf last_boxes = Eigen::MatrixXf::Zero(trackers.size(), 5);
         Eigen::MatrixXf k_observations = Eigen::MatrixXf::Zero(trackers.size(), 5);
-        for (int i = 0; i < trackers.size(); i++) {
+        for (size_t i = 0; i < trackers.size(); i++) {
             velocities.row(i) = trackers[i].velocity;
             last_boxes.row(i) = trackers[i].last_observation;
             k_observations.row(i) = k_previous_obs(trackers[i].observations, trackers[i].age, delta_t);
@@ -112,7 +125,7 @@ namespace ocsort {
             for (auto i : unmatched_trks) {
                 u_trks.row(index_for_u_trks++) = trks.row(i);
             }
-            Eigen::MatrixXf iou_left = giou_batch(dets_second, u_trks);
+            Eigen::MatrixXf iou_left = asso_func(dets_second, u_trks);
             if (iou_left.maxCoeff() > iou_threshold) {
                 std::vector<std::vector<float>> iou_matrix(iou_left.rows(), std::vector<float>(iou_left.cols()));
                 for (int i = 0; i < iou_left.rows(); i++) {
@@ -121,9 +134,9 @@ namespace ocsort {
                     }
                 }
                 std::vector<int> rowsol, colsol;
-                float MIN_cost = execLapjv(iou_matrix, rowsol, colsol, true, 0.01, true);
+                execLapjv(iou_matrix, rowsol, colsol, true, 0.01, false);
                 std::vector<std::vector<int>> matched_indices;
-                for (int i = 0; i < rowsol.size(); i++) {
+                for (size_t i = 0; i < rowsol.size(); i++) {
                     if (rowsol.at(i) >= 0) {
                         matched_indices.push_back({ colsol.at(rowsol.at(i)), rowsol.at(i) });
                     }
@@ -152,18 +165,22 @@ namespace ocsort {
         }
 
 
-        if (unmatched_dets.size() > 0 && unmatched_trks.size() > 0) {
+        std::vector<int> recovery_trks;
+        for (int index : unmatched_trks) {
+            if (!trackers[index].observations.empty()) recovery_trks.push_back(index);
+        }
+        if (!unmatched_dets.empty() && !recovery_trks.empty()) {
             Eigen::MatrixXf left_dets(unmatched_dets.size(), 6);
             int inx_for_dets = 0;
             for (auto i : unmatched_dets) {
                 left_dets.row(inx_for_dets++) = dets_first.row(i);
             }
-            Eigen::MatrixXf left_trks(unmatched_trks.size(), last_boxes.cols());
+            Eigen::MatrixXf left_trks(recovery_trks.size(), last_boxes.cols());
             int indx_for_trk = 0;
-            for (auto i : unmatched_trks) {
+            for (auto i : recovery_trks) {
                 left_trks.row(indx_for_trk++) = last_boxes.row(i);
             }
-            Eigen::MatrixXf iou_left = giou_batch(left_dets, left_trks);
+            Eigen::MatrixXf iou_left = asso_func(left_dets, left_trks);
             if (iou_left.maxCoeff() > iou_threshold) {
                 std::vector<std::vector<float>> iou_matrix(iou_left.rows(), std::vector<float>(iou_left.cols()));
                 for (int i = 0; i < iou_left.rows(); i++) {
@@ -172,9 +189,9 @@ namespace ocsort {
                     }
                 }
                 std::vector<int> rowsol, colsol;
-                float MIN_cost = execLapjv(iou_matrix, rowsol, colsol, true, 0.01, true);
+                execLapjv(iou_matrix, rowsol, colsol, true, 0.01, false);
                 std::vector<std::vector<int>> rematched_indices;
-                for (int i = 0; i < rowsol.size(); i++) {
+                for (size_t i = 0; i < rowsol.size(); i++) {
                     if (rowsol.at(i) >= 0) {
                         rematched_indices.push_back({ colsol.at(rowsol.at(i)), rowsol.at(i) });
                     }
@@ -183,7 +200,7 @@ namespace ocsort {
                 std::vector<int> to_remove_trk_indices;
                 for (auto i : rematched_indices) {
                     int det_ind = unmatched_dets[i.at(0)];
-                    int trk_ind = unmatched_trks[i.at(1)];
+                    int trk_ind = recovery_trks[i.at(1)];
                     if (iou_left(i.at(0), i.at(1)) < iou_threshold) {
                         continue;
                     }
@@ -217,21 +234,18 @@ namespace ocsort {
         }
         for (int i : unmatched_dets) {
             Eigen::RowVectorXf tmp_bbox = dets_first.block(i, 0, 1, 5);
-            int cls_ = static_cast<int>(dets(i, 5));
-            KalmanBoxTracker trk = KalmanBoxTracker(tmp_bbox, cls_, delta_t);
-            trackers.push_back(trk);
+            int cls_ = static_cast<int>(dets_first(i, 5));
+            trackers.emplace_back(tmp_bbox, cls_, delta_t, next_track_id_++);
         }
-        int tmp_i = trackers.size();
-        for (int i = trackers.size() - 1; i >= 0; i--) {
-            Eigen::Matrix<float, 1, 4> d;
-            int last_observation_sum = trackers.at(i).last_observation.sum();
-            if (last_observation_sum < 0) {
-                d = trackers.at(i).get_state();
+        for (int i = static_cast<int>(trackers.size()) - 1; i >= 0; i--) {
+            Eigen::RowVector4f d;
+            if (trackers.at(i).observations.empty()) {
+                d = trackers.at(i).get_state().transpose();
             } else {
-                d = trackers.at(i).last_observation.block(0, 0, 1, 4);
+                d = trackers.at(i).last_observation.head<4>();
             }
             if (trackers.at(i).time_since_update < 1 &&
-                ((trackers.at(i).hit_streak >= min_hits) | (frame_count <= min_hits))) {
+                ((trackers.at(i).hit_streak >= min_hits) || (frame_count <= min_hits))) {
                 Eigen::RowVectorXf tracking_res(7);
                 tracking_res << d(0), d(1), d(2), d(3), trackers.at(i).id + 1, trackers.at(i).cls, trackers.at(i).conf;
                 ret.push_back(tracking_res);

@@ -46,7 +46,8 @@ namespace ocsort {
         Eigen::MatrixXf part1_ = a.replicate(1, b.cols());
         Eigen::MatrixXf part2_ = b.replicate(a.rows(), 1);
         Eigen::MatrixXf Sum = part1_ + part2_ - wh;
-        return wh.cwiseQuotient(Sum);
+        return (Sum.array() > 0.0f).select(
+            wh.array() / Sum.array().max(1e-12f), 0.0f).matrix();
     }
 
 
@@ -71,7 +72,8 @@ namespace ocsort {
         Eigen::MatrixXf part1_ = a.replicate(1, b.cols());
         Eigen::MatrixXf part2_ = b.replicate(a.rows(), 1);
         Eigen::MatrixXf Sum = part1_ + part2_ - wh;
-        Eigen::MatrixXf iou = wh.cwiseQuotient(Sum);
+        Eigen::MatrixXf iou = (Sum.array() > 0.0f).select(
+            wh.array() / Sum.array().max(1e-12f), 0.0f).matrix();
 
         a = bboxes1.col(0);
         b = bboxes2.col(0);
@@ -88,14 +90,15 @@ namespace ocsort {
 
         Eigen::MatrixXf wc = xxc2 - xxc1;
         Eigen::MatrixXf hc = yyc2 - yyc1;
-        if ((wc.array() > 0).all() && (hc.array() > 0).all()) {
-            return iou;
-        } else {
-            Eigen::MatrixXf area_enclose = wc.array() * hc.array();
-            Eigen::MatrixXf giou = iou.array() - (area_enclose.array() - wh.array()) / area_enclose.array();
-            giou = (giou.array() + 1) / 2.0;
-            return giou;
-        }
+        const Eigen::ArrayXXf enclosing = wc.array().max(0.0f) * hc.array().max(0.0f);
+        const Eigen::ArrayXXf giou = iou.array() -
+            (enclosing - Sum.array()) / enclosing.max(1e-12f);
+        const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic> valid_pairs =
+            (part1_.array() > 0.0f) && (part2_.array() > 0.0f);
+        // OC-SORT's GIoU association score is rescaled to [0,1]. Degenerate
+        // pairs have no overlap and must never produce NaN or a spurious 0.5.
+        return (valid_pairs && (enclosing > 0.0f) && (Sum.array() > 0.0f)).select(
+            ((giou + 1.0f) * 0.5f).max(0.0f).min(1.0f), 0.0f).matrix();
     }
 
     std::tuple<std::vector<Eigen::Matrix<int, 1, 2>>, std::vector<int>, std::vector<int>>
@@ -167,8 +170,8 @@ namespace ocsort {
                     }
                 }
                 std::vector<int> rowsol, colsol;
-                float MIN_cost = execLapjv(cost_iou_matrix, rowsol, colsol, true, 0.01, true);
-                for (int i = 0; i < rowsol.size(); i++) {
+                execLapjv(cost_iou_matrix, rowsol, colsol, true, 0.01, false);
+                for (size_t i = 0; i < rowsol.size(); i++) {
                     if (rowsol.at(i) >= 0) {
                         Eigen::RowVectorXf row(2);
                         row << colsol.at(rowsol.at(i)), rowsol.at(i);

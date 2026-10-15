@@ -35,6 +35,8 @@ namespace ocsort {
         bool use_byte;
         std::vector<KalmanBoxTracker> trackers;
         int frame_count;
+    private:
+        int next_track_id_ = 0;
     };
 
 }  // namespace ocsort

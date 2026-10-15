@@ -43,7 +43,9 @@ public:
                     bool use_byte = false,
                     int num_threads = 4,
                     bool lazy_load = false,
-                    const std::string& provider = "SpaceMITExecutionProvider");
+                    const std::string& provider = "SpaceMITExecutionProvider",
+                    float track_iou_threshold = 0.3f,
+                    const std::string& association_function = "iou");
 
     virtual ~OCSortTracker() = default;
 
@@ -94,12 +96,6 @@ private:
 
     float conf_threshold_;
     float iou_threshold_;
-    float det_thresh_;
-    int max_age_;
-    int min_hits_;
-    int delta_t_;
-    float inertia_;
-    bool use_byte_;
     int num_threads_;
     std::string provider_;
 
@@ -115,21 +111,9 @@ private:
      */
     Eigen::MatrixXf convert_results_to_dets(const vision_common::DetectionResultList& results);
 
-    /**
-     * @brief Convert OC-SORT output to TrackingResult format
-     * @param tracks OC-SORT output, each row: [x1, y1, x2, y2, track_id, ...]
-     * @param detections Original detections for label matching
-     */
+    // OC-SORT rows are [x1, y1, x2, y2, track_id, label, score].
     vision_common::TrackingResultList convert_tracks_to_results(
-        const std::vector<Eigen::RowVectorXf>& tracks,
-        const vision_common::DetectionResultList& detections);
-
-    /**
-     * @brief Calculate IoU between two bounding boxes
-     */
-    static float calculate_iou(float x1_1, float y1_1, float x2_1, float y2_1,
-                                float x1_2, float y1_2, float x2_2,
-                                float y2_2);
+        const std::vector<Eigen::RowVectorXf>& tracks);
 };
 
 }  // namespace vision_deploy

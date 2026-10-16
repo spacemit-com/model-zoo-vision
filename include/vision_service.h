@@ -452,7 +452,7 @@ public:
     VisionServiceProfile GetLastProfile() const;
 
     /**
-     * @brief Get default image path from config
+     * @brief Get default image path captured at creation; empty if absent.
      * @thread_safety Thread-safe after construction
      */
     std::string GetDefaultImage();
@@ -460,6 +460,10 @@ public:
     /**
      * @brief Get config value by key (also used to read model-specific values,
      *        e.g. a sequence model's fall-down class index, from its yaml).
+     *        Values are captured at creation; later YAML edits are not reloaded.
+     *        Path keys (*_path, test_image*, test_video, test_query, test_database)
+     *        are resolved; other scalar values are returned unchanged.
+     *        Missing/non-scalar keys return an empty string without changing LastError().
      * @thread_safety Thread-safe after construction
      */
     std::string GetConfigPathValue(const std::string& config_key);

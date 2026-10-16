@@ -17,6 +17,7 @@
 #include <new>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -36,8 +37,7 @@ struct VisionService::Impl {
     std::unique_ptr<vision_core::BaseModel> model;
     std::string config_path;
     std::vector<std::string> labels;
-    std::string default_image_path;
-    std::string last_config_path_value;
+    std::unordered_map<std::string, std::string> config_values;
     VisionServiceTimingOptions timing_options;
     VisionServiceTiming last_timing;
     VisionServiceProfile last_profile;
@@ -285,8 +285,7 @@ void VisionService::Release() {
     }
     impl_->model.reset();
     impl_->labels.clear();
-    impl_->default_image_path.clear();
-    impl_->last_config_path_value.clear();
+    impl_->config_values.clear();
     ResetAllTiming(&impl_->last_timing);
     impl_->last_profile.components.clear();
     impl_->timed_tracking_frame_count = 0;
@@ -322,6 +321,28 @@ std::unique_ptr<VisionService> VisionService::Create(const std::string& config_p
         }
         service->impl_->config_path = config_file.string();
         YAML::Node config = YAML::LoadFile(service->impl_->config_path);
+        // Capture root scalar values before the factory resolves/mutates config.
+        // Queries then describe this model's configuration without file I/O or
+        // shared scratch strings, even if the YAML changes after creation.
+        for (const auto& entry : config) {
+            if (!entry.first.IsScalar() || !entry.second.IsScalar()) {
+                continue;
+            }
+            try {
+                const std::string key = entry.first.as<std::string>();
+                std::string value = entry.second.as<std::string>();
+                const bool is_path =
+                    (key.size() >= 5 && key.compare(key.size() - 5, 5, "_path") == 0) ||
+                    key.rfind("test_image", 0) == 0 || key == "test_video" ||
+                    key == "test_query" || key == "test_database";
+                if (is_path) {
+                    value = vision_core::resolveResourcePath(value, service->impl_->config_path);
+                }
+                service->impl_->config_values.emplace(key, std::move(value));
+            } catch (const std::exception&) {
+                // Unresolvable optional values retain the empty-query behavior.
+            }
+        }
         service->impl_->labels = loadLabelsForConfig(config, service->impl_->config_path);
         service->impl_->model = vision_core::createModelFromConfigPath(
             service->impl_->config_path, model_path_override, lazy_load, &config);
@@ -850,51 +871,15 @@ VisionServiceProfile VisionService::GetLastProfile() const {
 }
 
 std::string VisionService::GetDefaultImage() {
-    if (impl_ == nullptr || impl_->model == nullptr) {
-        SetError(VISION_SERVICE_INVALID_ARGUMENT, "service/model must not be null");
-        return {};
-    }
-
-    if (!impl_->default_image_path.empty()) {
-        return impl_->default_image_path;
-    }
-
-    try {
-        if (impl_->config_path.empty() || !std::filesystem::exists(impl_->config_path)) {
-            return {};
-        }
-        YAML::Node config = YAML::LoadFile(impl_->config_path);
-        if (!config["test_image"]) {
-            return {};
-        }
-        const std::string raw_path = config["test_image"].as<std::string>();
-        impl_->default_image_path = vision_core::resolveResourcePath(raw_path, impl_->config_path);
-        return impl_->default_image_path;
-    } catch (...) {
-        return {};
-    }
+    return GetConfigPathValue("test_image");
 }
 
 std::string VisionService::GetConfigPathValue(const std::string& config_key) {
     if (impl_ == nullptr || impl_->model == nullptr || config_key.empty()) {
-        SetError(VISION_SERVICE_INVALID_ARGUMENT, "service/model or config_key invalid");
         return {};
     }
-
-    try {
-        if (impl_->config_path.empty() || !std::filesystem::exists(impl_->config_path)) {
-            return {};
-        }
-        YAML::Node config = YAML::LoadFile(impl_->config_path);
-        if (!config[config_key]) {
-            return {};
-        }
-        const std::string raw_path = config[config_key].as<std::string>();
-        impl_->last_config_path_value = vision_core::resolveResourcePath(raw_path, impl_->config_path);
-        return impl_->last_config_path_value;
-    } catch (...) {
-        return {};
-    }
+    const auto value = impl_->config_values.find(config_key);
+    return value == impl_->config_values.end() ? std::string{} : value->second;
 }
 
 std::vector<std::string> VisionService::GetClassNames() const {

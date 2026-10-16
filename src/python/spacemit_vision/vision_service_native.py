@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import ctypes
 import os
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -116,19 +118,31 @@ if _ext is not None:
     VisionServiceTimingOptions = _ext.VisionServiceTimingOptions
 
 
+def _serialized(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return call
+
+
 class VisionServiceNative:
     """
     Thin wrapper around :cpp:class:`VisionService` with typed hints for NumPy images.
 
+    Operations on one wrapper are serialized; separate instances may run concurrently.
+
     Images must be ``uint8``, shape ``(H, W, 3)``, BGR, C-contiguous (OpenCV default).
+    Keep input buffers and feature objects unchanged until their call returns.
 
     The last successful ``infer_*`` response is cached so ``draw(image)`` works without
     passing a response explicitly (C++ ``Draw`` is stateless and requires one).
     """
 
-    __slots__ = ("_svc", "_last_response")
+    __slots__ = ("_svc", "_last_response", "_lock")
 
     def __init__(self, impl: object) -> None:
+        self._lock = RLock()
         _require_ext()
         self._svc = impl
         self._last_response: Optional[object] = None
@@ -175,6 +189,7 @@ class VisionServiceNative:
         params.max_det = max_det
         return params
 
+    @_serialized
     def infer(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
@@ -194,6 +209,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, response
 
+    @_serialized
     def infer_image(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
@@ -233,6 +249,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, results
 
+    @_serialized
     def infer_image_points(self, image, points, labels) -> Tuple[object, List]:
         """Prompt segmentation using original-image (x,y) points and SAM labels."""
         arr = np.ascontiguousarray(image)
@@ -245,6 +262,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, results
 
+    @_serialized
     def infer_embedding(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
@@ -260,6 +278,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, embedding
 
+    @_serialized
     def infer_stereo(
         self,
         left_bgr_uint8: npt.NDArray[np.uint8],
@@ -277,6 +296,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, disparity
 
+    @_serialized
     def infer_depth(
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
@@ -292,6 +312,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, depth
 
+    @_serialized
     def extract_local_features(
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
@@ -307,6 +328,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, features
 
+    @_serialized
     def match_local_features(
         self,
         query: object,
@@ -320,6 +342,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, matches
 
+    @_serialized
     def track(
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
@@ -337,6 +360,7 @@ class VisionServiceNative:
             self._last_response = response
         return status, results
 
+    @_serialized
     def encode_text(self, text: str) -> Tuple[object, List[float]]:
         _require_ext()
         status, embedding = self._svc.encode_text(text=text)
@@ -347,6 +371,7 @@ class VisionServiceNative:
         _require_ext()
         return _ext.VisionService.embedding_similarity(embedding_a=a, embedding_b=b)
 
+    @_serialized
     def infer_sequence(
         self,
         pts: npt.NDArray[np.float32],
@@ -361,17 +386,21 @@ class VisionServiceNative:
             self._last_response = response
         return status, scores
 
+    @_serialized
     def get_class_names(self) -> List[str]:
         return self._svc.get_class_names()
 
+    @_serialized
     def get_sequence_class_names(self) -> List[str]:
         """Deprecated alias for :meth:`get_class_names`."""
         return self.get_class_names()
 
+    @_serialized
     def get_fall_down_class_index(self) -> int:
         """Read ``fall_down_index`` from model/app yaml when present; otherwise ``-1``."""
         return self._svc.get_fall_down_class_index()
 
+    @_serialized
     def draw(
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
@@ -387,26 +416,34 @@ class VisionServiceNative:
             )
         return self._svc.draw(image_bgr_uint8=arr, response=resp)
 
+    @_serialized
     def supports_draw(self) -> bool:
         return self._svc.supports_draw()
 
+    @_serialized
     def release(self) -> None:
         self._svc.release()
 
+    @_serialized
     def set_timing_options(self, options: object) -> None:
         self._svc.set_timing_options(options)
 
+    @_serialized
     def get_last_timing(self) -> object:
         return self._svc.get_last_timing()
 
+    @_serialized
     def get_last_profile(self) -> object:
         return self._svc.get_last_profile()
 
+    @_serialized
     def get_default_image(self) -> str:
         return self._svc.get_default_image()
 
+    @_serialized
     def get_config_path_value(self, config_key: str) -> str:
         return self._svc.get_config_path_value(config_key)
 
+    @_serialized
     def last_error(self) -> str:
         return self._svc.last_error()

@@ -10,8 +10,10 @@
 #include <pybind11/stl.h>
 
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace py = pybind11;
@@ -102,6 +104,32 @@ std::vector<PyFlatResult> FlattenResults(const vision::ResultList& results) {
         flat.push_back(ToFlatResult(r));
     }
     return flat;
+}
+
+// Python responses are immutable after inference. Cache the owned flat
+// snapshot once; returned flat objects and NumPy properties remain copies.
+struct PyResponse : VisionServiceResponse {
+    const std::vector<PyFlatResult>& FlatResults() const {
+        if (!flat_results_) flat_results_ = FlattenResults(results);
+        return *flat_results_;
+    }
+
+private:
+    mutable std::optional<std::vector<PyFlatResult>> flat_results_;
+};
+
+template <typename Callable>
+auto CallWithoutGil(Callable&& call) {
+    py::gil_scoped_release release;
+    return std::forward<Callable>(call)();
+}
+
+py::tuple MakeFlatResponse(VisionServiceStatus status, PyResponse response) {
+    // The response is still local here, so its first snapshot can be built
+    // without the GIL. Published response caches are only accessed with it.
+    const auto* flat = CallWithoutGil([&] { return &response.FlatResults(); });
+    py::object results = py::cast(*flat, py::return_value_policy::copy);
+    return py::make_tuple(status, std::move(results), std::move(response));
 }
 
 VisionServiceInferParams MakeParams(
@@ -212,9 +240,10 @@ cv::Mat NumpyToMat(const py::array& obj) {
     throw std::invalid_argument("mask must be HxW or HxWx3 uint8 numpy array");
 }
 
-std::vector<float> ExtractEmbedding(const VisionServiceResponse& response) {
+const std::vector<float>& ExtractEmbedding(const VisionServiceResponse& response) {
     if (response.results.empty()) {
-        return {};
+        static const std::vector<float> empty;
+        return empty;
     }
     if (const vision::Embedding* e = std::get_if<vision::Embedding>(&response.results.front())) {
         return e->embedding;
@@ -222,9 +251,10 @@ std::vector<float> ExtractEmbedding(const VisionServiceResponse& response) {
     throw std::runtime_error("infer_embedding: model did not return an Embedding result");
 }
 
-std::vector<float> ExtractClassScores(const VisionServiceResponse& response) {
+const std::vector<float>& ExtractClassScores(const VisionServiceResponse& response) {
     if (response.results.empty()) {
-        return {};
+        static const std::vector<float> empty;
+        return empty;
     }
     if (const vision::Action* a = std::get_if<vision::Action>(&response.results.front())) {
         return a->class_scores;
@@ -337,16 +367,16 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def_readwrite("mask_threshold", &VisionServiceInferParams::mask_threshold)
         .def_readwrite("max_det", &VisionServiceInferParams::max_det);
 
-    py::class_<VisionServiceResponse>(m, "VisionServiceResponse")
+    py::class_<PyResponse>(m, "VisionServiceResponse")
         .def(py::init<>())
         .def_readonly("ok", &VisionServiceResponse::ok)
         .def_readonly("error_message", &VisionServiceResponse::error_message)
         .def_property_readonly(
             "flat_results",
-            [](const VisionServiceResponse& r) { return FlattenResults(r.results); })
+            [](const PyResponse& r) { return r.FlatResults(); })
         .def_property_readonly(
             "results",
-            [](const VisionServiceResponse& r) { return FlattenResults(r.results); });
+            [](const PyResponse& r) { return r.FlatResults(); });
 
     py::class_<VisionServiceProfileEntry>(m, "VisionServiceProfileEntry")
         .def_readonly("name", &VisionServiceProfileEntry::name)
@@ -372,11 +402,14 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def_readwrite("enabled", &VisionServiceTimingOptions::enabled)
         .def_readwrite("print_to_stdout", &VisionServiceTimingOptions::print_to_stdout);
 
-    py::class_<VisionService>(m, "VisionService")
+    py::class_<VisionService>(m, "VisionService",
+        "Native service: callers must serialize operations on each instance.")
         .def_static(
             "create",
             [](const std::string& config_path, const std::string& model_path_override, bool lazy_load) {
-                auto svc = VisionService::Create(config_path, model_path_override, lazy_load);
+                auto svc = CallWithoutGil([&] {
+                    return VisionService::Create(config_path, model_path_override, lazy_load);
+                });
                 if (!svc) {
                     throw py::value_error(VisionService::LastCreateError());
                 }
@@ -389,9 +422,12 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
         .def(
             "infer",
             [](VisionService& self, const std::string& path, const VisionServiceInferParams& params) {
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(path, &response, params);
-                return py::make_tuple(st, response);
+                PyResponse response;
+                const auto options = params;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(path, &response, options);
+                });
+                return py::make_tuple(st, std::move(response));
             },
             py::arg("image_path"),
             py::arg("params") = VisionServiceInferParams{})
@@ -399,19 +435,24 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             "infer",
             [](VisionService& self, const py::array& arr, const VisionServiceInferParams& params) {
                 cv::Mat mat = NumpyToMatBgr(arr);
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(mat, &response, params);
-                return py::make_tuple(st, response);
+                PyResponse response;
+                const auto options = params;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(mat, &response, options);
+                });
+                return py::make_tuple(st, std::move(response));
             },
             py::arg("image_bgr_uint8"),
             py::arg("params") = VisionServiceInferParams{})
         .def(
             "infer_image",
             [](VisionService& self, const std::string& path, float conf, float iou) {
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus st =
-                    self.Infer(path, &response, MakeParams(conf, iou));
-                return py::make_tuple(st, FlattenResults(response.results), response);
+                    CallWithoutGil([&] {
+                        return self.Infer(path, &response, MakeParams(conf, iou));
+                    });
+                return MakeFlatResponse(st, std::move(response));
             },
             py::arg("image_path"),
             py::arg("conf") = -1.0f,
@@ -420,10 +461,12 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             "infer_image",
             [](VisionService& self, const py::array& arr, float conf, float iou) {
                 cv::Mat mat = NumpyToMatBgr(arr);
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus st =
-                    self.Infer(mat, &response, MakeParams(conf, iou));
-                return py::make_tuple(st, FlattenResults(response.results), response);
+                    CallWithoutGil([&] {
+                        return self.Infer(mat, &response, MakeParams(conf, iou));
+                    });
+                return MakeFlatResponse(st, std::move(response));
             },
             py::arg("image_bgr_uint8"),
             py::arg("conf") = -1.0f,
@@ -439,9 +482,11 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 request.image = mat;
                 request.prompts = prompts;
                 request.params = MakeParams(conf, iou);
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(request, &response);
-                return py::make_tuple(st, FlattenResults(response.results), response);
+                PyResponse response;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(request, &response);
+                });
+                return MakeFlatResponse(st, std::move(response));
             },
             py::arg("image_bgr_uint8"),
             py::arg("prompts"),
@@ -462,10 +507,11 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                     request.point_coords.emplace_back(point[0], point[1]);
                 }
                 request.point_labels = labels;
-                VisionServiceResponse response;
-                const auto status = self.Infer(request, &response);
-                return py::make_tuple(
-                    status, FlattenResults(response.results), response);
+                PyResponse response;
+                const auto status = CallWithoutGil([&] {
+                    return self.Infer(request, &response);
+                });
+                return MakeFlatResponse(status, std::move(response));
             },
             py::arg("image_bgr_uint8"),
             py::arg("points"),
@@ -480,9 +526,11 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 VisionServiceRequest request{};
                 request.image = left_mat;
                 request.image2 = right_mat;
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus status =
-                    self.Infer(request, &response);
+                    CallWithoutGil([&] {
+                        return self.Infer(request, &response);
+                    });
                 py::object disparity = py::none();
                 if (status == VISION_SERVICE_OK &&
                     response.results.size() == 1) {
@@ -493,7 +541,7 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                         disparity = MatToNumpy(*value->map);
                     }
                 }
-                return py::make_tuple(status, disparity, response);
+                return py::make_tuple(status, std::move(disparity), std::move(response));
             },
             py::arg("left_bgr_uint8"),
             py::arg("right_bgr_uint8"))
@@ -501,9 +549,11 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             "infer_depth",
             [](VisionService& self, const py::array& image) {
                 cv::Mat mat = NumpyToMatBgr(image);
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus status =
-                    self.Infer(mat, &response);
+                    CallWithoutGil([&] {
+                        return self.Infer(mat, &response);
+                    });
                 py::object depth = py::none();
                 if (status == VISION_SERVICE_OK &&
                     response.results.size() == 1) {
@@ -514,16 +564,18 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                         depth = MatToNumpy(*value->map);
                     }
                 }
-                return py::make_tuple(status, depth, response);
+                return py::make_tuple(status, std::move(depth), std::move(response));
             },
             py::arg("image_bgr_uint8"))
         .def(
             "extract_local_features",
             [](VisionService& self, const py::array& image) {
                 cv::Mat mat = NumpyToMatBgr(image);
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus status =
-                    self.Infer(mat, &response);
+                    CallWithoutGil([&] {
+                        return self.Infer(mat, &response);
+                    });
                 vision::LocalFeatures features;
                 if (status == VISION_SERVICE_OK &&
                     response.results.size() == 1) {
@@ -536,7 +588,7 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                     }
                     features = *value;
                 }
-                return py::make_tuple(status, features, response);
+                return py::make_tuple(status, std::move(features), std::move(response));
             },
             py::arg("image_bgr_uint8"))
         .def(
@@ -547,13 +599,12 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 VisionServiceRequest request{};
                 request.local_features0 = &query;
                 request.local_features1 = &train;
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus status =
-                    self.Infer(request, &response);
-                return py::make_tuple(
-                    status,
-                    FlattenResults(response.results),
-                    response);
+                    CallWithoutGil([&] {
+                        return self.Infer(request, &response);
+                    });
+                return MakeFlatResponse(status, std::move(response));
             },
             py::arg("query"),
             py::arg("train"))
@@ -578,38 +629,45 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                         initial_bbox_xyxy[2],
                         initial_bbox_xyxy[3]};
                 }
-                VisionServiceResponse response;
+                PyResponse response;
                 const VisionServiceStatus status =
-                    self.Infer(request, &response);
-                return py::make_tuple(
-                    status,
-                    FlattenResults(response.results),
-                    response);
+                    CallWithoutGil([&] {
+                        return self.Infer(request, &response);
+                    });
+                return MakeFlatResponse(status, std::move(response));
             },
             py::arg("image_bgr_uint8"),
             py::arg("initial_bbox_xyxy") = std::vector<float>{})
         .def(
             "infer_embedding",
             [](VisionService& self, const std::string& path) {
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(path, &response, VisionServiceInferParams{});
-                return py::make_tuple(st, ExtractEmbedding(response), response);
+                PyResponse response;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(path, &response, VisionServiceInferParams{});
+                });
+                py::object values = py::cast(ExtractEmbedding(response));
+                return py::make_tuple(st, std::move(values), std::move(response));
             },
             py::arg("image_path"))
         .def(
             "infer_embedding",
             [](VisionService& self, const py::array& arr) {
                 cv::Mat mat = NumpyToMatBgr(arr);
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(mat, &response, VisionServiceInferParams{});
-                return py::make_tuple(st, ExtractEmbedding(response), response);
+                PyResponse response;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(mat, &response, VisionServiceInferParams{});
+                });
+                py::object values = py::cast(ExtractEmbedding(response));
+                return py::make_tuple(st, std::move(values), std::move(response));
             },
             py::arg("image_bgr_uint8"))
         .def(
             "encode_text",
             [](VisionService& self, const std::string& text) {
                 std::vector<float> embedding;
-                const VisionServiceStatus st = self.EncodeText(text, &embedding);
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.EncodeText(text, &embedding);
+                });
                 return py::make_tuple(st, embedding);
             },
             py::arg("text"))
@@ -644,9 +702,12 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 request.sequence_count = static_cast<int>(info.shape[0]);
                 request.sequence_width = image_width;
                 request.sequence_height = image_height;
-                VisionServiceResponse response;
-                const VisionServiceStatus st = self.Infer(request, &response);
-                return py::make_tuple(st, ExtractClassScores(response), response);
+                PyResponse response;
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Infer(request, &response);
+                });
+                py::object values = py::cast(ExtractClassScores(response));
+                return py::make_tuple(st, std::move(values), std::move(response));
             },
             py::arg("pts"),
             py::arg("image_width"),
@@ -672,10 +733,12 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             "Read fall_down_index from config if present; otherwise -1.")
         .def(
             "draw",
-            [](VisionService& self, const py::array& arr, const VisionServiceResponse& response) {
+            [](VisionService& self, const py::array& arr, const PyResponse& response) {
                 cv::Mat in = NumpyToMatBgr(arr);
                 cv::Mat out;
-                const VisionServiceStatus st = self.Draw(in, response, &out);
+                const VisionServiceStatus st = CallWithoutGil([&] {
+                    return self.Draw(in, response, &out);
+                });
                 return py::make_tuple(st, MatToNumpyBGR(out));
             },
             py::arg("image_bgr_uint8"),

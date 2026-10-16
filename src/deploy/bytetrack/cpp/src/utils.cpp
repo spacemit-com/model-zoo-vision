@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <iostream>
 #include <map>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -282,153 +284,66 @@ vector<vector<float> > BYTETracker::iou_distance(vector<STrack> &atracks, vector
 double BYTETracker::lapjv(const vector<vector<float> > &cost, vector<int> &rowsol, vector<int> &colsol,
     bool extend_cost, float cost_limit, bool return_cost)
 {
-    vector<vector<float> > cost_c;
-    cost_c.assign(cost.begin(), cost.end());
-
-    vector<vector<float> > cost_c_extended;
-
-    int n_rows = cost.size();
-    int n_cols = cost[0].size();
-    rowsol.resize(n_rows);
-    colsol.resize(n_cols);
-
-    int n = 0;
-    if (n_rows == n_cols)
+    const size_t n_rows = cost.size();
+    const size_t n_cols = cost.empty() ? 0 : cost.front().size();
+    rowsol.assign(n_rows, -1);
+    colsol.assign(n_cols, -1);
+    for (const auto& row : cost)
     {
-        n = n_rows;
-    } else {
-        if (!extend_cost)
-        {
-            cout << "set extend_cost=True" << endl;
-            system("pause");
-            exit(0);
-        }
+        if (row.size() != n_cols)
+            throw std::invalid_argument("lapjv cost matrix must be rectangular");
     }
+    if (n_rows == 0 || n_cols == 0)
+        return 0.0;
+    if (n_rows != n_cols && !extend_cost)
+        throw std::invalid_argument("rectangular lapjv costs require extend_cost");
 
-    if (extend_cost || cost_limit < LONG_MAX)
+    const bool extended = extend_cost || cost_limit < LONG_MAX;
+    const size_t n = extended ? n_rows + n_cols : n_rows;
+    if (n > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+        n > std::vector<double>().max_size() / n)
+        throw std::length_error("lapjv cost matrix is too large");
+
+    // Keep the original float padding values and double solver precision.
+    float padding = 0.0f;
+    if (extended)
     {
-        n = n_rows + n_cols;
-        cost_c_extended.resize(n);
-        for (int i = 0; i < cost_c_extended.size(); i++)
-            cost_c_extended[i].resize(n);
-
         if (cost_limit < LONG_MAX)
+            padding = cost_limit / 2.0f;
+        else
         {
-            for (int i = 0; i < cost_c_extended.size(); i++)
-            {
-                for (int j = 0; j < cost_c_extended[i].size(); j++)
-                {
-                    cost_c_extended[i][j] = cost_limit / 2.0;
-                }
-            }
-        } else {
-            float cost_max = -1;
-            for (int i = 0; i < cost_c.size(); i++)
-            {
-                for (int j = 0; j < cost_c[i].size(); j++)
-                {
-                    if (cost_c[i][j] > cost_max)
-                        cost_max = cost_c[i][j];
-                }
-            }
-            for (int i = 0; i < cost_c_extended.size(); i++)
-            {
-                for (int j = 0; j < cost_c_extended[i].size(); j++)
-                {
-                    cost_c_extended[i][j] = cost_max + 1;
-                }
-            }
+            float cost_max = -1.0f;
+            for (const auto& row : cost)
+                for (float value : row)
+                    cost_max = std::max(cost_max, value);
+            padding = cost_max + 1.0f;
         }
-
-        for (int i = n_rows; i < cost_c_extended.size(); i++)
-        {
-            for (int j = n_cols; j < cost_c_extended[i].size(); j++)
-            {
-                cost_c_extended[i][j] = 0;
-            }
-        }
-        for (int i = 0; i < n_rows; i++)
-        {
-            for (int j = 0; j < n_cols; j++)
-            {
-                cost_c_extended[i][j] = cost_c[i][j];
-            }
-        }
-
-        cost_c.clear();
-        cost_c.assign(cost_c_extended.begin(), cost_c_extended.end());
     }
-
-    double **cost_ptr;
-    cost_ptr = new double *[sizeof(double *) * n];
-    for (int i = 0; i < n; i++)
-        cost_ptr[i] = new double[sizeof(double) * n];
-
-    for (int i = 0; i < n; i++)
+    // One contiguous allocation replaces over-sized per-row new[] buffers and
+    // the two temporary float matrices. Row pointers serve the existing solver.
+    std::vector<double> values(n * n, padding);
+    std::vector<double*> row_ptrs(n);
+    for (size_t i = 0; i < n; ++i)
     {
-        for (int j = 0; j < n; j++)
-        {
-            cost_ptr[i][j] = cost_c[i][j];
-        }
+        row_ptrs[i] = values.data() + i * n;
+        if (i < n_rows)
+            std::copy(cost[i].begin(), cost[i].end(), row_ptrs[i]);
+        else
+            std::fill(row_ptrs[i] + n_cols, row_ptrs[i] + n, 0.0);
     }
-
-    int* x_c = new int[sizeof(int) * n];
-    int *y_c = new int[sizeof(int) * n];
-
-    int ret = lapjv_internal(n, cost_ptr, x_c, y_c);
-    if (ret != 0)
-    {
-        cout << "Calculate Wrong!" << endl;
-        system("pause");
-        exit(0);
-    }
+    std::vector<int> x(n), y(n);
+    if (lapjv_internal(static_cast<int>(n), row_ptrs.data(), x.data(), y.data()) != 0)
+        throw std::runtime_error("lapjv assignment failed");
 
     double opt = 0.0;
-
-    if (n != n_rows)
+    for (size_t i = 0; i < n_rows; ++i)
     {
-        for (int i = 0; i < n; i++)
-        {
-            if (x_c[i] >= n_cols)
-                x_c[i] = -1;
-            if (y_c[i] >= n_rows)
-                y_c[i] = -1;
-        }
-        for (int i = 0; i < n_rows; i++)
-        {
-            rowsol[i] = x_c[i];
-        }
-        for (int i = 0; i < n_cols; i++)
-        {
-            colsol[i] = y_c[i];
-        }
-
-        if (return_cost)
-        {
-            for (int i = 0; i < rowsol.size(); i++)
-            {
-                if (rowsol[i] != -1)
-                {
-                    // cout << i << "\t" << rowsol[i] << "\t" << cost_ptr[i][rowsol[i]] << endl;
-                    opt += cost_ptr[i][rowsol[i]];
-                }
-            }
-        }
-    } else if (return_cost) {
-        for (int i = 0; i < rowsol.size(); i++)
-        {
-            opt += cost_ptr[i][rowsol[i]];
-        }
+        rowsol[i] = x[i] < static_cast<int>(n_cols) ? x[i] : -1;
+        if (return_cost && rowsol[i] >= 0)
+            opt += cost[i][rowsol[i]];
     }
-
-    for (int i = 0; i < n; i++)
-    {
-        delete[]cost_ptr[i];
-    }
-    delete[]cost_ptr;
-    delete[]x_c;
-    delete[]y_c;
-
+    for (size_t j = 0; j < n_cols; ++j)
+        colsol[j] = y[j] < static_cast<int>(n_rows) ? y[j] : -1;
     return opt;
 }
 

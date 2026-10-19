@@ -6,6 +6,7 @@
 #include "image_processing.h"
 
 #include <algorithm>
+#include <limits>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -21,6 +22,54 @@
 namespace fs = std::filesystem;
 
 namespace vision_common {
+
+float mask_logit_threshold(float threshold) {
+    if (!std::isfinite(threshold) || threshold > 1.0f) {
+        throw std::invalid_argument("mask_threshold must be finite and <= 1");
+    }
+    if (threshold <= 0.0f) threshold = 0.5f;
+    return threshold == 1.0f ? std::numeric_limits<float>::infinity()
+        : std::log(threshold / (1.0f - threshold));
+}
+
+cv::Mat restore_instance_mask(
+    const cv::Mat& logits, const BoundingBox& box,
+    const cv::Size& original_size, float mask_threshold) {
+    const float threshold = mask_logit_threshold(mask_threshold);
+    if (logits.empty() || logits.type() != CV_32FC1 || logits.dims != 2 ||
+        original_size.width <= 0 || original_size.height <= 0) {
+        throw std::invalid_argument("Invalid instance mask or original image size");
+    }
+    const float gain = std::min(
+        static_cast<float>(logits.rows) / original_size.height,
+        static_cast<float>(logits.cols) / original_size.width);
+    const float pad_w = (logits.cols - original_size.width * gain) / 2.0f;
+    const float pad_h = (logits.rows - original_size.height * gain) / 2.0f;
+    const int top = std::clamp(static_cast<int>(std::round(pad_h - 0.1f)), 0, logits.rows - 1);
+    const int left = std::clamp(static_cast<int>(std::round(pad_w - 0.1f)), 0, logits.cols - 1);
+    const int bottom = std::clamp(logits.rows - static_cast<int>(std::round(pad_h + 0.1f)), top + 1, logits.rows);
+    const int right = std::clamp(logits.cols - static_cast<int>(std::round(pad_w + 0.1f)), left + 1, logits.cols);
+
+    cv::Mat mask = cv::Mat::zeros(original_size, CV_8U);
+    if (!std::isfinite(box.x1) || !std::isfinite(box.y1) ||
+        !std::isfinite(box.x2) || !std::isfinite(box.y2)) return mask;
+    const int x1 = static_cast<int>(std::clamp(box.x1, 0.0f, static_cast<float>(original_size.width)));
+    const int y1 = static_cast<int>(std::clamp(box.y1, 0.0f, static_cast<float>(original_size.height)));
+    const int x2 = static_cast<int>(std::clamp(box.x2, 0.0f, static_cast<float>(original_size.width)));
+    const int y2 = static_cast<int>(std::clamp(box.y2, 0.0f, static_cast<float>(original_size.height)));
+    if (x1 >= x2 || y1 >= y2) return mask;
+
+    // Resize in full-image coordinates before cropping the bbox. Resizing a
+    // rounded source bbox separately shifts the sampling phase and mask edges.
+    cv::Mat restored;
+    cv::resize(logits(cv::Rect(left, top, right - left, bottom - top)),
+        restored, original_size, 0, 0, cv::INTER_LINEAR);
+    const cv::Rect roi(x1, y1, x2 - x1, y2 - y1);
+    cv::Mat destination = mask(roi);
+    cv::compare(restored(roi), threshold, destination, cv::CMP_GT);
+    return mask;
+}
+
 
 cv::Mat letterbox(
     const cv::Mat& image,

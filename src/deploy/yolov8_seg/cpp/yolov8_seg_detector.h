@@ -73,7 +73,11 @@ private:
     vision_common::SegmentationResultList segment_input(
         const vision_core::ImageInput& input,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det = -1, float mask_threshold = 0.5f);
+    vision_common::SegmentationResultList postprocess_impl(
+        std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+        float conf_threshold, float iou_threshold,
+        int max_det, float mask_threshold);
 
     float conf_threshold_;
     float iou_threshold_;
@@ -87,14 +91,14 @@ private:
         std::vector<Ort::Value>& outputs,
         const cv::Size& orig_size,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det, float mask_threshold);
 
     std::vector<std::shared_ptr<cv::Mat>> _process_masks(
-        const float* protos,
-        const std::vector<int64_t>& proto_dims,
+        const float* protos, const std::vector<int64_t>& proto_dims,
         const std::vector<std::vector<float>>& mask_coeffs,
         const vision_common::SegmentationResultList& results,
-        const cv::Size& orig_shape);
+        const cv::Size& orig_shape, float mask_threshold);
+
 };
 
 }  // namespace vision_deploy

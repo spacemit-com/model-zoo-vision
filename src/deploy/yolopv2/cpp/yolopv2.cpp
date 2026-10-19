@@ -71,6 +71,7 @@ std::vector<vision::Detection> decode_detections(
     float conf_threshold,
     float iou_threshold,
     int max_det) {
+    if (max_det == 0) return {};
     std::vector<vision::Detection> candidates;
     candidates.reserve(512);
     for (int level = 0; level < kLevels; ++level) {
@@ -394,7 +395,7 @@ vision_core::InferResponse YOLOPv2::Run(
         ? request.params.conf_threshold : conf_threshold_;
     const float iou = request.params.iou_threshold > 0.0F
         ? request.params.iou_threshold : iou_threshold_;
-    const int max_det = request.params.max_det > 0
+    const int max_det = request.params.max_det >= 0
         ? request.params.max_det : max_det_;
     return infer_input(*input, conf, iou, max_det);
 }

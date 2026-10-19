@@ -78,6 +78,10 @@ std::vector<SegmentationResult> multi_class_nms(
     float iou_threshold
 );
 
+// Return original candidate indices so mask coefficients stay aligned after NMS.
+std::vector<size_t> multi_class_nms_indices(
+    const std::vector<SegmentationResult>& objects, float iou_threshold);
+
 // Negative limits preserve the model default. A zero limit returns no items.
 // Keep the existing order when no truncation is needed.
 template <typename T, typename Score>

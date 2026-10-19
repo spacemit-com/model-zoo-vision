@@ -15,6 +15,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "datatype.h"
+
 namespace vision_common {
 
 // Scan a CV_8UC1 label map once before producing per-class masks.
@@ -30,6 +32,16 @@ inline std::array<uint8_t, 256> collect_present_u8_labels(
     }
     return present;
 }
+
+// Probability threshold for mask logits; nonpositive values select 0.5.
+// Nonfinite values and thresholds above 1 are rejected.
+float mask_logit_threshold(float threshold);
+
+// Remove letterbox padding, resize logits to original-image coordinates, then
+// crop/threshold inside the bbox. Returns a full-size binary uint8 mask.
+cv::Mat restore_instance_mask(
+    const cv::Mat& logits, const BoundingBox& box,
+    const cv::Size& original_size, float mask_threshold = 0.5f);
 
 /**
  * @brief Letterbox preprocessing for YOLO models

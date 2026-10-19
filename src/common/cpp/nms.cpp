@@ -147,6 +147,26 @@ std::vector<T> multi_class_nms_impl(
     return final_results;
 }
 
+std::vector<size_t> multi_class_nms_indices(
+    const std::vector<SegmentationResult>& objects, float iou_threshold) {
+    struct IndexedResult {
+        BoundingBox bbox;
+        int label;
+        float score;
+        size_t index;
+    };
+    std::vector<IndexedResult> indexed;
+    indexed.reserve(objects.size());
+    for (size_t i = 0; i < objects.size(); ++i) {
+        indexed.push_back({objects[i].bbox, objects[i].label, objects[i].score, i});
+    }
+    const auto kept = multi_class_nms_impl(indexed, iou_threshold);
+    std::vector<size_t> indices;
+    indices.reserve(kept.size());
+    for (const auto& item : kept) indices.push_back(item.index);
+    return indices;
+}
+
 std::vector<DetectionResult> multi_class_nms(
     const std::vector<DetectionResult>& objects,
     float iou_threshold) {

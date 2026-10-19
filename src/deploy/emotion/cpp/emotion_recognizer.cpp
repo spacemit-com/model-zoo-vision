@@ -104,7 +104,7 @@ EmotionRecognizer::prepare_input(
 
 vision_common::ClassificationResultList
 EmotionRecognizer::classify_input(
-    const vision_core::ImageInput& input) {
+    const vision_core::ImageInput& input, int top_k) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -124,7 +124,7 @@ EmotionRecognizer::classify_input(
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::ClassificationResultList results = postprocess(outputs);
+    vision_common::ClassificationResultList results = postprocess(outputs, top_k);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -161,21 +161,8 @@ EmotionRecognizer::infer_embedding_input(
 
     // Feature mode: return raw output vector (no argmax, no L2 normalization).
     const auto t_post0 = std::chrono::steady_clock::now();
-    if (outputs.empty()) {
-        throw std::runtime_error("EmotionRecognizer::infer_embedding: outputs is empty");
-    }
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> dims = tensor_info.GetShape();
-    size_t feature_size = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        feature_size *= static_cast<size_t>(dims[i]);
-    }
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    if (output_data == nullptr) {
-        throw std::runtime_error("EmotionRecognizer::infer_embedding: output_data is null");
-    }
     vision_common::EmbeddingResult result;
-    result.embedding.assign(output_data, output_data + feature_size);
+    result.embedding = read_output_scores(outputs);
     result.score = 1.0f;
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -211,7 +198,7 @@ vision_core::InferResponse EmotionRecognizer::Run(const vision_core::InferReques
 
     // Default: classification
     vision_common::ClassificationResultList task_results =
-        classify_input(*image_input);
+        classify_input(*image_input, request.params.top_k < 0 ? 1 : request.params.top_k);
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
         response.results.emplace_back(std::move(item));
@@ -224,60 +211,13 @@ std::vector<vision_core::ModelCapability> EmotionRecognizer::get_capabilities() 
 }
 
 vision_common::ClassificationResultList EmotionRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    // Check if outputs is valid
-    if (outputs.empty()) {
-        throw std::runtime_error("Postprocess: outputs is empty");
-    }
+    return postprocess(outputs, 1);
+}
 
-    // Extract logits from outputs
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> dims = tensor_info.GetShape();
-
-    if (dims.empty()) {
-        throw std::runtime_error("Postprocess: output tensor has no dimensions");
-    }
-
-    // Calculate total number of elements (skip batch dimension)
-    size_t num_classes = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        if (dims[i] <= 0) {
-            throw std::runtime_error("Postprocess: invalid dimension size");
-        }
-        num_classes *= static_cast<size_t>(dims[i]);
-    }
-
-    if (num_classes == 0) {
-        throw std::runtime_error("Postprocess: num_classes is zero");
-    }
-
-    // Get output data
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    if (output_data == nullptr) {
-        throw std::runtime_error("Postprocess: output_data is null");
-    }
-
-    // Copy class scores
-    std::vector<float> class_scores(output_data, output_data + num_classes);
-
-    if (class_scores.empty()) {
-        throw std::runtime_error("Postprocess: class_scores is empty");
-    }
-
-    // Find emotion class (argmax) - same as Python: np.argmax(output)
-    auto max_it = std::max_element(class_scores.begin(), class_scores.end());
-    if (max_it == class_scores.end()) {
-        throw std::runtime_error("Postprocess: failed to find max element");
-    }
-    int emotion_class = static_cast<int>(max_it - class_scores.begin());
-    float emotion_score = *max_it;
-
-    // Create ClassificationResult object
-    vision_common::ClassificationResult result;
-    result.score = emotion_score;
-    result.label = emotion_class;
-    result.class_scores = class_scores;
-
-    return vision_common::ClassificationResultList{result};
+vision_common::ClassificationResultList EmotionRecognizer::postprocess(
+    std::vector<Ort::Value>& outputs, int top_k) {
+    // Preserve raw model scores and the default top-1 behavior.
+    return vision_common::build_classification_top_k(read_output_scores(outputs), top_k, false);
 }
 
 // Self-registration (runs at program startup)

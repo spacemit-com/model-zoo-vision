@@ -23,10 +23,11 @@ namespace vision_deploy {
 
 namespace {
 
-// Read a 3-element float sequence from YAML (e.g. mean/std). Returns false if absent/invalid.
+// Read an RGB triple; reject malformed overrides rather than using defaults.
 bool readScalar3(const YAML::Node& node, const std::string& key, cv::Scalar* out) {
-    if (!node || !node[key] || !node[key].IsSequence() || node[key].size() < 3) {
-        return false;
+    if (!node || !node[key]) return false;
+    if (!node[key].IsSequence() || node[key].size() != 3) {
+        throw std::invalid_argument(key + " must contain exactly 3 values");
     }
     *out = cv::Scalar(node[key][0].as<float>(),
         node[key][1].as<float>(),
@@ -87,8 +88,10 @@ std::unique_ptr<vision_core::BaseModel> MobileNetV1Classifier::create(const YAML
         vision_core::yaml_utils::getString(default_params, "interpolation", "bilinear"),
         cv::INTER_LINEAR);
 
-    return std::make_unique<MobileNetV1Classifier>(model_path, num_threads, lazy_load, provider,
+    auto model = std::make_unique<MobileNetV1Classifier>(model_path, num_threads, lazy_load, provider,
         resize_size, mean, std, center_crop, interpolation);
+    model->apply_softmax_ = vision_core::yaml_utils::getBool(default_params, "apply_softmax", true);
+    return model;
 }
 
 MobileNetV1Classifier::MobileNetV1Classifier(
@@ -109,6 +112,7 @@ MobileNetV1Classifier::MobileNetV1Classifier(
         center_crop_(center_crop),
         interpolation_(interpolation),
         provider_(provider) {
+    vision_common::validate_classification_normalization(mean_, std_);
     if (!lazy_load) {
         load_model();
     }
@@ -119,6 +123,10 @@ void MobileNetV1Classifier::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[1] != 3 ||
+        input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("MobileNetV1Classifier requires NCHW RGB input with fixed positive height and width");
+    }
     model_loaded_ = true;
 }
 
@@ -152,7 +160,7 @@ vision_common::ClassificationResultList MobileNetV1Classifier::classify(const cv
 
 vision_common::ClassificationResultList
 MobileNetV1Classifier::classify_input(
-    const vision_core::ImageInput& input) {
+    const vision_core::ImageInput& input, int top_k) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -190,7 +198,7 @@ MobileNetV1Classifier::classify_input(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::ClassificationResultList results = postprocess(outputs);
+    vision_common::ClassificationResultList results = postprocess(outputs, top_k);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -217,7 +225,7 @@ vision_core::InferResponse MobileNetV1Classifier::Run(const vision_core::InferRe
     }
 
     vision_common::ClassificationResultList task_results =
-        classify_input(*image_input);
+        classify_input(*image_input, request.params.top_k < 0 ? 5 : request.params.top_k);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -231,20 +239,17 @@ std::vector<vision_core::ModelCapability> MobileNetV1Classifier::get_capabilitie
 }
 
 vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(std::vector<Ort::Value>& outputs) {
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> dims = tensor_info.GetShape();
+    return postprocess(outputs, 5);
+}
 
-    size_t num_classes = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        num_classes *= dims[i];
-    }
+vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(
+    std::vector<Ort::Value>& outputs, int top_k) {
+    auto class_scores = read_output_scores(outputs);
 
     // Drop leading background class (index 0) for the 1001-class TF-Slim export,
     // so labels align with the 1000-class ImageNet file.
-    size_t offset = (num_classes == 1001) ? 1 : 0;
-    std::vector<float> class_scores(output_data + offset, output_data + num_classes);
-    return vision_common::build_classification_top_k(std::move(class_scores), 5);
+    if (class_scores.size() == 1001) class_scores.erase(class_scores.begin());
+    return vision_common::build_classification_top_k(std::move(class_scores), top_k, apply_softmax_);
 }
 
 // Self-registration (runs at program startup)

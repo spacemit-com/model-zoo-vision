@@ -181,6 +181,19 @@ cv::Mat letterbox_to_nchw_rgb_blob(
     return output_blob;
 }
 
+void validate_classification_normalization(const cv::Scalar& mean, const cv::Scalar& std) {
+    for (int channel = 0; channel < 3; ++channel) {
+        if (!std::isfinite(static_cast<float>(mean[channel]))) {
+            throw std::invalid_argument("classification mean must be finite");
+        }
+        const float value = static_cast<float>(std[channel]);
+        if (!std::isfinite(value) || value <= 0.0f || !std::isfinite(1.0f / value)) {
+            throw std::invalid_argument(
+                "classification std must be finite and positive with a finite float32 reciprocal");
+        }
+    }
+}
+
 cv::Mat preprocess_classification(
     const cv::Mat& image,
     const std::pair<int, int>& input_shape,

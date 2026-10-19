@@ -63,6 +63,7 @@ inline bool is_visible(const vision::KeyPoint& kp) { return kp.visibility > 0.5f
 
 // Top-k (index, score) pairs from a classification's per-class scores.
 inline std::vector<std::pair<int, float>> top_k(const vision::Classification& c, int k) {
+    if (k <= 0) return {};
     std::vector<std::pair<int, float>> scored;
     scored.reserve(c.class_scores.size());
     for (size_t i = 0; i < c.class_scores.size(); ++i) {

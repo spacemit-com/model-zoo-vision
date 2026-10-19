@@ -210,6 +210,11 @@ protected:
      */
     std::vector<Ort::Value> run_session(const cv::Mat& input_blob);
 
+    // Read a finite float32 score vector. Rank-one tensors are unbatched;
+    // higher ranks flatten only the first batch slot, matching single-input inference.
+    static std::vector<float> read_output_scores(
+        const std::vector<Ort::Value>& outputs, size_t index = 0);
+
     PreparedImage prepare_image(
         const ImageInput& input,
         const vision_operators::ImagePreprocessSpec& spec,

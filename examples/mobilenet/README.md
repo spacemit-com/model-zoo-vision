@@ -11,6 +11,11 @@ ImageNet 图像分类示例，复用 `deploy.resnet.ResNetClassifier`。
 
 > 注意：`mobilenet_v1.q.onnx` 输出为 1001 类（含 background），与其余 1000 类 ImageNet 标签不完全对齐。
 
+`default_params.apply_softmax` 控制是否对输出做 Softmax，默认为 `true`。
+本仓库分发的 V2、V3-Large 输出 logits，保持 `true`；V3-Small 已输出概率，
+切换到该权重时需在配置中设为 `false`，避免重复归一化。V1 使用 `examples/mobilenetv1`。
+每次推理的 `top_k` 参数可指定返回类别数；负数使用默认 5，0 返回空结果。
+
 **测试图片**：`~/.cache/assets/image/005_kitten.jpg`。若未下载资源，在 cv 根目录执行 `bash scripts/download_assets.sh`。
 
 ## 2. 运行示例

@@ -79,7 +79,9 @@ private:
     PreparedImage prepare_input(
         const vision_core::ImageInput& input);
     vision_common::ClassificationResultList classify_input(
-        const vision_core::ImageInput& input);
+        const vision_core::ImageInput& input, int top_k = 1);
+    vision_common::ClassificationResultList postprocess(
+        std::vector<Ort::Value>& outputs, int top_k);
     vision_common::EmbeddingResult infer_embedding_input(
         const vision_core::ImageInput& input);
 

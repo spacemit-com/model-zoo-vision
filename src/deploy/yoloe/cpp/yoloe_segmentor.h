@@ -79,7 +79,7 @@ private:
         const vision_core::ImageInput& input,
         const std::vector<std::string>& prompts,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det = -1, float mask_threshold = 0.5f);
 
     void ensure_text_features(const std::vector<std::string>& prompts);
     void preprocess(const cv::Mat& image, cv::Mat& blob);
@@ -88,18 +88,20 @@ private:
     vision_common::SegmentationResultList postprocess_seg(
         const float* det, int offset, int anchors,
         const float* proto, const std::vector<int64_t>& proto_dims,
-        const cv::Size& orig_size, float conf_threshold, float iou_threshold);
+        const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+        int max_det, float mask_threshold);
 
     // Plain detection postprocess (single-output export, no masks).
     vision_common::SegmentationResultList postprocess_det(
         const float* det, int offset, int anchors,
-        const cv::Size& orig_size, float conf_threshold, float iou_threshold);
+        const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+        int max_det, float mask_threshold);
 
     void process_masks(
         const float* proto, const std::vector<int64_t>& proto_dims,
         const std::vector<std::vector<float>>& mask_coeffs,
         vision_common::SegmentationResultList& objects,
-        const cv::Size& orig_size);
+        const cv::Size& orig_shape, float mask_threshold);
 
     std::string clip_model_path_;
     std::string bpe_merges_path_;

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -126,7 +127,13 @@ void YoloeSegmentor::load_model() {
             text_input_index_ = static_cast<int>(i);
         }
     }
-    if (input_image_dims_.size() != 4 || input_text_dims_.size() != 3) {
+    if (input_node_names_.size() != 2 ||
+        input_image_dims_.size() != 4 || input_text_dims_.size() != 3 ||
+        input_image_dims_[0] != 1 || input_image_dims_[1] != 3 || input_text_dims_[0] != 1 ||
+        !std::all_of(input_image_dims_.begin(), input_image_dims_.end(),
+            [](int64_t d) { return d > 0 && d <= std::numeric_limits<int>::max(); }) ||
+        !std::all_of(input_text_dims_.begin(), input_text_dims_.end(),
+            [](int64_t d) { return d > 0 && d <= std::numeric_limits<int>::max(); })) {
         throw std::runtime_error("YoloeSegmentor expects a 4D image input and a 3D text input");
     }
 
@@ -215,12 +222,15 @@ void YoloeSegmentor::preprocess(const cv::Mat& image, cv::Mat& blob) {
 
 vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
     const float* det, int offset, int anchors,
-    const cv::Size& orig_size, float conf_threshold, float iou_threshold) {
+    const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+    int max_det, float mask_threshold) {
     (void)offset;
+    (void)mask_threshold;
+    if (max_det == 0) return {};
     const float ratio = letterbox_scale_;
     const float dw = static_cast<float>(letterbox_ox_);
     const float dh = static_cast<float>(letterbox_oy_);
-    const int active_classes = static_cast<int>(active_labels_.size());
+    const int active_classes = std::min(static_cast<int>(active_labels_.size()), num_classes_);
 
     vision_common::SegmentationResultList candidates;
     for (int j = 0; j < anchors; ++j) {
@@ -228,7 +238,7 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
         int max_index = -1;
         for (int c = 0; c < active_classes; ++c) {
             const float s = det[(4 + c) * anchors + j];
-            if (s > max_score) {
+            if (std::isfinite(s) && s > max_score) {
                 max_score = s;
                 max_index = c;
             }
@@ -236,6 +246,9 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
         if (max_score <= conf_threshold || max_index < 0) {
             continue;
         }
+        if (!std::isfinite(det[j]) || !std::isfinite(det[anchors + j]) ||
+            !std::isfinite(det[2 * anchors + j]) || !std::isfinite(det[3 * anchors + j]) ||
+            det[2 * anchors + j] <= 0.0f || det[3 * anchors + j] <= 0.0f) continue;
         const float half_w = det[2 * anchors + j] / 2.0f;
         const float half_h = det[3 * anchors + j] / 2.0f;
         float x1 = std::max(0.0f, (det[j] - half_w - dw) / ratio);
@@ -243,6 +256,8 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
         float x2 = std::min(static_cast<float>(orig_size.width), (det[j] + half_w - dw) / ratio);
         float y2 = std::min(static_cast<float>(orig_size.height), (det[anchors + j] + half_h - dh) / ratio);
 
+        if (!std::isfinite(x1) || !std::isfinite(y1) ||
+            !std::isfinite(x2) || !std::isfinite(y2) || x2 <= x1 || y2 <= y1) continue;
         vision_common::SegmentationResult r;
         r.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
         r.score = max_score;
@@ -251,17 +266,17 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
         candidates.push_back(r);
     }
     vision_common::SegmentationResultList kept = vision_common::multi_class_nms(candidates, iou_threshold);
-    if (max_det_ > 0 && static_cast<int>(kept.size()) > max_det_) {
-        kept.resize(static_cast<size_t>(max_det_));
-    }
+    vision_common::limit_by_score(kept, max_det, [](const auto& item) { return item.score; });
     return kept;
 }
 
 vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
     const float* det, int offset, int anchors,
     const float* proto, const std::vector<int64_t>& proto_dims,
-    const cv::Size& orig_size, float conf_threshold, float iou_threshold) {
+    const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+    int max_det, float mask_threshold) {
     (void)offset;
+    if (max_det == 0) return {};
     const float ratio = letterbox_scale_;
     const float dw = static_cast<float>(letterbox_ox_);
     const float dh = static_cast<float>(letterbox_oy_);
@@ -284,7 +299,7 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
         int best_cls = -1;
         for (int c = 0; c < active_classes; ++c) {
             const float s = at(4 + c, j);
-            if (s > best) {
+            if (std::isfinite(s) && s > best) {
                 best = s;
                 best_cls = c;
             }
@@ -292,6 +307,9 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
         if (best_cls < 0 || best <= conf_threshold) {
             continue;
         }
+        if (!std::isfinite(at(0, j)) || !std::isfinite(at(1, j)) ||
+            !std::isfinite(at(2, j)) || !std::isfinite(at(3, j)) ||
+            at(2, j) <= 0.0f || at(3, j) <= 0.0f) continue;
         const float half_w = at(2, j) / 2.0f;
         const float half_h = at(3, j) / 2.0f;
         float x1 = std::max(0.0f, (at(0, j) - half_w - dw) / ratio);
@@ -299,48 +317,40 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
         float x2 = std::min(static_cast<float>(orig_size.width), (at(0, j) + half_w - dw) / ratio);
         float y2 = std::min(static_cast<float>(orig_size.height), (at(1, j) + half_h - dh) / ratio);
 
+        if (!std::isfinite(x1) || !std::isfinite(y1) ||
+            !std::isfinite(x2) || !std::isfinite(y2) || x2 <= x1 || y2 <= y1) continue;
         vision_common::SegmentationResult r;
         r.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
         r.score = best;
         r.label = best_cls;
         r.mask = nullptr;
-        candidates.push_back(r);
-
         std::vector<float> coeffs;
         coeffs.reserve(static_cast<size_t>(num_mask_coeffs_));
         for (int k = 0; k < num_mask_coeffs_; ++k) {
             coeffs.push_back(at(4 + num_classes_ + k, j));
         }
+        if (!std::all_of(coeffs.begin(), coeffs.end(),
+            [](float value) { return std::isfinite(value); })) continue;
+        candidates.push_back(std::move(r));
         cand_coeffs.push_back(std::move(coeffs));
     }
     if (candidates.empty()) {
         return {};
     }
 
-    // NMS on boxes. multi_class_nms returns copies (no indices), so recover each
-    // kept box's mask coefficients by matching on the full box + score + label
-    // (a candidate is uniquely identified by all four coords + score, so this is
-    // robust; the earlier version omitted y2 and could mis-match).
-    vision_common::SegmentationResultList kept = vision_common::multi_class_nms(candidates, iou_threshold);
-    if (max_det_ > 0 && static_cast<int>(kept.size()) > max_det_) {
-        kept.resize(static_cast<size_t>(max_det_));
-    }
+    auto indices = vision_common::multi_class_nms_indices(candidates, iou_threshold);
+    vision_common::limit_by_score(indices, max_det,
+        [&](size_t index) { return candidates[index].score; });
+    vision_common::SegmentationResultList kept;
     std::vector<std::vector<float>> kept_coeffs;
-    kept_coeffs.reserve(kept.size());
-    for (const auto& res : kept) {
-        for (size_t i = 0; i < candidates.size(); ++i) {
-            const auto& c = candidates[i];
-            if (c.label == res.label && c.score == res.score &&
-                c.bbox.x1 == res.bbox.x1 && c.bbox.y1 == res.bbox.y1 &&
-                c.bbox.x2 == res.bbox.x2 && c.bbox.y2 == res.bbox.y2) {
-                kept_coeffs.push_back(cand_coeffs[i]);
-                break;
-            }
-        }
+    kept.reserve(indices.size());
+    kept_coeffs.reserve(indices.size());
+    for (size_t index : indices) {
+        kept.push_back(std::move(candidates[index]));
+        kept_coeffs.push_back(std::move(cand_coeffs[index]));
     }
-
-    if (!kept.empty() && kept_coeffs.size() == kept.size()) {
-        process_masks(proto, proto_dims, kept_coeffs, kept, orig_size);
+    if (!kept.empty()) {
+        process_masks(proto, proto_dims, kept_coeffs, kept, orig_size, mask_threshold);
     }
     return kept;
 }
@@ -349,7 +359,19 @@ void YoloeSegmentor::process_masks(
     const float* proto, const std::vector<int64_t>& proto_dims,
     const std::vector<std::vector<float>>& mask_coeffs,
     vision_common::SegmentationResultList& objects,
-    const cv::Size& orig_shape) {
+    const cv::Size& orig_shape, float mask_threshold) {
+    if (proto_dims.size() != 4 || proto_dims[0] != 1 ||
+        proto_dims[1] <= 0 || proto_dims[1] > std::numeric_limits<int>::max() ||
+        proto_dims[2] <= 0 || proto_dims[3] <= 0 ||
+        proto_dims[2] > std::numeric_limits<int>::max() / proto_dims[3] ||
+        mask_coeffs.size() != objects.size()) {
+        throw std::invalid_argument("Invalid instance mask dimensions or candidate count");
+    }
+    for (const auto& coefficients : mask_coeffs) {
+        if (coefficients.size() != static_cast<size_t>(proto_dims[1])) {
+            throw std::invalid_argument("Instance mask coefficient count does not match prototype channels");
+        }
+    }
     if (objects.empty() || mask_coeffs.empty() || proto_dims.size() != 4) {
         return;
     }
@@ -372,53 +394,10 @@ void YoloeSegmentor::process_masks(
         }
     }
 
-    const int orig_h = orig_shape.height;
-    const int orig_w = orig_shape.width;
-    const float gain = std::min(static_cast<float>(mask_h) / orig_h, static_cast<float>(mask_w) / orig_w);
-    const float pad_w = (mask_w - orig_w * gain) / 2.0f;
-    const float pad_h = (mask_h - orig_h * gain) / 2.0f;
-
-    int top = (pad_h > 0) ? static_cast<int>(std::round(pad_h - 0.1f)) : 0;
-    int left = (pad_w > 0) ? static_cast<int>(std::round(pad_w - 0.1f)) : 0;
-    int bottom = (pad_h > 0) ? (mask_h - static_cast<int>(std::round(pad_h + 0.1f))) : mask_h;
-    int right = (pad_w > 0) ? (mask_w - static_cast<int>(std::round(pad_w + 0.1f))) : mask_w;
-    top = std::max(0, std::min(top, mask_h - 1));
-    left = std::max(0, std::min(left, mask_w - 1));
-    bottom = std::max(top + 1, std::min(bottom, mask_h));
-    right = std::max(left + 1, std::min(right, mask_w));
-
-    const int crop_h = bottom - top;
-    const int crop_w = right - left;
-    const float scale_x = static_cast<float>(crop_w) / static_cast<float>(orig_w);
-    const float scale_y = static_cast<float>(crop_h) / static_cast<float>(orig_h);
-
-    for (int i = 0; i < num_masks; ++i) {
-        cv::Mat mask_full(mask_h, mask_w, CV_32F, raw_masks.data() + static_cast<size_t>(i) * proto_size);
-        cv::Mat mask_cropped = mask_full(cv::Range(top, bottom), cv::Range(left, right));
-
-        const vision_common::SegmentationResult& obj = objects[static_cast<size_t>(i)];
-        const int bx1 = std::max(0, static_cast<int>(std::floor(obj.bbox.x1 * scale_x)));
-        const int by1 = std::max(0, static_cast<int>(std::floor(obj.bbox.y1 * scale_y)));
-        const int bx2 = std::min(crop_w, static_cast<int>(std::ceil(obj.bbox.x2 * scale_x)));
-        const int by2 = std::min(crop_h, static_cast<int>(std::ceil(obj.bbox.y2 * scale_y)));
-
-        cv::Mat mask_out = cv::Mat::zeros(orig_h, orig_w, CV_8U);
-        if (bx2 > bx1 && by2 > by1) {
-            cv::Mat small_roi = mask_cropped(cv::Range(by1, by2), cv::Range(bx1, bx2));
-            const int ox1 = std::max(0, std::min(static_cast<int>(obj.bbox.x1), orig_w - 1));
-            const int oy1 = std::max(0, std::min(static_cast<int>(obj.bbox.y1), orig_h - 1));
-            const int ox2 = std::max(ox1 + 1, std::min(static_cast<int>(obj.bbox.x2), orig_w));
-            const int oy2 = std::max(oy1 + 1, std::min(static_cast<int>(obj.bbox.y2), orig_h));
-
-            cv::Mat roi_resized;
-            cv::resize(small_roi, roi_resized, cv::Size(ox2 - ox1, oy2 - oy1), 0, 0, cv::INTER_LINEAR);
-            cv::Mat roi_binary;
-            cv::threshold(roi_resized, roi_binary, 0.0f, 255.0f, cv::THRESH_BINARY);
-            cv::Mat roi_uint8;
-            roi_binary.convertTo(roi_uint8, CV_8U);
-            roi_uint8.copyTo(mask_out(cv::Range(oy1, oy2), cv::Range(ox1, ox2)));
-        }
-        objects[static_cast<size_t>(i)].mask = std::make_shared<cv::Mat>(mask_out);
+    for (size_t i = 0; i < objects.size(); ++i) {
+        cv::Mat logits(mask_h, mask_w, CV_32F, raw_masks.data() + i * proto_size);
+        objects[i].mask = std::make_shared<cv::Mat>(vision_common::restore_instance_mask(
+            logits, objects[i].bbox, orig_shape, mask_threshold));
     }
 }
 
@@ -441,7 +420,9 @@ YoloeSegmentor::segment_input_with_prompts(
     const vision_core::ImageInput& input,
     const std::vector<std::string>& prompts,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det, float mask_threshold) {
+    vision_common::mask_logit_threshold(mask_threshold);
+    if (max_det < 0) max_det = max_det_;
     if (input.image.empty()) {
         throw std::runtime_error("YoloeSegmentor: input image is empty");
     }
@@ -521,22 +502,40 @@ YoloeSegmentor::segment_input_with_prompts(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    const float* det = outputs[0].GetTensorMutableData<float>();
-    std::vector<int64_t> det_dims = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
+    if (outputs.size() < (is_segment_ ? 2U : 1U) || !outputs[0].IsTensor()) {
+        throw std::runtime_error("YoloeSegmentor: unexpected output count or type");
+    }
+    const auto det_info = outputs[0].GetTensorTypeAndShapeInfo();
+    const auto det_dims = det_info.GetShape();
+    if (det_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        det_dims.size() != 3 || det_dims[0] != 1 || det_dims[2] <= 0 ||
+        det_dims[2] > std::numeric_limits<int>::max() ||
+        det_dims[1] != 4 + num_classes_ + (is_segment_ ? num_mask_coeffs_ : 0)) {
+        throw std::runtime_error("YoloeSegmentor: invalid float32 detection output [1,C,N]");
+    }
+    const float* det = outputs[0].GetTensorData<float>();
     const int offset = static_cast<int>(det_dims[1]);
     const int anchors = static_cast<int>(det_dims[2]);
 
     vision_common::SegmentationResultList results;
     if (is_segment_) {
-        const float* proto = outputs[1].GetTensorMutableData<float>();
-        std::vector<int64_t> proto_dims = outputs[1].GetTensorTypeAndShapeInfo().GetShape();
+        if (!outputs[1].IsTensor()) throw std::runtime_error("YoloeSegmentor: expected proto tensor");
+        const auto proto_info = outputs[1].GetTensorTypeAndShapeInfo();
+        const auto proto_dims = proto_info.GetShape();
+        if (proto_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            proto_dims.size() != 4 || proto_dims[0] != 1 ||
+            proto_dims[1] != num_mask_coeffs_ || proto_dims[2] <= 0 || proto_dims[3] <= 0 ||
+            proto_dims[2] > std::numeric_limits<int>::max() / proto_dims[3]) {
+            throw std::runtime_error("YoloeSegmentor: invalid float32 proto output [1,C,H,W]");
+        }
+        const float* proto = outputs[1].GetTensorData<float>();
         results = postprocess_seg(
             det, offset, anchors, proto, proto_dims,
-            original_size, use_conf, use_iou);
+            original_size, use_conf, use_iou, max_det, mask_threshold);
     } else {
         results = postprocess_det(
             det, offset, anchors, original_size,
-            use_conf, use_iou);
+            use_conf, use_iou, max_det, mask_threshold);
     }
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -569,7 +568,8 @@ vision_core::InferResponse YoloeSegmentor::Run(const vision_core::InferRequest& 
     vision_common::SegmentationResultList task_results =
         segment_input_with_prompts(
         *image_input, request.params.prompts,
-        request.params.conf_threshold, request.params.iou_threshold);
+        request.params.conf_threshold, request.params.iou_threshold,
+        request.params.max_det, request.params.mask_threshold);
 
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());

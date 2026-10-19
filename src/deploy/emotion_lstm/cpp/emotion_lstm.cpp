@@ -115,17 +115,7 @@ vision_common::ActionResult EmotionLstm::predict(const float* feats) {
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    if (outputs.empty()) {
-        throw std::runtime_error("EmotionLstm::predict no output");
-    }
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    size_t num_elem = static_cast<size_t>(tensor_info.GetElementCount());
-    const float* out_data = outputs[0].GetTensorData<float>();
-    if (out_data == nullptr) {
-        throw std::runtime_error("EmotionLstm::predict output data is null");
-    }
-    // Match Python EmotionLstm.infer: use raw output as class scores, argmax for label.
-    std::vector<float> scores(out_data, out_data + num_elem);
+    std::vector<float> scores = read_output_scores(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 

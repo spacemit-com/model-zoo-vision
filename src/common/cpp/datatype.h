@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -72,6 +73,9 @@ inline ClassificationResultList build_classification_top_k(
     ClassificationResultList results;
     if (scores.empty()) {
         return results;
+    }
+    if (!std::all_of(scores.begin(), scores.end(), [](float score) { return std::isfinite(score); })) {
+        throw std::runtime_error("classification scores must be finite");
     }
 
     if (apply_softmax) {

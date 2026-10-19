@@ -5,7 +5,9 @@
 
 #include "vision_model_base.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -415,6 +417,34 @@ BaseModel::PreparedImage BaseModel::prepare_image(
             vision_operators::preprocess_backend_name(prepared.backend_used()),
         elapsed_ms);
     return prepared;
+}
+
+std::vector<float> BaseModel::read_output_scores(
+    const std::vector<Ort::Value>& outputs, size_t index) {
+    if (index >= outputs.size() || !outputs[index] || !outputs[index].IsTensor()) {
+        throw std::runtime_error("score output must be a tensor");
+    }
+    const auto& output = outputs[index];
+    const auto info = output.GetTensorTypeAndShapeInfo();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("score output must have float32 elements");
+    }
+    const auto shape = info.GetShape();
+    if (shape.empty() || std::any_of(shape.begin(), shape.end(),
+            [](int64_t dimension) { return dimension <= 0; })) {
+        throw std::runtime_error("score output must have nonempty dimensions");
+    }
+    const size_t batch = shape.size() > 1 ? static_cast<size_t>(shape[0]) : 1;
+    const size_t count = info.GetElementCount() / batch;
+    if (count == 0) {
+        throw std::runtime_error("score output must not be empty");
+    }
+    const float* data = output.GetTensorData<float>();
+    if (data == nullptr || !std::all_of(data, data + count,
+            [](float score) { return std::isfinite(score); })) {
+        throw std::runtime_error("score output values must be finite");
+    }
+    return std::vector<float>(data, data + count);
 }
 
 void BaseModel::enable_accelerated_image_preprocess() noexcept

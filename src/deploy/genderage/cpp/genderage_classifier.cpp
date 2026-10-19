@@ -53,6 +53,8 @@ GenderAgeClassifier::GenderAgeClassifier(const std::string& model_path,
         provider_(provider),
         input_mean_(input_mean),
         input_std_(input_std) {
+    vision_common::validate_classification_normalization(
+        cv::Scalar::all(input_mean_), cv::Scalar::all(input_std_));
     if (!lazy_load) {
         load_model();
     }
@@ -72,8 +74,7 @@ cv::Mat GenderAgeClassifier::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    const float std_safe = (std::abs(input_std_) > 1e-6f) ? input_std_ : 1.0f;
-    const float inv_std = static_cast<float>(1.0 / std_safe);
+    const float inv_std = 1.0f / input_std_;
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = target_size_.width;
     spec.output_height = target_size_.height;
@@ -96,19 +97,15 @@ GenderAgeClassifier::classify_input(
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    const float safe_std =
-        std::abs(input_std_) > 1.0e-6F
-        ? input_std_
-        : 1.0F;
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = target_size_.width;
     spec.output_height = target_size_.height;
     spec.output_rgb = true;
     spec.mean = {input_mean_, input_mean_, input_mean_};
     spec.scale = {
-        1.0F / safe_std,
-        1.0F / safe_std,
-        1.0F / safe_std};
+        1.0F / input_std_,
+        1.0F / input_std_,
+        1.0F / input_std_};
     auto prepared = prepare_image(
         input, spec,
         [this](const cv::Mat& bgr) {
@@ -164,65 +161,25 @@ std::vector<vision_core::ModelCapability> GenderAgeClassifier::get_capabilities(
 }
 
 vision_common::ClassificationResultList GenderAgeClassifier::postprocess(std::vector<Ort::Value>& outputs) {
+    const auto gender = read_output_scores(outputs);
     vision_common::ClassificationResult result;
-    result.label = 0;
-    result.score = 0.0f;
-    result.class_scores = {0.0f, 0.0f, 0.0f};
-
-    if (outputs.empty()) {
-        return {result};
-    }
-
+    int age = 0;
     if (outputs.size() == 1) {
-        const float* data = outputs[0].GetTensorData<float>();
-        auto shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
-        if (shape.size() >= 2 && shape[1] >= 3) {
-            const float female = data[0];
-            const float male = data[1];
-            const float age_norm = data[2];
-            result.label = (male > female) ? 1 : 0;
-            result.score = std::max(female, male);
-            const int age = std::clamp(static_cast<int>(std::lround(age_norm * 100.0f)), 1, 100);
-            result.class_scores = {female, male, static_cast<float>(age)};
+        if (gender.size() != 3) {
+            throw std::runtime_error("GenderAge output must contain female, male and age scores");
         }
-        return {result};
+        // Clamp before rounding so finite but very large age values cannot overflow lround.
+        age = static_cast<int>(std::lround(std::clamp(gender[2], 0.01f, 1.0f) * 100.0f));
+    } else {
+        if (gender.size() != 2) {
+            throw std::runtime_error("GenderAge gender output must contain exactly 2 scores");
+        }
+        const auto age_scores = read_output_scores(outputs, 1);
+        age = static_cast<int>(std::max_element(age_scores.begin(), age_scores.end()) - age_scores.begin());
     }
-
-    if (outputs.size() >= 2 && outputs[0].IsTensor()) {
-        const float* gender_data = outputs[0].GetTensorData<float>();
-        auto gender_shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
-        float female = 0.0f;
-        float male = 0.0f;
-        if (gender_shape.size() > 0) {
-            const int num_gender = gender_shape.size() > 1 ? static_cast<int>(gender_shape[1]) : 2;
-            if (num_gender >= 2) {
-                female = gender_data[0];
-                male = gender_data[1];
-                result.label = (male > female) ? 1 : 0;
-                result.score = std::max(female, male);
-            }
-        }
-
-        int age = 0;
-        if (outputs[1].IsTensor()) {
-            const float* age_data = outputs[1].GetTensorData<float>();
-            auto age_shape = outputs[1].GetTensorTypeAndShapeInfo().GetShape();
-            if (age_shape.size() > 1) {
-                const int num_age_classes = static_cast<int>(age_shape[1]);
-                int max_idx = 0;
-                float max_val = age_data[0];
-                for (int i = 1; i < num_age_classes; ++i) {
-                    if (age_data[i] > max_val) {
-                        max_val = age_data[i];
-                        max_idx = i;
-                    }
-                }
-                age = max_idx;
-            }
-        }
-        result.class_scores = {female, male, static_cast<float>(age)};
-    }
-
+    result.label = gender[1] > gender[0] ? 1 : 0;
+    result.score = std::max(gender[0], gender[1]);
+    result.class_scores = {gender[0], gender[1], static_cast<float>(age)};
     return {result};
 }
 

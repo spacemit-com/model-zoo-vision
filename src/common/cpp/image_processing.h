@@ -61,6 +61,9 @@ cv::Mat letterbox_to_nchw_rgb_blob(
     cv::Mat* resized_scratch = nullptr
 );
 
+// Validate RGB normalization before loading a classification model.
+void validate_classification_normalization(const cv::Scalar& mean, const cv::Scalar& std);
+
 /**
  * @brief Preprocess image for classification models
  * @param image Input image in BGR format

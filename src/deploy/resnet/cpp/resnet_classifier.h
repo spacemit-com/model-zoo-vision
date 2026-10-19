@@ -67,7 +67,9 @@ public:
 
 private:
     vision_common::ClassificationResultList classify_input(
-        const vision_core::ImageInput& input);
+        const vision_core::ImageInput& input, int top_k = 5);
+    vision_common::ClassificationResultList postprocess(
+        std::vector<Ort::Value>& outputs, int top_k);
 
     int num_threads_;
     cv::Size resize_size_;
@@ -76,6 +78,7 @@ private:
     bool center_crop_;
     int interpolation_;
     std::string provider_;
+    bool apply_softmax_ = true;
 };
 
 }  // namespace vision_deploy

@@ -57,12 +57,14 @@ public:
     // Factory hook: used by vision_core::ModelRegistrar for self-registration
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
-    /** @brief Postprocess: softmax over the 1000 non-background classes. */
+    /** @brief Rank non-background classes, applying softmax when configured. */
     vision_common::ClassificationResultList postprocess(std::vector<Ort::Value>& outputs);
 
 private:
     vision_common::ClassificationResultList classify_input(
-        const vision_core::ImageInput& input);
+        const vision_core::ImageInput& input, int top_k = 5);
+    vision_common::ClassificationResultList postprocess(
+        std::vector<Ort::Value>& outputs, int top_k);
 
     int num_threads_;
     cv::Size resize_size_;
@@ -71,6 +73,7 @@ private:
     bool center_crop_;
     int interpolation_;
     std::string provider_;
+    bool apply_softmax_ = true;
 };
 
 }  // namespace vision_deploy

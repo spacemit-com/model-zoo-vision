@@ -7,6 +7,7 @@
 #define YOLOV5_DETECTOR_H
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,12 +57,15 @@ private:
     vision_common::DetectionResultList detect_input(
         const vision_core::ImageInput& input,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det = -1);
 
     float conf_threshold_;
     float iou_threshold_;
     int num_threads_;
     std::string provider_;
+    // Config creation sets the format explicitly. Keep automatic detection
+    // for existing callers of the legacy direct constructor.
+    std::optional<bool> has_objectness_;
 };
 
 }  // namespace vision_deploy

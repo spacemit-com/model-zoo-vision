@@ -80,7 +80,7 @@ private:
         const vision_core::ImageInput& input,
         const std::vector<std::string>& prompts,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det = -1);
 
     // Lazily (re)compute cached text features for the given prompts.
     void ensure_text_features(const std::vector<std::string>& prompts);

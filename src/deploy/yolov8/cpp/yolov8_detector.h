@@ -77,6 +77,10 @@ public:
         float iou_threshold);
 
 private:
+    vision_common::DetectionResultList detect_input(
+        const vision_core::ImageInput& image, float conf_threshold,
+        float iou_threshold, int max_det);
+
     float conf_threshold_;
     float iou_threshold_;
     int num_threads_;

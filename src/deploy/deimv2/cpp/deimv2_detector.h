@@ -62,7 +62,7 @@ private:
         const cv::Mat& image_tensor);
     vision_common::DetectionResultList detect_input(
         const vision_core::ImageInput& input,
-        float conf_threshold);
+        float conf_threshold, int max_det = -1);
     vision_common::DetectionResultList postprocess(
         std::vector<Ort::Value>& outputs,
         const cv::Size& original_size,

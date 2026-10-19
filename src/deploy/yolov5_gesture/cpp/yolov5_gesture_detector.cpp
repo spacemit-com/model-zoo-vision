@@ -64,6 +64,10 @@ void YOLOv5GestureDetector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] == 0 || input_shape_[0] > 1 ||
+        input_shape_[1] != 3 || input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("YOLOv5GestureDetector requires single-image NCHW RGB input with fixed positive height and width");
+    }
     model_loaded_ = true;
 }
 
@@ -94,7 +98,7 @@ vision_common::DetectionResultList
 YOLOv5GestureDetector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -136,6 +140,7 @@ YOLOv5GestureDetector::detect_input(
 
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -166,7 +171,7 @@ vision_core::InferResponse YOLOv5GestureDetector::Run(const vision_core::InferRe
         detect_input(
             *image_input,
             request.params.conf_threshold,
-            request.params.iou_threshold);
+            request.params.iou_threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -189,6 +194,12 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
         return {};
     }
 
+    // Distributed weights also expose auxiliary raw heads; decode the first output.
+    if (!outputs[0] || !outputs[0].IsTensor() ||
+        outputs[0].GetTensorTypeAndShapeInfo().GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("YOLOv5 gesture primary output must be float32");
+    }
+
     // Model input shape (letterbox output) for clipping before NMS
     const int inputHeight = static_cast<int>(input_shape_[2]);
     const int inputWidth = static_cast<int>(input_shape_[3]);
@@ -205,6 +216,9 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     int64_t num_boxes = 0;
     int64_t features = 0;
     if (dims.size() == 3) {
+        if (dims[0] != 1) {
+            throw std::runtime_error("YOLOv5 gesture only supports batch size 1");
+        }
         // (bs, N, F)
         num_boxes = dims[1];
         features = dims[2];
@@ -213,15 +227,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
         num_boxes = dims[0];
         features = dims[1];
     } else {
-        // Some exports may provide extra dims; keep it conservative.
-        // Try interpret last dim as features, and the product of others (excluding batch) as num_boxes.
-        features = dims.back();
-        num_boxes = 1;
-        for (size_t i = 0; i + 1 < dims.size(); ++i) {
-            // skip batch dim if present
-            if (i == 0 && dims[0] == 1) continue;
-            num_boxes *= dims[i];
-        }
+        throw std::runtime_error("YOLOv5 gesture only supports rank-two or rank-three decoded outputs");
     }
 
     if (features < 6) {
@@ -260,6 +266,11 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
 
         // xywh -> xyxy
         float xywh[4] = {p[0], p[1], p[2], p[3]};
+        if (!std::isfinite(best_conf) ||
+            !std::all_of(xywh, xywh + 4, [](float value) { return std::isfinite(value); }) ||
+            xywh[2] <= 0.0f || xywh[3] <= 0.0f) {
+            continue;
+        }
         float xyxy[4];
         vision_common::xywh2xyxy(xywh, xyxy);
 

@@ -252,12 +252,14 @@ vision_common::DetectionResultList RFDETRDetector::postprocess(
             "RF-DETR runtime output contract changed");
     }
 
+    if (max_det == 0) return {};
     const float* boxes = outputs[0].GetTensorData<float>();
     const float* logits = outputs[1].GetTensorData<float>();
+    const float image_width = static_cast<float>(original_size.width);
+    const float image_height = static_cast<float>(original_size.height);
+    std::vector<vision_common::BoundingBox> decoded_boxes(static_cast<size_t>(num_queries_));
     std::vector<Candidate> candidates;
     candidates.reserve(static_cast<size_t>(num_queries_));
-    const size_t value_count = static_cast<size_t>(
-        num_queries_ * num_classes_);
     // Reject only scores far below the threshold; keep the original sigmoid
     // and score-based sorting for all remaining candidates, including ties.
     float reject_logit = -std::numeric_limits<float>::infinity();
@@ -267,13 +269,29 @@ vision_common::DetectionResultList RFDETRDetector::postprocess(
             break;
         }
     }
-    for (size_t index = 0; index < value_count; ++index) {
-        if (!std::isfinite(logits[index]) || logits[index] <= reject_logit) {
+    for (size_t query = 0; query < decoded_boxes.size(); ++query) {
+        const float* box = boxes + query * 4;
+        if (!std::all_of(box, box + 4, [](float value) { return std::isfinite(value); })) {
             continue;
         }
-        const float score = sigmoid(logits[index]);
-        if (score > conf_threshold) {
-            candidates.push_back({index, score});
+        auto& decoded = decoded_boxes[query];
+        decoded.x1 = std::clamp((box[0] - box[2] * 0.5F) * image_width, 0.0F, image_width);
+        decoded.y1 = std::clamp((box[1] - box[3] * 0.5F) * image_height, 0.0F, image_height);
+        decoded.x2 = std::clamp((box[0] + box[2] * 0.5F) * image_width, 0.0F, image_width);
+        decoded.y2 = std::clamp((box[1] + box[3] * 0.5F) * image_height, 0.0F, image_height);
+        if (decoded.x2 <= decoded.x1 || decoded.y2 <= decoded.y1) {
+            continue;
+        }
+        const size_t offset = query * static_cast<size_t>(num_classes_);
+        for (size_t cls = 0; cls < static_cast<size_t>(num_classes_); ++cls) {
+            const size_t index = offset + cls;
+            if (!std::isfinite(logits[index]) || logits[index] <= reject_logit) {
+                continue;
+            }
+            const float score = sigmoid(logits[index]);
+            if (score > conf_threshold) {
+                candidates.push_back({index, score});
+            }
         }
     }
 
@@ -295,43 +313,13 @@ vision_common::DetectionResultList RFDETRDetector::postprocess(
 
     vision_common::DetectionResultList detections;
     detections.reserve(candidates.size());
-    const float image_width = static_cast<float>(original_size.width);
-    const float image_height = static_cast<float>(original_size.height);
     for (const Candidate& candidate : candidates) {
         const size_t query =
             candidate.flat_index / static_cast<size_t>(num_classes_);
         const int label = static_cast<int>(
             candidate.flat_index % static_cast<size_t>(num_classes_));
-        const size_t offset = query * 4;
-        const float center_x = boxes[offset];
-        const float center_y = boxes[offset + 1];
-        const float width = boxes[offset + 2];
-        const float height = boxes[offset + 3];
-        if (!std::isfinite(center_x) || !std::isfinite(center_y) ||
-            !std::isfinite(width) || !std::isfinite(height)) {
-            continue;
-        }
-        const float x1 = std::clamp(
-            (center_x - width * 0.5F) * image_width,
-            0.0F,
-            image_width);
-        const float y1 = std::clamp(
-            (center_y - height * 0.5F) * image_height,
-            0.0F,
-            image_height);
-        const float x2 = std::clamp(
-            (center_x + width * 0.5F) * image_width,
-            0.0F,
-            image_width);
-        const float y2 = std::clamp(
-            (center_y + height * 0.5F) * image_height,
-            0.0F,
-            image_height);
-        if (x2 <= x1 || y2 <= y1) {
-            continue;
-        }
         vision_common::DetectionResult detection;
-        detection.bbox = {x1, y1, x2, y2};
+        detection.bbox = decoded_boxes[query];
         detection.score = candidate.score;
         detection.label = label;
         detections.push_back(detection);
@@ -389,7 +377,7 @@ vision_core::InferResponse RFDETRDetector::Run(
     }
     const float confidence = request.params.conf_threshold > 0.0F
         ? request.params.conf_threshold : conf_threshold_;
-    const int max_det = request.params.max_det > 0
+    const int max_det = request.params.max_det >= 0
         ? request.params.max_det : max_det_;
     vision_common::DetectionResultList detections = infer_input(
         *image_input, confidence, max_det);

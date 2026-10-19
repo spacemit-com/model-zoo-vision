@@ -6,10 +6,20 @@
 #include "nms.h"
 
 #include <algorithm>
-#include <numeric>
+#include <cmath>
+#include <stdexcept>
 #include <vector>
 
 namespace vision_common {
+
+namespace {
+bool valid_nms_box(const BoundingBox& box, float score) {
+    return std::isfinite(score) &&
+        std::isfinite(box.x1) && std::isfinite(box.y1) &&
+        std::isfinite(box.x2) && std::isfinite(box.y2) &&
+        box.x2 > box.x1 && box.y2 > box.y1;
+}
+}  // namespace
 
 float calculate_iou(const cv::Rect2f& box1, const cv::Rect2f& box2) {
     float x1_inter = std::max(box1.x, box2.x);
@@ -40,13 +50,22 @@ std::vector<int> nms(
     const std::vector<cv::Rect2f>& boxes,
     const std::vector<float>& scores,
     float iou_threshold) {
+    if (boxes.size() != scores.size()) {
+        throw std::invalid_argument("NMS boxes and scores must have the same size");
+    }
     if (boxes.empty()) {
         return std::vector<int>();
     }
 
     // Create indices and sort by score
-    std::vector<int> indices(boxes.size());
-    std::iota(indices.begin(), indices.end(), 0);
+    std::vector<int> indices;
+    indices.reserve(boxes.size());
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        const auto& box = boxes[i];
+        if (valid_nms_box({box.x, box.y, box.x + box.width, box.y + box.height}, scores[i])) {
+            indices.push_back(static_cast<int>(i));
+        }
+    }
     std::sort(indices.begin(), indices.end(),
         [&scores](int i, int j) { return scores[i] > scores[j]; });
 
@@ -97,7 +116,7 @@ std::vector<T> multi_class_nms_impl(
         // Collect results for this class
         results_class.clear();
         for (const auto& result : objects) {
-            if (result.label == label) {
+            if (result.label == label && valid_nms_box(result.bbox, result.score)) {
                 results_class.push_back(result);
             }
         }
@@ -144,6 +163,14 @@ std::vector<SegmentationResult> multi_class_nms(
     const std::vector<SegmentationResult>& objects,
     float iou_threshold) {
     return multi_class_nms_impl(objects, iou_threshold);
+}
+
+void filter_and_limit_detections(DetectionResultList& detections, int max_det) {
+    detections.erase(std::remove_if(detections.begin(), detections.end(),
+        [](const DetectionResult& detection) {
+            return detection.label < 0 || !valid_nms_box(detection.bbox, detection.score);
+        }), detections.end());
+    limit_by_score(detections, max_det, [](const auto& detection) { return detection.score; });
 }
 
 }  // namespace vision_common

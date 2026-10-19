@@ -211,7 +211,13 @@ vision_common::DetectionResultList postprocess_single_output(
     float iou_threshold,
     int input_width,
     int input_height) {
+    if (!output || !output.IsTensor()) {
+        throw std::runtime_error("YOLOv8 output must be a tensor");
+    }
     auto info = output.GetTensorTypeAndShapeInfo();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("YOLOv8 output must be float32");
+    }
     std::vector<int64_t> dims = info.GetShape();
     if (dims.size() < 2) {
         throw std::runtime_error("Unexpected YOLOv8 output shape (dims < 2)");
@@ -221,6 +227,9 @@ vision_common::DetectionResultList postprocess_single_output(
     int64_t features = 0;
     bool layout_cn = false;
     if (dims.size() == 3) {
+        if (dims[0] != 1) {
+            throw std::runtime_error("YOLOv8 only supports batch size 1");
+        }
         // cn layout = [features, anchors]: features sit on the smaller trailing dim
         // (channels << anchors). Pure size comparison, matching the Python detector and
         // yolov8_seg's resolve_seg_layout. Equal dims are ambiguous — refuse rather than
@@ -335,6 +344,10 @@ void YOLOv8Detector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] == 0 || input_shape_[0] > 1 ||
+        input_shape_[1] != 3 || input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("YOLOv8Detector requires single-image NCHW RGB input with fixed positive height and width");
+    }
     if (output_num_ >= 2) {
         Ort::TypeInfo score_type_info = session_->GetOutputTypeInfo(1);
         auto score_tensor_info = score_type_info.GetTensorTypeAndShapeInfo();
@@ -378,6 +391,13 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
     const vision_core::ImageInput& image,
     float conf_threshold,
     float iou_threshold) {
+    return detect_input(image, conf_threshold, iou_threshold, -1);
+}
+
+vision_common::DetectionResultList YOLOv8Detector::detect_input(
+    const vision_core::ImageInput& image,
+    float conf_threshold,
+    float iou_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -426,6 +446,7 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results =
         postprocess(outputs, original_size, use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(
         std::chrono::duration<double, std::milli>(
@@ -456,7 +477,7 @@ vision_core::InferResponse YOLOv8Detector::Run(const vision_core::InferRequest& 
     vision_common::DetectionResultList detections = detect_input(
         *image_input,
         request.params.conf_threshold,
-        request.params.iou_threshold);
+        request.params.iou_threshold, request.params.max_det);
 
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
@@ -548,7 +569,30 @@ vision_common::DetectionResultList YOLOv8Detector::postprocess(
     const int inputWidth = static_cast<int>(input_shape_[3]);
     const int inputHeight = static_cast<int>(input_shape_[2]);
 
+    if (output_num % kTensorsPerBranch != 0) {
+        throw std::runtime_error("YOLOv8 DFL outputs must be box/score/score_sum groups");
+    }
+
     for (int i = 0; i < static_cast<int>(output_num / kTensorsPerBranch); i++) {
+        for (int offset = 0; offset < kTensorsPerBranch; ++offset) {
+            const auto& output = outputs[i * kTensorsPerBranch + offset];
+            if (!output || !output.IsTensor()) {
+                throw std::runtime_error("YOLOv8 DFL outputs must be tensors");
+            }
+        }
+        const auto box_info = outputs[i * kTensorsPerBranch].GetTensorTypeAndShapeInfo();
+        const auto score_info = outputs[i * kTensorsPerBranch + 1].GetTensorTypeAndShapeInfo();
+        const auto sum_info = outputs[i * kTensorsPerBranch + 2].GetTensorTypeAndShapeInfo();
+        const auto shape = box_info.GetShape();
+        if (box_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            score_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            sum_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            shape.size() != 4 || shape[0] != 1 || shape[1] != 64 ||
+            shape[2] <= 0 || shape[3] <= 0 ||
+            score_info.GetShape() != std::vector<int64_t>{1, num_classes_, shape[2], shape[3]} ||
+            sum_info.GetShape() != std::vector<int64_t>{1, 1, shape[2], shape[3]}) {
+            throw std::runtime_error("YOLOv8 DFL output shapes or element types are unsupported");
+        }
         const float* boxes = outputs[i * kTensorsPerBranch].GetTensorData<float>();
         const float* branch_scores = outputs[i * kTensorsPerBranch + 1].GetTensorData<float>();
         const float* score_sum = outputs[i * kTensorsPerBranch + 2].GetTensorData<float>();

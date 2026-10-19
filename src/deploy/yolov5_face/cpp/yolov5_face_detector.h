@@ -90,7 +90,7 @@ private:
     vision_common::DetectionResultList detect_input(
         const vision_core::ImageInput& input,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, int max_det = -1);
 
     float conf_threshold_;
     float iou_threshold_;

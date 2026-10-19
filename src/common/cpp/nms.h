@@ -6,6 +6,8 @@
 #ifndef NMS_H
 #define NMS_H
 
+#include <algorithm>
+#include <cstddef>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -75,6 +77,22 @@ std::vector<SegmentationResult> multi_class_nms(
     const std::vector<SegmentationResult>& objects,
     float iou_threshold
 );
+
+// Negative limits preserve the model default. A zero limit returns no items.
+// Keep the existing order when no truncation is needed.
+template <typename T, typename Score>
+void limit_by_score(std::vector<T>& items, int limit, Score score) {
+    if (limit < 0 || items.size() <= static_cast<size_t>(limit)) return;
+    if (limit > 0) {
+        std::stable_sort(items.begin(), items.end(),
+            [&](const T& a, const T& b) { return score(a) > score(b); });
+    }
+    items.resize(static_cast<size_t>(limit));
+}
+
+// Remove nonfinite or empty detections before applying the requested limit.
+// Negative limits keep the model's existing result count and ordering.
+void filter_and_limit_detections(DetectionResultList& detections, int max_det);
 
 }  // namespace vision_common
 

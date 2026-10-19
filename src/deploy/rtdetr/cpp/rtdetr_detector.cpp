@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "common/cpp/nms.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -231,7 +232,7 @@ vision_common::DetectionResultList RTDETRDetector::postprocess(
 
 vision_common::DetectionResultList RTDETRDetector::infer_input(
     const vision_core::ImageInput& input,
-    float conf_threshold) {
+    float conf_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const cv::Size original_size = validate_image_input(input);
@@ -272,6 +273,7 @@ vision_common::DetectionResultList RTDETRDetector::infer_input(
 
     const auto postprocess_start = std::chrono::steady_clock::now();
     auto detections = postprocess(outputs, original_size, conf_threshold);
+    vision_common::filter_and_limit_detections(detections, max_det);
     const auto postprocess_end = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(
         std::chrono::duration<double, std::milli>(
@@ -301,7 +303,7 @@ vision_core::InferResponse RTDETRDetector::Run(
         throw std::invalid_argument(
             "RT-DETR conf_threshold must be in [0,1]");
     }
-    auto detections = infer_input(*image_input, threshold);
+    auto detections = infer_input(*image_input, threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
     for (auto& detection : detections) {

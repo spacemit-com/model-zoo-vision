@@ -235,6 +235,12 @@ vision_common::DetectionResultList YoloWorldDetector::postprocess(
         if (class_id < 0 || class_id >= active_classes) {
             continue;  // padded/unused class slot
         }
+        if (!std::isfinite(max_score) ||
+            !std::isfinite(output[j]) || !std::isfinite(output[anchors + j]) ||
+            !std::isfinite(output[2 * anchors + j]) || !std::isfinite(output[3 * anchors + j]) ||
+            output[2 * anchors + j] <= 0.0f || output[3 * anchors + j] <= 0.0f) {
+            continue;
+        }
         const float half_w = output[2 * anchors + j] / 2.0f;
         const float half_h = output[3 * anchors + j] / 2.0f;
         float x1 = (output[j] - half_w - dw) / ratio;
@@ -275,7 +281,7 @@ YoloWorldDetector::detect_input_with_prompts(
     const vision_core::ImageInput& input,
     const std::vector<std::string>& prompts,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det) {
     if (input.image.empty()) {
         throw std::runtime_error("YoloWorldDetector: input image is empty");
     }
@@ -359,6 +365,16 @@ YoloWorldDetector::detect_input_with_prompts(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
+    if (outputs.size() != 1 || !outputs[0] || !outputs[0].IsTensor()) {
+        throw std::runtime_error("YOLO-World expects one output tensor");
+    }
+    const auto dets_info = outputs[0].GetTensorTypeAndShapeInfo();
+    const auto shape = dets_info.GetShape();
+    if (dets_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        shape.size() != 3 || shape[0] != 1 ||
+        shape[1] != 4 + input_text_dims_[1] || shape[2] < 0) {
+        throw std::runtime_error("YOLO-World output must be float32 [1,4+classes,anchors]");
+    }
     const float* dets = outputs[0].GetTensorMutableData<float>();
     std::vector<int64_t> dets_dims = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
     const int offset = static_cast<int>(dets_dims[1]);   // 4 + num_classes
@@ -367,6 +383,7 @@ YoloWorldDetector::detect_input_with_prompts(
         postprocess(
             dets, offset, anchors, original_size,
             use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -398,7 +415,7 @@ vision_core::InferResponse YoloWorldDetector::Run(const vision_core::InferReques
     vision_common::DetectionResultList task_results =
         detect_input_with_prompts(
         *image_input, request.params.prompts,
-        request.params.conf_threshold, request.params.iou_threshold);
+        request.params.conf_threshold, request.params.iou_threshold, request.params.max_det);
 
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());

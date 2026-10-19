@@ -44,8 +44,10 @@ std::unique_ptr<vision_core::BaseModel> YOLOv5Detector::create(const YAML::Node&
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 
-    return std::make_unique<YOLOv5Detector>(
+    auto model = std::make_unique<YOLOv5Detector>(
         model_path, conf_threshold, iou_threshold, num_threads, lazy_load, provider);
+    model->has_objectness_ = vision_core::yaml_utils::getBool(default_params, "has_objectness", true);
+    return model;
 }
 
 YOLOv5Detector::YOLOv5Detector(const std::string& model_path,
@@ -70,6 +72,10 @@ void YOLOv5Detector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] == 0 || input_shape_[0] > 1 ||
+        input_shape_[1] != 3 || input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("YOLOv5Detector requires single-image NCHW RGB input with fixed positive height and width");
+    }
     model_loaded_ = true;
 }
 
@@ -100,7 +106,7 @@ vision_common::DetectionResultList YOLOv5Detector::detect(
 vision_common::DetectionResultList YOLOv5Detector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -143,6 +149,7 @@ vision_common::DetectionResultList YOLOv5Detector::detect_input(
 
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -173,7 +180,7 @@ vision_core::InferResponse YOLOv5Detector::Run(const vision_core::InferRequest& 
         detect_input(
             *image_input,
             request.params.conf_threshold,
-            request.params.iou_threshold);
+            request.params.iou_threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -195,6 +202,11 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         return {};
     }
 
+    if (outputs.size() != 1 || !outputs[0] || !outputs[0].IsTensor() ||
+        outputs[0].GetTensorTypeAndShapeInfo().GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("YOLOv5 expects one float32 output tensor");
+    }
+
     const int input_height = static_cast<int>(input_shape_[2]);
     const int input_width = static_cast<int>(input_shape_[3]);
 
@@ -209,6 +221,9 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
     int64_t features = 0;
     bool layout_cn = false;
     if (dims.size() == 3) {
+        if (dims[0] != 1) {
+            throw std::runtime_error("YOLOv5 only supports batch size 1");
+        }
         const int64_t dim1 = dims[1];
         const int64_t dim2 = dims[2];
         if ((dim1 <= 256 && dim2 > 256) || dim1 < dim2) {
@@ -224,22 +239,16 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         num_boxes = dims[0];
         features = dims[1];
     } else {
-        features = dims.back();
-        num_boxes = 1;
-        for (size_t i = 0; i + 1 < dims.size(); ++i) {
-            if (i == 0 && dims[0] == 1) {
-                continue;
-            }
-            num_boxes *= dims[i];
-        }
+        throw std::runtime_error("YOLOv5 only supports rank-two or rank-three decoded outputs");
     }
 
-    if (features < 5) {
-        throw std::runtime_error("Unexpected YOLOv5 output features (< 5)");
-    }
-
-    const bool has_objectness = (features >= 85);
+    // Standard YOLOv5 exports use xywh + objectness + class probabilities,
+    // including custom models with fewer than the 80 COCO classes.
+    const bool has_objectness = has_objectness_.value_or(features >= 85);
     const int64_t cls_start = has_objectness ? 5 : 4;
+    if (features <= cls_start) {
+        throw std::runtime_error("YOLOv5 output must contain box, score and class channels");
+    }
     const int64_t num_classes = features - cls_start;
 
     const float* data = out0.GetTensorData<float>();
@@ -263,13 +272,17 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         }
         if (has_objectness) {
             const float obj_raw = get_val(i, 4);
-            min_conf = std::min(min_conf, obj_raw);
-            max_conf = std::max(max_conf, obj_raw);
+            if (std::isfinite(obj_raw)) {
+                min_conf = std::min(min_conf, obj_raw);
+                max_conf = std::max(max_conf, obj_raw);
+            }
         }
         if (num_classes > 0) {
             const float cls_raw = get_val(i, cls_start);
-            min_conf = std::min(min_conf, cls_raw);
-            max_conf = std::max(max_conf, cls_raw);
+            if (std::isfinite(cls_raw)) {
+                min_conf = std::min(min_conf, cls_raw);
+                max_conf = std::max(max_conf, cls_raw);
+            }
         }
     }
     if (max_conf > 1.5f || min_conf < -0.1f) {
@@ -286,6 +299,7 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         float obj = 1.0f;
         if (has_objectness) {
             obj = get_val(i, 4);
+            if (!std::isfinite(obj)) continue;
             if (need_sigmoid) {
                 obj = sigmoid(obj);
             }
@@ -298,7 +312,7 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         int best_cls = -1;
         for (int64_t c = 0; c < num_classes; ++c) {
             const float raw = get_val(i, cls_start + c);
-            if (raw > best_raw) {
+            if (std::isfinite(raw) && raw > best_raw) {
                 best_raw = raw;
                 best_cls = static_cast<int>(c);
             }
@@ -337,22 +351,10 @@ vision_common::DetectionResultList YOLOv5Detector::postprocess(
         return {};
     }
 
-    std::vector<cv::Rect2f> boxes;
-    std::vector<float> scores;
-    boxes.reserve(candidates.size());
-    scores.reserve(candidates.size());
-    for (const auto& cand : candidates) {
-        boxes.emplace_back(cand.bbox.x1, cand.bbox.y1,
-            cand.bbox.x2 - cand.bbox.x1, cand.bbox.y2 - cand.bbox.y1);
-        scores.push_back(cand.score);
-    }
-
-    std::vector<int> keep_indices = vision_common::nms(boxes, scores, iou_threshold);
-    vision_common::DetectionResultList results;
-    results.reserve(keep_indices.size());
-    for (int idx : keep_indices) {
-        results.push_back(candidates[static_cast<size_t>(idx)]);
-    }
+    auto results = vision_common::multi_class_nms(candidates, iou_threshold);
+    // Preserve the existing global score order after class-wise suppression.
+    std::stable_sort(results.begin(), results.end(),
+        [](const auto& a, const auto& b) { return a.score > b.score; });
 
     const cv::Size input_shape(input_width, input_height);
     for (auto& r : results) {

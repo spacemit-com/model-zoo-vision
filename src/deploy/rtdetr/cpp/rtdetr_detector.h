@@ -44,7 +44,7 @@ private:
     cv::Mat preprocess(const cv::Mat& bgr) const;
     vision_common::DetectionResultList infer_input(
         const vision_core::ImageInput& input,
-        float conf_threshold);
+        float conf_threshold, int max_det = -1);
     vision_common::DetectionResultList postprocess(
         const std::vector<Ort::Value>& outputs,
         const cv::Size& original_size,

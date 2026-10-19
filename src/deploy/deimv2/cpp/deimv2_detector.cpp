@@ -9,6 +9,8 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <cstdint>
 #include <filesystem>  // NOLINT(build/c++17)
 #include <memory>
@@ -357,10 +359,15 @@ vision_common::DetectionResultList DEIMv2Detector::postprocess(
         const float score = scores_fp16 != nullptr
             ? static_cast<float>(scores_fp16[index])
             : scores_fp32[index];
-        if (score < conf_threshold) {
+        if (!std::isfinite(score) || score < conf_threshold ||
+            labels[index] < 0 || labels[index] > std::numeric_limits<int>::max()) {
             continue;
         }
         const size_t offset = index * 4;
+        if (!std::all_of(boxes + offset, boxes + offset + 4,
+                [](float value) { return std::isfinite(value); })) {
+            continue;
+        }
         const float x1 = std::clamp(
             (boxes[offset] - geometry.left) / geometry.ratio,
             0.0F,
@@ -401,7 +408,7 @@ vision_common::DetectionResultList DEIMv2Detector::detect(
 
 vision_common::DetectionResultList DEIMv2Detector::detect_input(
     const vision_core::ImageInput& input,
-    float conf_threshold) {
+    float conf_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto total_start = std::chrono::steady_clock::now();
@@ -441,6 +448,7 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
     const auto postprocess_start = std::chrono::steady_clock::now();
     vision_common::DetectionResultList detections = postprocess(
         outputs, original_size, geometry, effective_confidence);
+    vision_common::filter_and_limit_detections(detections, max_det);
     const auto postprocess_end = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(
         std::chrono::duration<double, std::milli>(
@@ -465,7 +473,7 @@ vision_core::InferResponse DEIMv2Detector::Run(
         return response;
     }
     vision_common::DetectionResultList detections = detect_input(
-        *image_input, request.params.conf_threshold);
+        *image_input, request.params.conf_threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
     for (auto& detection : detections) {

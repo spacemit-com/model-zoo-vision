@@ -7,6 +7,9 @@ class: deploy.yolov5.YOLOv5Detector
 default_params:
   conf_threshold: 0.25
   iou_threshold: 0.45
+  # The distributed weights output xywh + 80 class scores ([1,84,8400]).
+  # Set true for standard YOLOv5 exports with xywh + objectness + class scores.
+  has_objectness: false
   num_threads: 8
   preprocess:
     backend: auto

@@ -64,6 +64,10 @@ void YOLOv5FaceDetector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] == 0 || input_shape_[0] > 1 ||
+        input_shape_[1] != 3 || input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("YOLOv5FaceDetector requires single-image NCHW RGB input with fixed positive height and width");
+    }
     model_loaded_ = true;
 }
 
@@ -95,7 +99,7 @@ vision_common::DetectionResultList
 YOLOv5FaceDetector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -141,6 +145,7 @@ YOLOv5FaceDetector::detect_input(
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -171,7 +176,7 @@ vision_core::InferResponse YOLOv5FaceDetector::Run(const vision_core::InferReque
         detect_input(
             *image_input,
             request.params.conf_threshold,
-            request.params.iou_threshold);
+            request.params.iou_threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -189,6 +194,23 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
     const cv::Size& orig_size,
     float conf_threshold,
     float iou_threshold) {
+
+    if (outputs.empty()) return {};
+    if (outputs.size() != 3) {
+        throw std::runtime_error("YOLOv5 face expects three output tensors");
+    }
+    for (const auto& output : outputs) {
+        if (!output || !output.IsTensor()) {
+            throw std::runtime_error("YOLOv5 face output must be a tensor");
+        }
+        const auto info = output.GetTensorTypeAndShapeInfo();
+        const auto shape = info.GetShape();
+        if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            shape.size() != 5 || shape[0] != 1 || shape[1] != 3 ||
+            shape[2] <= 0 || shape[3] <= 0 || shape[4] != 16) {
+            throw std::runtime_error("YOLOv5 face output must be float32 [1,3,H,W,16]");
+        }
+    }
 
     // Initialize anchors (same as Python code: reshape(3, 1, 3, 1, 1, 2))
     // Reshape to (3, 1, 3, 1, 1, 2) means: 3 scales, each with 3 anchors, each anchor has (w, h)
@@ -231,7 +253,6 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
         auto tensor_info = outputs[idx].GetTensorTypeAndShapeInfo();
         std::vector<int64_t> dims = tensor_info.GetShape();
 
-        int bs = static_cast<int>(dims[0]);
         int channels = static_cast<int>(dims[1]);  // 3 anchors
         int ny = static_cast<int>(dims[2]);
         int nx = static_cast<int>(dims[3]);
@@ -250,8 +271,14 @@ vision_common::DetectionResultList YOLOv5FaceDetector::postprocess(
                     // Optimized: Early exit if obj_conf (index 4) is below threshold
                     // Compare raw logit value first to avoid expensive sigmoid calculation
                     float raw_obj_conf = pred_data[base_idx + 4];
-                    if (raw_obj_conf < raw_conf_threshold) {
+                    if (!std::isfinite(raw_obj_conf) || raw_obj_conf < raw_conf_threshold) {
                         continue;  // Skip this prediction, no need to compute sigmoid
+                    }
+                    // Check raw values before sigmoid maps infinities to finite scores/coordinates.
+                    if (!std::all_of(pred_data + base_idx, pred_data + base_idx + 4,
+                            [](float value) { return std::isfinite(value); }) ||
+                        !std::isfinite(pred_data[base_idx + 15])) {
+                        continue;
                     }
 
                     // Only compute sigmoid for predictions that pass the threshold check

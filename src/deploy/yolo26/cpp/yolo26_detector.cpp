@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -68,6 +69,10 @@ void YOLO26Detector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] == 0 || input_shape_[0] > 1 ||
+        input_shape_[1] != 3 || input_shape_[2] <= 0 || input_shape_[3] <= 0) {
+        throw std::runtime_error("YOLO26Detector requires single-image NCHW RGB input with fixed positive height and width");
+    }
     model_loaded_ = true;
 }
 
@@ -95,7 +100,7 @@ vision_common::DetectionResultList YOLO26Detector::detect(
 vision_common::DetectionResultList YOLO26Detector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -137,6 +142,7 @@ vision_common::DetectionResultList YOLO26Detector::detect_input(
 
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -160,7 +166,7 @@ vision_core::InferResponse YOLO26Detector::Run(const vision_core::InferRequest& 
         detect_input(
             *image_input,
             request.params.conf_threshold,
-            request.params.iou_threshold);
+            request.params.iou_threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(detections.size());
     for (auto& detection : detections) {
@@ -190,6 +196,11 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
         throw std::runtime_error("YOLO26 expects single output tensor");
     }
 
+    if (!outputs[0] || !outputs[0].IsTensor() ||
+        outputs[0].GetTensorTypeAndShapeInfo().GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("YOLO26 output must be float32");
+    }
+
     const int input_height = static_cast<int>(input_shape_[2]);
     const int input_width = static_cast<int>(input_shape_[3]);
     Ort::Value& out = outputs[0];
@@ -204,8 +215,8 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
     if (dims.size() == 3) {
         const int64_t dim1 = dims[1];
         const int64_t dim2 = dims[2];
-        if (dim1 == dim2) {
-            throw std::runtime_error("Unexpected YOLO26 output shape (channels == anchors)");
+        if (dims[0] != 1) {
+            throw std::runtime_error("YOLO26 only supports batch size 1");
         }
         // only support [1, N, 6]
         if (dim2 != 6) {
@@ -242,12 +253,17 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
     for (int64_t i = 0; i < num_anchors; ++i) {
         const float* row = data + i * features;
         const float score = row[4];
-        if (score < conf_threshold) {
+        if (!std::isfinite(score) || score < conf_threshold ||
+            !std::all_of(row, row + 4, [](float value) { return std::isfinite(value); }) ||
+            !std::isfinite(row[5])) {
             continue;
         }
 
-        int cls = static_cast<int>(std::round(row[5]));
-        cls = std::max(0, cls);
+        const double label = std::round(static_cast<double>(row[5]));
+        if (label < 0.0 || label > std::numeric_limits<int>::max()) {
+            continue;
+        }
+        const int cls = static_cast<int>(label);
 
         float x1 = (row[0] - pad_w) / gain;
         float y1 = (row[1] - pad_h) / gain;

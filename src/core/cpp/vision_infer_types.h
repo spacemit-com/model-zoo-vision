@@ -74,7 +74,8 @@ enum class InferIntent {
     kMatchLocalFeatures,
 };
 
-// Unified inference-time parameters (field <= 0 means "use model default").
+// Unified inference-time parameters: nonpositive floats and negative integers
+// use model defaults. Zero top_k/max_det requests no results.
 struct InferParams {
     float conf_threshold = -1.f;
     float iou_threshold = -1.f;

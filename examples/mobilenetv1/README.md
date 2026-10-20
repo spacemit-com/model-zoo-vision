@@ -10,6 +10,11 @@ MobileNetV1 (TF-Slim 导出) 输出 1001 类，其中 index 0 为 background。�
 
 > MobileNetV2 / V3 预处理标准、输出 1000 类，见 `examples/mobilenet`。
 
+`top_k` 通过 `VisionServiceInferParams.top_k` 传给 `service.infer(image, params)`，
+不要写入 `default_params`。`apply_softmax` 在 YAML 中设置，创建后保持固定。
+`resize_size` 使用 `[width, height]`，必须包含两个正整数；`interpolation`
+支持 `bilinear/linear`、`bicubic/cubic`、`nearest`、`area`，拼写错误会报错。
+
 ## 1. 模型与权重
 
 - **默认模型**：`~/.cache/models/vision/mobilenet/mobilenet_v1.q.onnx`

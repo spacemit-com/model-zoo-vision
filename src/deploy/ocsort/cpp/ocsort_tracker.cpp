@@ -59,6 +59,9 @@ struct OCSortConfig {
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> OCSortTracker::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "conf_threshold", "iou_threshold", "track_thresh", "det_thresh", "track_iou_thresh",
+        "track_buffer", "max_age", "min_hits", "delta_t", "inertia", "use_byte", "asso_func"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for OCSortTracker");

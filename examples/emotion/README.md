@@ -3,6 +3,7 @@
 对单张人脸图像（或已裁剪的人脸图）进行情绪分类，输出情绪类别与置信度。
 
 每次推理可用 `top_k` 指定返回类别数：负数保持默认 top-1，0 返回空结果。
+`top_k` 使用 `VisionServiceInferParams.top_k` 传入，不在 `default_params` 中配置。
 分类分数保持模型原始输出，不额外做 Softmax；特征模式仍返回原始特征向量。
 
 ## 1. 模型与权重
@@ -30,9 +31,9 @@ bash scripts/download_assets.sh
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/emotion/emotion_resnet50_final.q.onnx` |
 | `test_image` | 默认测试图片路径（建议为人脸图） | `~/.cache/assets/image/003_face0.png` |
 | `label_file_path` | 情绪类别标签文件 | `assets/labels/emotion.txt` |
-| `image_size` | 输入尺寸 [高, 宽] | `[224, 224]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.num_threads` | 推理线程数 | `4` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
 

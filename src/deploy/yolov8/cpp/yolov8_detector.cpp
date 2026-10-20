@@ -287,6 +287,7 @@ vision_common::DetectionResultList postprocess_single_output(
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> YOLOv8Detector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"conf_threshold", "iou_threshold"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for YOLOv8Detector");

@@ -3,9 +3,6 @@ model_path: ~/.cache/models/vision/cosplace/cosplace_resnet50_512.q.onnx
 test_query: ~/.cache/assets/image/barcelona/query/query_0.jpg
 test_database: ~/.cache/assets/image/barcelona/database
 top_k: 5
-# image_size is informational only; the model input shape is read from the ONNX
-# graph at runtime and this value is not used by the inference pipeline.
-image_size: [512, 512]
 class: deploy.cosplace.CosPlaceRecognizer
 default_params:
     num_threads: 8

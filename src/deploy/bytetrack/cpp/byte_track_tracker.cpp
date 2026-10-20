@@ -21,6 +21,8 @@
 namespace vision_deploy {
 
 std::unique_ptr<vision_core::BaseModel> ByteTrackTracker::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "conf_threshold", "iou_threshold", "frame_rate", "track_buffer"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for ByteTrackTracker");

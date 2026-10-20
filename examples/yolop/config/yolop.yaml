@@ -2,7 +2,6 @@
 model_path: ~/.cache/models/vision/yolop/yolop-288-512-sim.q.onnx
 test_image: ~/.cache/assets/image/020_yolop.jpg
 label_file_path: assets/labels/yolop.txt
-image_size: [288, 512]
 class: deploy.yolop.YOLOP
 default_params:
   conf_threshold: 0.25

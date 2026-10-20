@@ -27,10 +27,10 @@ bash scripts/download_assets.sh
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov11/yolo11n.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
 | `label_file_path` | 类别标签文件（如 COCO） | `assets/labels/coco.txt` |
-| `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |
 | `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
 

@@ -37,28 +37,34 @@ bool readScalar3(const YAML::Node& node, const std::string& key, cv::Scalar* out
     return true;
 }
 
-// Read a 2-element int sequence from YAML (e.g. resize_size [h, w] or [w, h]).
+// Read a 2-element int sequence from YAML as [width, height].
 bool readSize(const YAML::Node& node, const std::string& key, cv::Size* out) {
-    if (!node || !node[key] || !node[key].IsSequence() || node[key].size() < 2) {
-        return false;
+    if (!node || !node[key]) return false;
+    if (!node[key].IsSequence() || node[key].size() != 2) {
+        throw std::invalid_argument("default_params." + key + " must contain exactly 2 values [width, height]");
     }
-    // Stored as [w, h] to match cv::Size(width, height); both dims equal for square sizes.
+    // Match cv::Size(width, height), including non-square sizes.
     *out = cv::Size(node[key][0].as<int>(), node[key][1].as<int>());
+    if (out->width <= 0 || out->height <= 0) {
+        throw std::invalid_argument("default_params." + key + " dimensions must be positive");
+    }
     return true;
 }
 
 // Map a human-readable interpolation name (from YAML) to an OpenCV flag.
-int parseInterpolation(const std::string& name, int default_flag) {
+int parseInterpolation(const std::string& name) {
     if (name == "bilinear" || name == "linear") return cv::INTER_LINEAR;
     if (name == "bicubic" || name == "cubic") return cv::INTER_CUBIC;
     if (name == "nearest") return cv::INTER_NEAREST;
     if (name == "area") return cv::INTER_AREA;
-    return default_flag;
+    throw std::invalid_argument("Unsupported interpolation: " + name);
 }
 
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> ResNetClassifier::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "resize_size", "mean", "std", "center_crop", "interpolation", "apply_softmax"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for ResNetClassifier");
@@ -90,8 +96,7 @@ std::unique_ptr<vision_core::BaseModel> ResNetClassifier::create(const YAML::Nod
     bool center_crop = vision_core::yaml_utils::getBool(default_params, "center_crop", true);
 
     int interpolation = parseInterpolation(
-        vision_core::yaml_utils::getString(default_params, "interpolation", "bilinear"),
-        cv::INTER_LINEAR);
+        vision_core::yaml_utils::getString(default_params, "interpolation", "bilinear"));
 
     auto model = std::make_unique<ResNetClassifier>(model_path, num_threads, lazy_load, provider,
         resize_size, mean, std, center_crop, interpolation);

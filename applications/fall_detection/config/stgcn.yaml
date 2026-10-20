@@ -4,6 +4,5 @@ class: deploy.stgcn.StgcnActionRecognizer
 label_file_path: assets/labels/stgcn.txt
 default_params:
   num_threads: 2
-  lazy_load: false
   providers:
     - SpaceMITExecutionProvider

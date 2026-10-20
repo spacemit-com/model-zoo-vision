@@ -27,6 +27,7 @@ const cv::Scalar kClipStd(0.26862954 * 255.0, 0.26130258 * 255.0, 0.27577711 * 2
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> Mobileclip2Encoder::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"text_model_path", "bpe_merges_path"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for Mobileclip2Encoder");

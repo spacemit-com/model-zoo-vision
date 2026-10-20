@@ -199,6 +199,7 @@ MobileSeg::MobileSeg(
 std::unique_ptr<vision_core::BaseModel> MobileSeg::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"num_classes"});
     const std::string model_path =
         vision_core::yaml_utils::getString(
             config,

@@ -16,6 +16,11 @@ ImageNet 图像分类示例，复用 `deploy.resnet.ResNetClassifier`。
 切换到该权重时需在配置中设为 `false`，避免重复归一化。V1 使用 `examples/mobilenetv1`。
 每次推理的 `top_k` 参数可指定返回类别数；负数使用默认 5，0 返回空结果。
 
+`top_k` 通过 `VisionServiceInferParams.top_k` 传给 `service.infer(image, params)`，
+不要写入 `default_params`。`apply_softmax` 在 YAML 中设置，创建后保持固定。
+`resize_size` 使用 `[width, height]`，必须包含两个正整数；`interpolation`
+支持 `bilinear/linear`、`bicubic/cubic`、`nearest`、`area`，拼写错误会报错。
+
 **测试图片**：`~/.cache/assets/image/005_kitten.jpg`。若未下载资源，在 cv 根目录执行 `bash scripts/download_assets.sh`。
 
 ## 2. 运行示例

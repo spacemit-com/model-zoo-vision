@@ -84,6 +84,7 @@ RTDETRDetector::RTDETRDetector(
 
 std::unique_ptr<vision_core::BaseModel> RTDETRDetector::create(
     const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"conf_threshold"});
     const std::string model_path =
         vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {

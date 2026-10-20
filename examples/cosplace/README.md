@@ -26,9 +26,9 @@
 | `test_query` | 默认查询图像路径 | `~/.cache/assets/image/barcelona/query/query_0.jpg` |
 | `test_database` | 默认数据库目录 | `~/.cache/assets/image/barcelona/database` |
 | `top_k` | 返回前 K 个最相似的地点 | `5` |
-| `image_size` | 输入尺寸 [高, 宽]，仅作说明；实际输入尺寸由 ONNX 模型推导 | `[512, 512]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.num_threads` | 推理线程数 | `8` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
 

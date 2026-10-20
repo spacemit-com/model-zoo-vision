@@ -23,6 +23,8 @@
 namespace vision_deploy {
 
 std::unique_ptr<vision_core::BaseModel> YOLOv5FaceDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "conf_threshold", "conf_thres", "iou_threshold", "iou_thres"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for YOLOv5FaceDetector");
@@ -33,8 +35,10 @@ std::unique_ptr<vision_core::BaseModel> YOLOv5FaceDetector::create(const YAML::N
         throw std::runtime_error("default_params not found in config for YOLOv5FaceDetector");
     }
 
-    float conf_threshold = vision_core::yaml_utils::getFloat(default_params, "conf_threshold", 0.25f);
-    float iou_threshold = vision_core::yaml_utils::getFloat(default_params, "iou_threshold", 0.45f);
+    float conf_threshold = vision_core::yaml_utils::getAliasedFloat(
+        default_params, "conf_threshold", "conf_thres", 0.25f);
+    float iou_threshold = vision_core::yaml_utils::getAliasedFloat(
+        default_params, "iou_threshold", "iou_thres", 0.45f);
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 

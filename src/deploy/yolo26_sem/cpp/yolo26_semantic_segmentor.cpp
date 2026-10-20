@@ -126,6 +126,7 @@ std::unique_ptr<vision_core::BaseModel>
 YOLO26SemanticSegmentor::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"num_classes"});
     const std::string model_path =
         vision_core::yaml_utils::getString(
             config,

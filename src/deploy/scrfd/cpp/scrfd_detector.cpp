@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -79,6 +80,10 @@ ScrfdDetector::ScrfdDetector(const std::string& model_path,
         nms_threshold_(nms_threshold),
         num_threads_(num_threads),
         provider_(provider) {
+    if (!std::isfinite(conf_threshold_) || conf_threshold_ < 0.0f || conf_threshold_ > 1.0f ||
+        !std::isfinite(nms_threshold_) || nms_threshold_ < 0.0f || nms_threshold_ > 1.0f) {
+        throw std::invalid_argument("SCRFD thresholds must be finite and in [0,1]");
+    }
     if (!lazy_load) {
         load_model();
     }
@@ -89,24 +94,27 @@ void ScrfdDetector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
-    if (input_shape_.size() >= 4) {
-        int h = static_cast<int>(input_shape_[2]);
-        int w = static_cast<int>(input_shape_[3]);
-        // Dynamic ONNX shapes are reported as -1; SCRFD det_10g uses 640x640.
-        if (h <= 0) {
-            h = 640;
-        }
-        if (w <= 0) {
-            w = 640;
-        }
-        input_height_ = h;
-        input_width_ = w;
-        if (input_shape_[2] <= 0) {
-            input_shape_[2] = h;
-        }
-        if (input_shape_[3] <= 0) {
-            input_shape_[3] = w;
-        }
+    if (input_shape_.size() != 4 || input_shape_[0] > 1 || input_shape_[1] != 3 ||
+        input_shape_[2] > std::numeric_limits<int>::max() ||
+        input_shape_[3] > std::numeric_limits<int>::max()) {
+        throw std::runtime_error("SCRFD expects input [1,3,H,W]");
+    }
+    int h = static_cast<int>(input_shape_[2]);
+    int w = static_cast<int>(input_shape_[3]);
+    // Dynamic ONNX shapes are reported as -1; SCRFD det_10g uses 640x640.
+    if (h <= 0) {
+        h = 640;
+    }
+    if (w <= 0) {
+        w = 640;
+    }
+    input_height_ = h;
+    input_width_ = w;
+    if (input_shape_[2] <= 0) {
+        input_shape_[2] = h;
+    }
+    if (input_shape_[3] <= 0) {
+        input_shape_[3] = w;
     }
     generate_anchors();
     model_loaded_ = true;
@@ -162,6 +170,10 @@ cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
 vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
                                                             float conf_threshold,
                                                             float iou_threshold) {
+    if (!std::isfinite(conf_threshold) || conf_threshold > 1.0f ||
+        !std::isfinite(iou_threshold) || iou_threshold > 1.0f) {
+        throw std::invalid_argument("SCRFD thresholds must be finite and <= 1");
+    }
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -208,8 +220,14 @@ vision_core::InferResponse ScrfdDetector::Run(const vision_core::InferRequest& r
         return response;
     }
 
+    cv::Mat bgr = image_input->image;
+    if (image_input->format == vision_core::ImagePixelFormat::kNv12) {
+        cv::cvtColor(image_input->image, bgr, cv::COLOR_YUV2BGR_NV12);
+    }
     vision_common::PoseResultList task_results =
-        estimate_pose(image_input->image, request.params.conf_threshold, request.params.iou_threshold);
+        estimate_pose(bgr, request.params.conf_threshold, request.params.iou_threshold);
+    vision_common::limit_by_score(task_results, request.params.max_det,
+        [](const auto& pose) { return pose.score; });
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -229,6 +247,40 @@ vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>
                                                         float det_scale) {
     if (outputs.size() < 9) {
         throw std::runtime_error("ScrfdDetector expects 9 ONNX outputs");
+    }
+
+    if (orig_size.width <= 0 || orig_size.height <= 0 ||
+        !std::isfinite(det_scale) || det_scale <= 0.0f || !std::isfinite(1.0f / det_scale)) {
+        throw std::invalid_argument("SCRFD expects a positive image size and finite positive scale");
+    }
+    size_t expected_offset = 0;
+    for (int level = 0; level < 3; ++level) {
+        const int stride = 8 << level;
+        const size_t count = static_cast<size_t>(input_height_ / stride) *
+            (input_width_ / stride) * 2;
+        if (count > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+            count + expected_offset > anchors_.size()) {
+            throw std::runtime_error("SCRFD anchor grid does not match the input size");
+        }
+        const int64_t n = static_cast<int64_t>(count);
+        for (int head = 0; head < 3; ++head) {
+            const auto& tensor = outputs[head * 3 + level];
+            if (!tensor.IsTensor()) throw std::runtime_error("SCRFD expects tensor outputs");
+            const auto info = tensor.GetTensorTypeAndShapeInfo();
+            const auto shape = info.GetShape();
+            const int64_t channels = head == 0 ? 1 : (head == 1 ? 4 : 10);
+            const bool flat_score = head == 0 &&
+                (shape == std::vector<int64_t>{n} || shape == std::vector<int64_t>{1, n});
+            if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+                (!flat_score && shape != std::vector<int64_t>{n, channels} &&
+                shape != std::vector<int64_t>{1, n, channels})) {
+                throw std::runtime_error("SCRFD score, box or landmark output does not match its anchor grid");
+            }
+        }
+        expected_offset += count;
+    }
+    if (expected_offset != anchors_.size()) {
+        throw std::runtime_error("SCRFD total anchor count does not match its heads");
     }
 
     const int feat_stride_fpn[3] = {8, 16, 32};
@@ -266,7 +318,7 @@ vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>
     for (int level = 0; level < 3; ++level) {
         for (int i = 0; i < num_anchors[level]; ++i) {
             const float score = scores_data[level][i];
-            if (score < conf_threshold) {
+            if (!std::isfinite(score) || score < conf_threshold) {
                 ++anchor_idx;
                 continue;
             }
@@ -278,29 +330,44 @@ vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>
             const float dw = boxes_data[level][i * 4 + 2] * stride;
             const float dh = boxes_data[level][i * 4 + 3] * stride;
 
+            if (!std::isfinite(dx) || !std::isfinite(dy) ||
+                !std::isfinite(dw) || !std::isfinite(dh)) { ++anchor_idx; continue; }
             float x1 = (anchor.cx - dx) * scale_x;
             float y1 = (anchor.cy - dy) * scale_y;
             float x2 = (anchor.cx + dw) * scale_x;
             float y2 = (anchor.cy + dh) * scale_y;
 
+            if (!std::isfinite(x1) || !std::isfinite(y1) ||
+                !std::isfinite(x2) || !std::isfinite(y2)) { ++anchor_idx; continue; }
             vision_common::PoseResult det;
             det.bbox.x1 = std::clamp(x1, 0.0f, max_x);
             det.bbox.y1 = std::clamp(y1, 0.0f, max_y);
             det.bbox.x2 = std::clamp(x2, 0.0f, max_x);
             det.bbox.y2 = std::clamp(y2, 0.0f, max_y);
+            if (det.bbox.x2 <= det.bbox.x1 || det.bbox.y2 <= det.bbox.y1) {
+                ++anchor_idx;
+                continue;
+            }
             det.score = score;
             det.label = 0;
             det.keypoints.reserve(5);
+            bool finite_keypoints = true;
             for (int j = 0; j < 5; ++j) {
                 const float lx = landmarks_data[level][i * 10 + j * 2 + 0] * stride;
                 const float ly = landmarks_data[level][i * 10 + j * 2 + 1] * stride;
+                if (!std::isfinite(lx) || !std::isfinite(ly) ||
+                    !std::isfinite((anchor.cx + lx) * scale_x) ||
+                    !std::isfinite((anchor.cy + ly) * scale_y)) {
+                    finite_keypoints = false;
+                    break;
+                }
                 vision_common::KeyPoint kp;
                 kp.x = std::clamp((anchor.cx + lx) * scale_x, 0.0f, max_x);
                 kp.y = std::clamp((anchor.cy + ly) * scale_y, 0.0f, max_y);
                 kp.visibility = 1.0f;
                 det.keypoints.push_back(kp);
             }
-            boxes.push_back(det);
+            if (finite_keypoints) boxes.push_back(det);
             ++anchor_idx;
         }
     }

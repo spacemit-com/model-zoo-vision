@@ -72,7 +72,10 @@ private:
     vision_common::PoseResultList estimate_pose_input(
         const vision_core::ImageInput& input,
         float conf_threshold,
-        float iou_threshold);
+        float iou_threshold, float kp_threshold = -1.0f, int max_det = -1);
+    vision_common::PoseResultList postprocess_impl(
+        std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+        float conf_threshold, float iou_threshold, float kp_threshold, int max_det);
 
     float conf_threshold_;
     float iou_threshold_;

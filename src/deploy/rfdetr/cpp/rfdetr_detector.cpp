@@ -376,8 +376,8 @@ vision_core::InferResponse RFDETRDetector::Run(
         response.error_message = "RFDETRDetector expects ImageInput";
         return response;
     }
-    const float confidence = request.params.conf_threshold > 0.0F
-        ? request.params.conf_threshold : conf_threshold_;
+    const float confidence = vision_core::resolve_probability_threshold(
+        request.params.conf_threshold, conf_threshold_, "conf_threshold");
     const int max_det = request.params.max_det >= 0
         ? request.params.max_det : max_det_;
     vision_common::DetectionResultList detections = infer_input(

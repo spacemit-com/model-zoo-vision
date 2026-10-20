@@ -401,6 +401,20 @@ VisionServiceStatus VisionService::Infer(
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, message);
     };
 
+    // Reject NaN/Inf before models resolve nonpositive default sentinels.
+    // Model-specific score ranges are checked by the consuming model.
+    const std::pair<const char*, float> thresholds[] = {
+        {"conf_threshold", request.params.conf_threshold},
+        {"iou_threshold", request.params.iou_threshold},
+        {"kp_threshold", request.params.kp_threshold},
+        {"mask_threshold", request.params.mask_threshold},
+    };
+    for (const auto& threshold : thresholds) {
+        if (!std::isfinite(threshold.second)) {
+            return invalid(std::string(threshold.first) + " must be finite");
+        }
+    }
+
     if (has_sequence && request.sequence_count <= 0) {
         return invalid("sequence_count must be positive when sequence_pts is set");
     }

@@ -57,6 +57,22 @@ mask 系数相乘、阈值化后 resize 回原图得到。处理约定：
 **C++ 示例**（需在 `cv/build` 下先编译）：第一个参数是配置文件路径，可选
 `--image`、`--output`、`--prompts`、`--model-path`。
 
+Python API 支持同时传入文本提示和单次推理参数：
+
+```python
+from spacemit_vision import VisionServiceInferParams
+
+params = VisionServiceInferParams()
+params.max_det = 10
+params.mask_threshold = 0.6
+status, results = service.infer_image(
+    image, prompts=["person", "bus"], params=params
+)
+```
+
+`params` 只对本次调用生效；显式传入的 `conf/iou` 优先于 `params` 中对应值。
+阈值必须有限且不大于 1，`<=0` 使用模型默认值；`max_det=0` 返回空结果。
+
 ## 4. 运行示例
 
 **Python：**

@@ -220,6 +220,8 @@ inline int get_track_id(const Result& r) {
 // Per-call overrides: floats <= 0 and integers < 0 use model defaults, which
 // may come from supported YAML fields or built-in values. Zero top_k/max_det
 // requests no results. Parameters apply only to models that consume them.
+// All float overrides must be finite. Consuming models validate score ranges;
+// probability thresholds cannot exceed 1, while RTMPose scores may exceed 1.
 struct VisionServiceInferParams {
     float conf_threshold = -1.0f;
     float iou_threshold = -1.0f;

@@ -287,12 +287,13 @@ YoloWorldDetector::detect_input_with_prompts(
     if (input.image.empty()) {
         throw std::runtime_error("YoloWorldDetector: input image is empty");
     }
+    const float use_conf = vision_core::resolve_probability_threshold(
+        conf_threshold, conf_threshold_, "conf_threshold");
+    const float use_iou = vision_core::resolve_probability_threshold(
+        iou_threshold, iou_threshold_, "iou_threshold");
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
-
-    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
-    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     // Lazy text-feature cache (no CLIP call on steady-state / same prompts).
     ensure_text_features(prompts);

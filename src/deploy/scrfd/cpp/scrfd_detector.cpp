@@ -173,16 +173,13 @@ cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
 vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
                                                             float conf_threshold,
                                                             float iou_threshold) {
-    if (!std::isfinite(conf_threshold) || conf_threshold > 1.0f ||
-        !std::isfinite(iou_threshold) || iou_threshold > 1.0f) {
-        throw std::invalid_argument("SCRFD thresholds must be finite and <= 1");
-    }
+    const float use_conf = vision_core::resolve_probability_threshold(
+        conf_threshold, conf_threshold_, "conf_threshold");
+    const float use_nms = vision_core::resolve_probability_threshold(
+        iou_threshold, nms_threshold_, "iou_threshold");
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
-
-    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
-    const float use_nms = iou_threshold > 0.0f ? iou_threshold : nms_threshold_;
 
     const cv::Size orig_size = image.size();
 

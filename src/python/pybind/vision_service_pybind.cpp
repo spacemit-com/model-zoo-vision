@@ -133,19 +133,13 @@ py::tuple MakeFlatResponse(VisionServiceStatus status, PyResponse response) {
 }
 
 VisionServiceInferParams MakeParams(
-    float conf,
-    float iou,
-    int top_k = -1,
-    float kp_threshold = -1.0f,
-    float mask_threshold = -1.0f,
-    int max_det = -1) {
-    VisionServiceInferParams params{};
-    params.conf_threshold = conf;
-    params.iou_threshold = iou;
-    params.top_k = top_k;
-    params.kp_threshold = kp_threshold;
-    params.mask_threshold = mask_threshold;
-    params.max_det = max_det;
+    std::optional<float> conf,
+    std::optional<float> iou,
+    VisionServiceInferParams params) {
+    // Explicit legacy arguments override the copied params, including default
+    // sentinels (0/negative). Never mutate the caller's reusable params object.
+    if (conf.has_value()) params.conf_threshold = *conf;
+    if (iou.has_value()) params.iou_threshold = *iou;
     return params;
 }
 
@@ -446,42 +440,54 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             py::arg("params") = VisionServiceInferParams{})
         .def(
             "infer_image",
-            [](VisionService& self, const std::string& path, float conf, float iou) {
+            [](VisionService& self, const std::string& path,
+                std::optional<float> conf, std::optional<float> iou,
+                const VisionServiceInferParams& params) {
                 PyResponse response;
+                const auto options = MakeParams(conf, iou, params);
                 const VisionServiceStatus st =
                     CallWithoutGil([&] {
-                        return self.Infer(path, &response, MakeParams(conf, iou));
+                        return self.Infer(path, &response, options);
                     });
                 return MakeFlatResponse(st, std::move(response));
             },
             py::arg("image_path"),
-            py::arg("conf") = -1.0f,
-            py::arg("iou") = -1.0f)
+            py::arg("conf") = py::none(),
+            py::arg("iou") = py::none(),
+            py::kw_only(),
+            py::arg("params") = VisionServiceInferParams{})
         .def(
             "infer_image",
-            [](VisionService& self, const py::array& arr, float conf, float iou) {
+            [](VisionService& self, const py::array& arr,
+                std::optional<float> conf, std::optional<float> iou,
+                const VisionServiceInferParams& params) {
                 cv::Mat mat = NumpyToMatBgr(arr);
                 PyResponse response;
+                const auto options = MakeParams(conf, iou, params);
                 const VisionServiceStatus st =
                     CallWithoutGil([&] {
-                        return self.Infer(mat, &response, MakeParams(conf, iou));
+                        return self.Infer(mat, &response, options);
                     });
                 return MakeFlatResponse(st, std::move(response));
             },
             py::arg("image_bgr_uint8"),
-            py::arg("conf") = -1.0f,
-            py::arg("iou") = -1.0f)
+            py::arg("conf") = py::none(),
+            py::arg("iou") = py::none(),
+            py::kw_only(),
+            py::arg("params") = VisionServiceInferParams{})
         .def(
             // Open-vocabulary variant (e.g. YOLO-World): pass text prompts.
             // Empty prompts -> use the model's configured default vocabulary.
             "infer_image_prompts",
             [](VisionService& self, const py::array& arr,
-                const std::vector<std::string>& prompts, float conf, float iou) {
+                const std::vector<std::string>& prompts,
+                std::optional<float> conf, std::optional<float> iou,
+                const VisionServiceInferParams& params) {
                 cv::Mat mat = NumpyToMatBgr(arr);
                 VisionServiceRequest request{};
                 request.image = mat;
                 request.prompts = prompts;
-                request.params = MakeParams(conf, iou);
+                request.params = MakeParams(conf, iou, params);
                 PyResponse response;
                 const VisionServiceStatus st = CallWithoutGil([&] {
                     return self.Infer(request, &response);
@@ -490,15 +496,19 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             },
             py::arg("image_bgr_uint8"),
             py::arg("prompts"),
-            py::arg("conf") = -1.0f,
-            py::arg("iou") = -1.0f)
+            py::arg("conf") = py::none(),
+            py::arg("iou") = py::none(),
+            py::kw_only(),
+            py::arg("params") = VisionServiceInferParams{})
         .def(
             "infer_image_points",
             [](VisionService& self, const py::array& arr,
                 const std::vector<std::vector<float>>& points,
-                const std::vector<int>& labels) {
+                const std::vector<int>& labels,
+                const VisionServiceInferParams& params) {
                 VisionServiceRequest request{};
                 request.image = NumpyToMatBgr(arr);
+                request.params = params;
                 for (const auto& point : points) {
                     if (point.size() != 2) {
                         throw std::invalid_argument(
@@ -515,7 +525,9 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             },
             py::arg("image_bgr_uint8"),
             py::arg("points"),
-            py::arg("labels"))
+            py::arg("labels"),
+            py::kw_only(),
+            py::arg("params") = VisionServiceInferParams{})
         .def(
             "infer_stereo",
             [](VisionService& self,

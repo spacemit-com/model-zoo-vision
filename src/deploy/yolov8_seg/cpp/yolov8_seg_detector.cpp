@@ -214,16 +214,15 @@ YOLOv8SegDetector::segment_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
     float iou_threshold, int max_det, float mask_threshold) {
-    if (!std::isfinite(mask_threshold) || mask_threshold > 1.0f) {
-        throw std::invalid_argument("mask_threshold must be finite and <= 1");
-    }
-    const float use_mask = mask_threshold > 0.0f ? mask_threshold : 0.5f;
+    const float use_mask = vision_core::resolve_probability_threshold(
+        mask_threshold, 0.5f, "mask_threshold");
+    const float use_conf = vision_core::resolve_probability_threshold(
+        conf_threshold, conf_threshold_, "conf_threshold");
+    const float use_iou = vision_core::resolve_probability_threshold(
+        iou_threshold, iou_threshold_, "iou_threshold");
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
-
-    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
-    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     const cv::Size orig_size(
         input.image.cols,

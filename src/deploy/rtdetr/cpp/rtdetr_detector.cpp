@@ -298,12 +298,8 @@ vision_core::InferResponse RTDETRDetector::Run(
         response.error_message = "RTDETRDetector expects ImageInput";
         return response;
     }
-    const float threshold = request.params.conf_threshold > 0.0F
-        ? request.params.conf_threshold : conf_threshold_;
-    if (threshold > 1.0F) {
-        throw std::invalid_argument(
-            "RT-DETR conf_threshold must be in [0,1]");
-    }
+    const float threshold = vision_core::resolve_probability_threshold(
+        request.params.conf_threshold, conf_threshold_, "conf_threshold");
     auto detections = infer_input(*image_input, threshold, request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(detections.size());

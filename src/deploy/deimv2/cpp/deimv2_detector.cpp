@@ -410,11 +410,11 @@ vision_common::DetectionResultList DEIMv2Detector::detect(
 vision_common::DetectionResultList DEIMv2Detector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold, int max_det) {
+    const float effective_confidence = vision_core::resolve_probability_threshold(
+        conf_threshold, conf_threshold_, "conf_threshold");
     ensure_model_loaded();
     reset_runtime_profile();
     const auto total_start = std::chrono::steady_clock::now();
-    const float effective_confidence =
-        conf_threshold > 0.0F ? conf_threshold : conf_threshold_;
     const cv::Size original_size(
         input.image.cols,
         input.format == vision_core::ImagePixelFormat::kNv12

@@ -59,6 +59,22 @@ bash scripts/download_assets.sh
 
 ## 3. 命令行 / API 参数（与本模块相关）
 
+Python API 可通过 `params` 传入单次推理参数：
+
+```python
+from spacemit_vision import VisionServiceInferParams
+
+params = VisionServiceInferParams()
+params.conf_threshold = 0.3
+params.max_det = 20
+status, results = service.infer_image(image, params=params)
+```
+
+原有 `service.infer_image(image, conf, iou)` 调用仍可使用。若同时传入
+`params`，显式指定的 `conf/iou` 优先，包括表示使用模型默认值的 0 或负数；
+省略或传 `None` 则使用 `params` 对应字段。调用不会修改传入的 `params`。
+浮点参数必须有限，本模型使用的置信度和 IoU 阈值不能大于 1。
+
 **Python 示例**（`python/yolov8.py`）常用参数：
 
 | 参数 | 说明 | 默认 |

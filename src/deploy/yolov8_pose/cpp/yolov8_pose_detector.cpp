@@ -124,20 +124,15 @@ YOLOv8PoseDetector::estimate_pose_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
     float iou_threshold, float kp_threshold, int max_det) {
-    if (!std::isfinite(conf_threshold) || conf_threshold > 1.0f ||
-        !std::isfinite(iou_threshold) || iou_threshold > 1.0f) {
-        throw std::invalid_argument("YOLOv8-Pose confidence/IoU thresholds must be finite and <= 1");
-    }
-    if (!std::isfinite(kp_threshold) || kp_threshold > 1.0f) {
-        throw std::invalid_argument("kp_threshold must be finite and <= 1");
-    }
-    const float use_kp = kp_threshold > 0.0f ? kp_threshold : point_confidence_threshold_;
+    const float use_kp = vision_core::resolve_probability_threshold(
+        kp_threshold, point_confidence_threshold_, "kp_threshold");
+    const float use_conf = vision_core::resolve_probability_threshold(
+        conf_threshold, conf_threshold_, "conf_threshold");
+    const float use_iou = vision_core::resolve_probability_threshold(
+        iou_threshold, iou_threshold_, "iou_threshold");
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
-
-    const float use_conf = conf_threshold > 0.0f ? conf_threshold : conf_threshold_;
-    const float use_iou = iou_threshold > 0.0f ? iou_threshold : iou_threshold_;
 
     const cv::Size orig_size(
         input.image.cols,

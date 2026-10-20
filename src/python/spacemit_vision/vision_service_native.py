@@ -213,50 +213,64 @@ class VisionServiceNative:
     def infer_image(
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
-        conf: float = -1.0,
-        iou: float = -1.0,
+        conf: Optional[float] = None,
+        iou: Optional[float] = None,
         prompts: Optional[List[str]] = None,
+        *,
+        params: Optional[object] = None,
     ) -> Tuple[object, List]:
         """Run image inference; returns flat ``VisionServiceResult`` list for compatibility.
 
-        ``conf`` / ``iou`` <= 0 use each model's configured defaults. Positive values apply
-        only to this call.
+        ``params`` accepts all per-call overrides supported by the model.
+        Explicit ``conf`` / ``iou`` override the corresponding fields in ``params``;
+        None leaves them unchanged. Values <= 0 use model defaults. The supplied
+        params object is never modified.
 
         ``prompts`` is only used by open-vocabulary models (e.g. YOLO-World): pass a list of
         text labels to set/override the vocabulary for this call. Empty/None -> use the
         model's configured default vocabulary. Ignored by other models. Requires a numpy
         image (not a path).
         """
+        if params is None:
+            params = VisionServiceInferParams()
         if prompts:
             arr = np.ascontiguousarray(image_or_path)
             if arr.dtype != np.uint8:
                 raise TypeError("image must be uint8 BGR (HxWx3)")
             status, results, response = self._svc.infer_image_prompts(
-                image_bgr_uint8=arr, prompts=list(prompts), conf=conf, iou=iou
+                image_bgr_uint8=arr, prompts=list(prompts), conf=conf, iou=iou,
+                params=params,
             )
         elif isinstance(image_or_path, str):
             status, results, response = self._svc.infer_image(
-                image_path=image_or_path, conf=conf, iou=iou
+                image_path=image_or_path, conf=conf, iou=iou, params=params
             )
         else:
             arr = np.ascontiguousarray(image_or_path)
             if arr.dtype != np.uint8:
                 raise TypeError("image must be uint8 BGR (HxWx3)")
             status, results, response = self._svc.infer_image(
-                image_bgr_uint8=arr, conf=conf, iou=iou
+                image_bgr_uint8=arr, conf=conf, iou=iou, params=params
             )
         if status == VisionServiceStatus.OK:
             self._last_response = response
         return status, results
 
     @_serialized
-    def infer_image_points(self, image, points, labels) -> Tuple[object, List]:
-        """Prompt segmentation using original-image (x,y) points and SAM labels."""
+    def infer_image_points(
+        self, image, points, labels, *, params: Optional[object] = None,
+    ) -> Tuple[object, List]:
+        """Use original-image (x,y) points and SAM labels, with optional params.
+
+        Only parameters consumed by the model affect its output.
+        """
+        if params is None:
+            params = VisionServiceInferParams()
         arr = np.ascontiguousarray(image)
         if arr.dtype != np.uint8 or arr.ndim != 3 or arr.shape[2] != 3:
             raise TypeError("image must be uint8 BGR (HxWx3)")
         status, results, response = self._svc.infer_image_points(
-            image_bgr_uint8=arr, points=points, labels=labels
+            image_bgr_uint8=arr, points=points, labels=labels, params=params
         )
         if status == VisionServiceStatus.OK:
             self._last_response = response

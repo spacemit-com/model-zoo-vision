@@ -8,6 +8,8 @@
 #ifndef VISION_INFER_TYPES_H
 #define VISION_INFER_TYPES_H
 
+#include <cmath>
+#include <stdexcept>
 #include <string>
 #include <variant>
 #include <vector>
@@ -92,6 +94,17 @@ struct InferParams {
     std::vector<cv::Point2f> point_coords;
     std::vector<int> point_labels;
 };
+
+// For probability-valued overrides only. Nonpositive finite values preserve
+// the model default; score domains such as RTMPose use their own validation.
+inline float resolve_probability_threshold(
+    float value, float default_value, const char* name) {
+    if (!std::isfinite(value) || value > 1.0f) {
+        throw std::invalid_argument(
+            std::string(name) + " must be finite and <= 1 (<= 0 uses the model default)");
+    }
+    return value > 0.0f ? value : default_value;
+}
 
 struct InferRequest {
     InferInput input;

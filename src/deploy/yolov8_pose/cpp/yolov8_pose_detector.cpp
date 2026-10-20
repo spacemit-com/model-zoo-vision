@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -63,6 +64,12 @@ YOLOv8PoseDetector::YOLOv8PoseDetector(const std::string& model_path,
         point_confidence_threshold_(point_confidence_threshold),
         num_threads_(num_threads),
         provider_(provider) {
+    if (!std::isfinite(conf_threshold_) || conf_threshold_ < 0.0f || conf_threshold_ > 1.0f ||
+        !std::isfinite(iou_threshold_) || iou_threshold_ < 0.0f || iou_threshold_ > 1.0f ||
+        !std::isfinite(point_confidence_threshold_) || point_confidence_threshold_ < 0.0f ||
+        point_confidence_threshold_ > 1.0f) {
+        throw std::invalid_argument("YOLOv8-Pose thresholds must be finite and in [0,1]");
+    }
     enable_accelerated_image_preprocess();
     if (!lazy_load) {
         load_model();
@@ -74,6 +81,12 @@ void YOLOv8PoseDetector::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
+    if (input_shape_.size() != 4 || input_shape_[0] > 1 || input_shape_[1] != 3 ||
+        input_shape_[2] <= 0 || input_shape_[3] <= 0 ||
+        input_shape_[2] > std::numeric_limits<int>::max() ||
+        input_shape_[3] > std::numeric_limits<int>::max()) {
+        throw std::runtime_error("YOLOv8-Pose expects float32 input [1,3,H,W] with fixed positive H,W");
+    }
     model_loaded_ = true;
 }
 
@@ -107,7 +120,15 @@ vision_common::PoseResultList
 YOLOv8PoseDetector::estimate_pose_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
-    float iou_threshold) {
+    float iou_threshold, float kp_threshold, int max_det) {
+    if (!std::isfinite(conf_threshold) || conf_threshold > 1.0f ||
+        !std::isfinite(iou_threshold) || iou_threshold > 1.0f) {
+        throw std::invalid_argument("YOLOv8-Pose confidence/IoU thresholds must be finite and <= 1");
+    }
+    if (!std::isfinite(kp_threshold) || kp_threshold > 1.0f) {
+        throw std::invalid_argument("kp_threshold must be finite and <= 1");
+    }
+    const float use_kp = kp_threshold > 0.0f ? kp_threshold : point_confidence_threshold_;
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
@@ -152,7 +173,8 @@ YOLOv8PoseDetector::estimate_pose_input(
 
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::PoseResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::PoseResultList results = postprocess_impl(
+        outputs, orig_size, use_conf, use_iou, use_kp, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -183,7 +205,8 @@ vision_core::InferResponse YOLOv8PoseDetector::Run(const vision_core::InferReque
         estimate_pose_input(
             *image_input,
             request.params.conf_threshold,
-            request.params.iou_threshold);
+            request.params.iou_threshold, request.params.kp_threshold,
+            request.params.max_det);
     vision_core::InferResponse response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
@@ -202,12 +225,31 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     float conf_threshold,
     float iou_threshold) {
 
+    return postprocess_impl(outputs, orig_size, conf_threshold, iou_threshold,
+        point_confidence_threshold_, -1);
+}
+
+vision_common::PoseResultList YOLOv8PoseDetector::postprocess_impl(
+    std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+    float conf_threshold, float iou_threshold, float kp_threshold, int max_det) {
+    if (outputs.empty() || !outputs[0].IsTensor()) {
+        throw std::runtime_error("YOLOv8-Pose expects a float32 [1,56,N] output");
+    }
+    const auto info = outputs[0].GetTensorTypeAndShapeInfo();
+    const auto shape = info.GetShape();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        shape.size() != 3 || shape[0] != 1 || shape[1] != 56 || shape[2] < 0 ||
+        shape[2] > std::numeric_limits<int>::max() ||
+        orig_size.width <= 0 || orig_size.height <= 0) {
+        throw std::runtime_error("YOLOv8-Pose expects float32 [1,56,N] for 17 keypoints and a positive image size");
+    }
+    if (max_det == 0) return {};
+
     // Get output data
     const float* output_data = outputs[0].GetTensorMutableData<float>();
     auto dets_tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
     std::vector<int64_t> dets_dims = dets_tensor_info.GetShape();
 
-    int offset = static_cast<int>(dets_dims[1]);  // 56
     int anchors = static_cast<int>(dets_dims[2]);  // 2100
 
     int inputWidth = static_cast<int>(input_shape_[3]);
@@ -219,13 +261,18 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     int unpad_w = static_cast<int>(std::round(orig_size.width * ratio));
     int unpad_h = static_cast<int>(std::round(orig_size.height * ratio));
 
-    float dw = (inputWidth - unpad_w) / 2.0f;
-    float dh = (inputHeight - unpad_h) / 2.0f;
+    const float dw = std::round((inputWidth - unpad_w) / 2.0f - 0.1f);
+    const float dh = std::round((inputHeight - unpad_h) / 2.0f - 0.1f);
 
     // First pass: extract all detections with confidence > threshold
     vision_common::PoseResultList objects;
     for (int j = 0; j < anchors; ++j) {
-        if (output_data[4 * anchors + j] > conf_threshold) {
+        if (std::isfinite(output_data[4 * anchors + j]) &&
+            output_data[4 * anchors + j] > conf_threshold) {
+            if (!std::isfinite(output_data[j]) || !std::isfinite(output_data[anchors + j]) ||
+                !std::isfinite(output_data[2 * anchors + j]) ||
+                !std::isfinite(output_data[3 * anchors + j]) ||
+                output_data[2 * anchors + j] <= 0.0f || output_data[3 * anchors + j] <= 0.0f) continue;
             // Decode box
             float half_width = output_data[2 * anchors + j] / 2;
             float half_height = output_data[3 * anchors + j] / 2;
@@ -234,6 +281,8 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
             float x2 = (output_data[j] + half_width - dw) / ratio;
             float y2 = (output_data[anchors + j] + half_height - dh) / ratio;
 
+            if (!std::isfinite(x1) || !std::isfinite(y1) ||
+                !std::isfinite(x2) || !std::isfinite(y2)) continue;
             // Clamp to image bounds
             const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
             const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
@@ -253,19 +302,24 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
             // Decode keypoints and count visible ones
             det.keypoints.reserve(17);
             int visible_count = 0;
+            bool finite_keypoints = true;
             for (int k = 0; k < 17; ++k) {
                 vision_common::KeyPoint kp;
                 kp.x = (output_data[(5 + k * 3) * anchors + j] - dw) / ratio;
                 kp.y = (output_data[(5 + k * 3 + 1) * anchors + j] - dh) / ratio;
                 kp.visibility = output_data[(5 + k * 3 + 2) * anchors + j];
+                if (!std::isfinite(kp.x) || !std::isfinite(kp.y) || !std::isfinite(kp.visibility)) {
+                    finite_keypoints = false;
+                    break;
+                }
                 det.keypoints.push_back(kp);
-                if (kp.visibility > point_confidence_threshold_) {
+                if (kp.visibility > kp_threshold) {
                     visible_count++;
                 }
             }
 
             // Filter detections with too few visible keypoints (likely false positives)
-            if (visible_count < 3) {
+            if (!finite_keypoints || visible_count < 3) {
                 continue;
             }
 
@@ -274,7 +328,10 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     }
 
     // NMS preserves keypoints since they're already in the PoseResult objects
-    return nms(objects, iou_threshold);
+    auto results = nms(objects, iou_threshold);
+    vision_common::limit_by_score(results, max_det,
+        [](const auto& result) { return result.score; });
+    return results;
 }
 
 float YOLOv8PoseDetector::calculate_iou(const vision_common::PoseResult& det1, const vision_common::PoseResult& det2) {

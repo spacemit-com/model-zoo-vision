@@ -5,9 +5,11 @@
 
 #include "landmark2d106.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -52,6 +54,10 @@ Landmark2d106::Landmark2d106(const std::string& model_path,
         provider_(provider),
         input_mean_(input_mean),
         input_std_(input_std) {
+    if (!std::isfinite(input_mean_) || !std::isfinite(input_std_) || input_std_ <= 0.0f ||
+        !std::isfinite(1.0f / input_std_)) {
+        throw std::invalid_argument("Landmark2d106 normalization must be finite with positive std and finite reciprocal");
+    }
     if (!lazy_load) {
         load_model();
     }
@@ -62,9 +68,12 @@ void Landmark2d106::load_model() {
         return;
     }
     init_session(num_threads_, provider_);
-    if (input_shape_.size() >= 4) {
-        input_size_ = static_cast<int>(input_shape_[2]);
+    if (input_shape_.size() != 4 || input_shape_[0] > 1 || input_shape_[1] != 3 ||
+        input_shape_[2] <= 0 || input_shape_[2] != input_shape_[3] ||
+        input_shape_[2] > std::numeric_limits<int>::max()) {
+        throw std::runtime_error("Landmark2d106 expects input [1,3,S,S] with fixed positive S");
     }
+    input_size_ = static_cast<int>(input_shape_[2]);
     model_loaded_ = true;
 }
 
@@ -74,8 +83,7 @@ cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
     }
     ensure_model_loaded();
 
-    const float std_safe = (std::abs(input_std_) > 1e-6f) ? input_std_ : 1.0f;
-    const float inv_std = static_cast<float>(1.0 / std_safe);
+    const float inv_std = static_cast<float>(1.0 / input_std_);
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = input_size_;
     spec.output_height = input_size_;
@@ -104,19 +112,15 @@ vision_common::PoseResultList Landmark2d106::estimate_pose_input(
             ? input.image.rows * 2 / 3
             : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
-    const float safe_std =
-        std::abs(input_std_) > 1.0e-6F
-        ? input_std_
-        : 1.0F;
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = input_size_;
     spec.output_height = input_size_;
     spec.output_rgb = true;
     spec.mean = {input_mean_, input_mean_, input_mean_};
     spec.scale = {
-        1.0F / safe_std,
-        1.0F / safe_std,
-        1.0F / safe_std};
+        1.0F / input_std_,
+        1.0F / input_std_,
+        1.0F / input_std_};
     auto prepared = prepare_image(
         input, spec,
         [this](const cv::Mat& bgr) {
@@ -160,6 +164,7 @@ vision_core::InferResponse Landmark2d106::Run(const vision_core::InferRequest& r
     vision_common::PoseResultList task_results =
         estimate_pose_input(*image_input);
     vision_core::InferResponse response;
+    if (request.params.max_det == 0) return response;
     response.results.reserve(task_results.size());
     for (auto& item : task_results) {
         response.results.emplace_back(std::move(item));
@@ -173,14 +178,22 @@ std::vector<vision_core::ModelCapability> Landmark2d106::get_capabilities() cons
 
 vision_common::PoseResultList Landmark2d106::postprocess(std::vector<Ort::Value>& outputs,
                                                         const cv::Size& face_size) {
-    if (outputs.empty()) {
-        throw std::runtime_error("Landmark2d106: empty outputs");
+    if (outputs.empty() || !outputs[0].IsTensor()) {
+        throw std::runtime_error("Landmark2d106 expects a float32 tensor of 106 coordinate pairs");
     }
-
+    const auto info = outputs[0].GetTensorTypeAndShapeInfo();
+    const auto shape = info.GetShape();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        (shape != std::vector<int64_t>{212} && shape != std::vector<int64_t>{1, 212} &&
+        shape != std::vector<int64_t>{1, 106, 2}) || face_size.width <= 0 || face_size.height <= 0) {
+        throw std::runtime_error("Landmark2d106 expects float32 [212], [1,212] or [1,106,2] output");
+    }
     const float* landmarks_data = outputs[0].GetTensorData<float>();
-    auto shape = outputs[0].GetTensorTypeAndShapeInfo().GetShape();
-    const int num_values = shape.size() >= 2 ? static_cast<int>(shape[1]) : 212;
-    const int num_points = num_values / 2;
+    if (!std::all_of(landmarks_data, landmarks_data + 212,
+        [](float value) { return std::isfinite(value); })) {
+        throw std::runtime_error("Landmark2d106 returned non-finite coordinates");
+    }
+    constexpr int num_points = 106;
 
     vision_common::PoseResult det;
     det.bbox = vision_common::BoundingBox{0.0f, 0.0f,
@@ -197,6 +210,9 @@ vision_common::PoseResultList Landmark2d106::postprocess(std::vector<Ort::Value>
         const float y_input = (y_norm + 1.0f) * (static_cast<float>(input_size_) * 0.5f);
         kp.x = x_input * static_cast<float>(face_size.width) / static_cast<float>(input_size_);
         kp.y = y_input * static_cast<float>(face_size.height) / static_cast<float>(input_size_);
+        if (!std::isfinite(kp.x) || !std::isfinite(kp.y)) {
+            throw std::runtime_error("Landmark2d106 coordinate transform overflowed");
+        }
         kp.visibility = 1.0f;
         det.keypoints.push_back(kp);
     }

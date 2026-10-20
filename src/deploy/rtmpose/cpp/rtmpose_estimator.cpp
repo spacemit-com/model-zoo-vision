@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
@@ -46,6 +47,9 @@ cv::Mat preprocess(const cv::Mat& warped) {
 }
 
 std::pair<int, float> peak(const float* values, int count) {
+    if (!std::all_of(values, values + count, [](float value) { return std::isfinite(value); })) {
+        throw std::runtime_error("RTMPose returned non-finite SimCC scores");
+    }
     const float* best = std::max_element(values, values + count);
     return {static_cast<int>(best - values), *best};
 }
@@ -72,6 +76,9 @@ RTMPoseEstimator::RTMPoseEstimator(const std::string& model_path, int num_thread
         num_threads_(num_threads),
         provider_(provider),
         confidence_threshold_(confidence_threshold) {
+    if (!std::isfinite(confidence_threshold_)) {
+        throw std::invalid_argument("RTMPose confidence threshold must be finite");
+    }
     if (!lazy_load) load_model();
 }
 
@@ -103,6 +110,9 @@ std::vector<vision_core::ModelCapability> RTMPoseEstimator::get_capabilities() c
 vision_core::InferResponse RTMPoseEstimator::Run(const vision_core::InferRequest& request) {
     if (request.intent != vision_core::InferIntent::kEstimatePose) {
         return unsupported_intent_response(request.intent);
+    }
+    if (!std::isfinite(request.params.conf_threshold)) {
+        throw std::invalid_argument("RTMPose confidence threshold must be finite");
     }
     const auto* input = std::get_if<vision_core::ImageInput>(&request.input);
     if (input == nullptr || input->image.empty()) {
@@ -141,8 +151,14 @@ vision_core::InferResponse RTMPoseEstimator::Run(const vision_core::InferRequest
         std::chrono::duration<double, std::milli>(pre_end - begin).count());
     std::vector<Ort::Value> outputs = run_session(blob);
     const auto post_begin = std::chrono::steady_clock::now();
-    const auto x_shape = outputs[simcc_x_index_].GetTensorTypeAndShapeInfo().GetShape();
-    const auto y_shape = outputs[simcc_y_index_].GetTensorTypeAndShapeInfo().GetShape();
+    const auto x_info = outputs[simcc_x_index_].GetTensorTypeAndShapeInfo();
+    const auto y_info = outputs[simcc_y_index_].GetTensorTypeAndShapeInfo();
+    if (x_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        y_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("RTMPose expects float32 SimCC outputs");
+    }
+    const auto x_shape = x_info.GetShape();
+    const auto y_shape = y_info.GetShape();
     if (x_shape != std::vector<int64_t>{1, kKeypointCount, kInputWidth * 2} ||
         y_shape != std::vector<int64_t>{1, kKeypointCount, kInputHeight * 2}) {
         throw std::runtime_error("RTMPose SimCC tensor shape mismatch");
@@ -169,11 +185,12 @@ vision_core::InferResponse RTMPoseEstimator::Run(const vision_core::InferRequest
         score_sum += score;
     }
     pose.score = score_sum / kKeypointCount;
+    if (!std::isfinite(pose.score)) throw std::runtime_error("RTMPose pose score overflowed");
     vision_core::InferResponse response;
     const float threshold = request.params.conf_threshold > 0.0F
         ? request.params.conf_threshold
         : confidence_threshold_;
-    if (pose.score >= threshold) response.results.emplace_back(std::move(pose));
+    if (request.params.max_det != 0 && pose.score >= threshold) response.results.emplace_back(std::move(pose));
     const auto end = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(end - post_begin).count());
     set_runtime_total_ms(std::chrono::duration<double, std::milli>(end - begin).count());

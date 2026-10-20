@@ -39,12 +39,18 @@ bash scripts/download_assets.sh
 | `model_path` | 检测模型路径 | `~/.cache/models/vision/buffalo_l/det_10g_fixed.q.onnx` |
 | `test_image` | 默认测试图片 | `~/.cache/assets/image/006_test.jpg` |
 | `default_params.conf_threshold` | 人脸置信度阈值 | `0.5` |
-| `default_params.nms_threshold` | NMS IoU 阈值 | `0.4` |
+| `default_params.iou_threshold` | NMS IoU 阈值 | `0.4` |
 | `default_params.num_threads` | 推理线程数 | `8` |
-| `default_params.providers` | 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 CPU 对照可将 provider 改为 `CPUExecutionProvider`。
 示例使用 BGR 图片和 CPU 预处理，不提供摄像头、MPP 或 OpenCL 参数。
+
+`default_params.iou_threshold` 设置 NMS IoU 阈值；旧名称 `nms_threshold`
+仍可使用，两者同时存在时以 `iou_threshold` 为准。单次请求的
+`conf_threshold`、`iou_threshold` 为正数时覆盖 YAML 默认值，`<=0` 使用默认值。
+`max_det` 仅通过 `VisionServiceInferParams` 设置：负数不限制数量，0 返回空结果，
+正数限制人脸数量；不要写入本模型的 `default_params`。
 
 ## 3. 命令行 / API 参数（与本模块相关）
 

@@ -26,11 +26,18 @@ bash scripts/download_assets.sh
 |--------|------|------------|
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov5-face/yolov5n-face_cut.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
-| `default_params.conf_thres` / `conf_threshold` | 置信度阈值 | `0.25` |
-| `default_params.iou_thres` / `iou_threshold` | NMS IoU 阈值 | `0.45` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.conf_threshold` | 置信度阈值 | `0.25` |
+| `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
+
+YAML 使用 `default_params.conf_threshold` 和 `default_params.iou_threshold`。
+旧名称 `conf_thres`、`iou_thres` 仍可使用；新旧名称同时出现时以统一名称为准。
+Python 示例的 `--conf-threshold`、`--iou-threshold` 仅覆盖本次运行；
+API 中对应的请求参数为正数时覆盖 YAML，`<=0` 使用配置默认值，例如
+`service.infer_image(image, conf=0.3, iou=0.4)`。`max_det` 仅通过
+`VisionServiceInferParams` 设置，负数不限制、0 返回空结果、正数限制框数量。
 
 ## 3. 命令行 / API 参数（与本模块相关）
 

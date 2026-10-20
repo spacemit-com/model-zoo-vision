@@ -224,6 +224,10 @@ void BaseModel::init_session(
         return;
     }
 
+    if (provider != "SpaceMITExecutionProvider" && provider != "CPUExecutionProvider") {
+        throw std::invalid_argument("Unsupported execution provider: " + provider);
+    }
+
     model_path_ = resolve_and_check_model_path(model_path_);
 
     Ort::SessionOptions session_options;
@@ -233,7 +237,8 @@ void BaseModel::init_session(
     if (provider == "SpaceMITExecutionProvider") {
         Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
         if (!status.IsOK()) {
-            std::cerr << "SpaceMIT EP init failed: " << status.GetErrorMessage() << std::endl;
+            throw std::runtime_error(
+                "SpaceMIT EP init failed: " + std::string(status.GetErrorMessage()));
         }
     }
 

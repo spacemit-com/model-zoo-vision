@@ -49,11 +49,16 @@ RF-DETR 的 COCO 输出使用原始 category id 作为类别槽位，包含未�
 | `default_params.conf_threshold` | 置信度阈值 | `0.3` |
 | `default_params.max_det` | 最多保留的检测结果数 | `300` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 | `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
 
 默认配置使用 Nano。切换到 Small 或 Medium 时只需通过 `--model-path` 指定模型，
 检测器会从 ONNX 输入自动读取分辨率。
+
+`default_params.max_det` 设置默认检测数量上限，必须为正数。
+单次请求可通过 `VisionServiceInferParams.max_det` 覆盖：负数使用 YAML 默认值，
+0 返回空检测结果，正数设置本次数量上限。`conf_threshold` 的正数请求值覆盖
+YAML 默认值，`<=0` 使用默认值。
 
 ## 3. 命令行参数（与本模块相关）
 

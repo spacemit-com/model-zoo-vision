@@ -27,15 +27,21 @@ bash scripts/download_assets.sh
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolop/yolop-288-512-sim.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/020_yolop.jpg` |
 | `label_file_path` | 类别标签文件 | `assets/labels/yolop.txt` |
-| `image_size` | 模型输入尺寸 | `[288, 512]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |
 | `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
 | `default_params.max_det` | 最大检测数量 | `300` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其他示例一致，
 不在此重复。
+
+`default_params.max_det` 设置默认检测数量上限，建议使用正整数。
+单次请求可通过 `VisionServiceInferParams.max_det` 覆盖：负数使用 YAML 默认值，
+0 不返回检测框（仍保留分割输出），正数设置本次数量上限。
+`conf_threshold` 的正数请求值覆盖
+YAML 默认值，`<=0` 使用默认值。
 
 ## 3. 命令行参数（与本模块相关）
 

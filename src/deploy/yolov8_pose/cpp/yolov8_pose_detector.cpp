@@ -24,6 +24,8 @@
 namespace vision_deploy {
 
 std::unique_ptr<vision_core::BaseModel> YOLOv8PoseDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "conf_threshold", "iou_threshold", "kp_threshold", "point_confidence_threshold"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for YOLOv8PoseDetector");
@@ -37,7 +39,8 @@ std::unique_ptr<vision_core::BaseModel> YOLOv8PoseDetector::create(const YAML::N
     float conf_threshold = vision_core::yaml_utils::getFloat(default_params, "conf_threshold", 0.25f);
     float iou_threshold = vision_core::yaml_utils::getFloat(default_params, "iou_threshold", 0.45f);
     float point_confidence_threshold =
-        vision_core::yaml_utils::getFloat(default_params, "point_confidence_threshold", 0.2f);
+        vision_core::yaml_utils::getAliasedFloat(
+            default_params, "kp_threshold", "point_confidence_threshold", 0.2f);
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 

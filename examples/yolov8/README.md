@@ -38,10 +38,10 @@ bash scripts/download_assets.sh
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/yolov8/yolov8n_no_dfl.q.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
 | `label_file_path` | 类别标签文件（如 COCO） | `assets/labels/coco.txt` |
-| `image_size` | 输入尺寸 [宽, 高] | `[640, 640]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |
 | `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 | `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其它示例一致，不在此重复。
@@ -49,6 +49,13 @@ bash scripts/download_assets.sh
 `auto` 不与 MPP 绑定：普通 BGR 图片仍走 CPU；当调用方提供
 `NV12 + DMA-BUF` 时尝试 OpenCL。显式 `opencl` 用于强制验证，
 只接受 `NV12 + DMA-BUF`，OpenCL 不可用或输入不兼容时均不会回退。
+
+`conf_threshold`、`iou_threshold` 可在 YAML 设置默认值；单次请求传入
+正数时覆盖配置，`<=0` 使用默认值。`max_det` 通过 `VisionServiceInferParams`
+设置，负数不限制、0 返回空结果、正数限制数量；本模型不读取 YAML 中的
+`max_det`，将其放入 `default_params` 会报错。
+`providers` 使用单元素列表，例如 `[SpaceMITExecutionProvider]` 或
+`[CPUExecutionProvider]`；空列表、多项和未知名称会报错。
 
 ## 3. 命令行 / API 参数（与本模块相关）
 

@@ -5,6 +5,7 @@
 
 #include "vision_model_factory.h"
 
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -99,6 +100,14 @@ std::unique_ptr<BaseModel> ModelFactory::createModelFromConfigPath(
         config = loadYamlConfigFromPath(config_path, model_path_override);
     }
 
+    if (!config.IsMap()) {
+        throw std::invalid_argument("Model configuration must be a map: " + config_path);
+    }
+    if (config["image_size"]) {
+        std::clog << "Config " << config_path
+                    << ": image_size is informational only; input dimensions use the ONNX shape and model defaults"
+                    << std::endl;
+    }
     std::string class_path = getString(config, "class");
     if (class_path.empty()) {
         throw std::runtime_error("class not found in config file: " + config_path);

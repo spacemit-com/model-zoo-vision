@@ -23,10 +23,10 @@ bash scripts/download_assets.sh
 | 配置项 | 含义 | 默认 |
 |--------|------|------|
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/adaface/adaface_ir101_webface12m_merged.dynq.onnx` |
-| `image_size` | 输入尺寸 [高, 宽] | `[112, 112]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `test_image1` / `test_image2` | 示例人脸图路径 | `003_face0.png` / `004_face1.png` |
 | `default_params.num_threads` | 推理线程数 | `4` |
-| `default_params.providers` | 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
 ## 3. 命令行参数
 

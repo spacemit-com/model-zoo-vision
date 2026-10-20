@@ -217,8 +217,9 @@ inline int get_track_id(const Result& r) {
 // Inference request / response
 // ============================================================================
 
-// Inference-time parameters. A field <= 0 (or <0 for ints) means "use the
-// model default from config".
+// Per-call overrides: floats <= 0 and integers < 0 use model defaults, which
+// may come from supported YAML fields or built-in values. Zero top_k/max_det
+// requests no results. Parameters apply only to models that consume them.
 struct VisionServiceInferParams {
     float conf_threshold = -1.0f;
     float iou_threshold = -1.0f;

@@ -24,6 +24,7 @@
 namespace vision_deploy {
 
 std::unique_ptr<vision_core::BaseModel> ArcFaceRecognizer::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"norm_std"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for ArcFaceRecognizer");
@@ -50,6 +51,9 @@ ArcFaceRecognizer::ArcFaceRecognizer(const std::string& model_path,
         num_threads_(num_threads),
         provider_(provider),
         norm_std_(norm_std) {
+    if (!std::isfinite(norm_std_) || norm_std_ <= 0.0f || !std::isfinite(1.0f / norm_std_)) {
+        throw std::invalid_argument("ArcFace norm_std must be finite and positive with a finite reciprocal");
+    }
     if (!lazy_load) {
         load_model();
     }

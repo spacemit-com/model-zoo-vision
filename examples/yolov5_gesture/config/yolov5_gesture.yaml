@@ -2,7 +2,6 @@
 model_path: ~/.cache/models/vision/yolov5/yolov5_gesture.q.onnx
 test_image: ~/.cache/assets/image/012_gesture.jpg
 label_file_path: assets/labels/gesture.txt
-image_size: [640, 640]
 class: deploy.yolov5_gesture.YOLOv5_GestureDetector
 default_params:
   conf_threshold: 0.8

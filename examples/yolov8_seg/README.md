@@ -18,7 +18,13 @@ bash scripts/download_assets.sh
 
 ## 2. 配置文件说明（config/yolov8_seg.yaml）
 
-本示例使用的配置文件为 `config/yolov8_seg.yaml`。与**本模块强相关**的字段：`model_path`、`test_image`、`label_file_path`、`image_size`、`default_params.conf_threshold`、`default_params.iou_threshold`、`default_params.providers` 等，含义与 YOLOv8 检测类似。
+本示例使用的配置文件为 `config/yolov8_seg.yaml`。与**本模块强相关**的字段：`model_path`、`test_image`、`label_file_path`、`default_params.conf_threshold`、`default_params.iou_threshold`、`default_params.providers` 等，含义与 YOLOv8 检测类似。
+
+单次请求的正数 `conf_threshold`、`iou_threshold` 覆盖 YAML 默认值，
+`<=0` 使用配置默认值。`mask_threshold`、`max_det` 通过
+`VisionServiceInferParams` 设置，不在本模型的 YAML 中配置：
+`mask_threshold` 有效范围为 `(0,1]`，`<=0` 使用默认值 `0.5`；
+`max_det` 为负数时不限制，0 返回空结果，正数限制实例数量。
 
 ## 3. 命令行 / API 参数（与本模块相关）
 

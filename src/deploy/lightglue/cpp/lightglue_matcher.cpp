@@ -161,6 +161,8 @@ LightGlueMatcher::LightGlueMatcher(
 std::unique_ptr<vision_core::BaseModel> LightGlueMatcher::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "feature_type", "num_keypoints", "descriptor_dim", "filter_threshold"});
     const std::string model_path =
         vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {

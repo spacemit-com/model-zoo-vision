@@ -45,10 +45,10 @@ DEIMv2 推理不会使用该参数。
 | `model_path` | ONNX 模型路径 | `~/.cache/models/vision/deimv2/deimv2n.fp16.onnx` |
 | `test_image` | 默认测试图片路径 | `~/.cache/assets/image/006_test.jpg` |
 | `label_file_path` | COCO 类别标签文件 | `assets/labels/coco.txt` |
-| `image_size` | 模型输入尺寸 | `[640, 640]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 | `default_params.conf_threshold` | 置信度阈值 | `0.4` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 | `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
 | `default_params.preprocess.normalize` | 按模型文件名识别归一化，也可显式设为 `true` / `false` | `auto` |
 

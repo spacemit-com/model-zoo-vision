@@ -3,7 +3,6 @@
 model_path: ~/.cache/models/vision/efficientnet/efficientnet_v2_s.q.onnx
 test_image: ~/.cache/assets/image/005_kitten.jpg
 label_file_path: assets/labels/imagenet.txt
-image_size: [224, 224]
 class: deploy.resnet.ResNetClassifier
 default_params:
   num_threads: 8

@@ -131,6 +131,7 @@ std::unique_ptr<vision_core::BaseModel>
 YOLO26DepthEstimator::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {});
     const std::string model_path =
         vision_core::yaml_utils::getString(
             config,

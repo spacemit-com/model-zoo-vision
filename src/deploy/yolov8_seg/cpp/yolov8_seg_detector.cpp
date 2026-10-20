@@ -66,6 +66,7 @@ std::vector<int64_t> seg_tensor_shape(const Ort::Value& tensor, size_t rank) {
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> YOLOv8SegDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {"conf_threshold", "iou_threshold"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for YOLOv8SegDetector");

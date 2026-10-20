@@ -75,6 +75,10 @@ vision_operators::CpuChannelTransform make_ppocr_det_cpu_transform()
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> PPOCRDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "rec_model_path", "dict_path", "det_limit_side_len", "det_input_h", "det_input_w",
+        "det_db_thresh", "det_db_box_thresh", "det_db_unclip_ratio", "det_box_nms_thresh",
+        "rec_img_h", "rec_img_w_max"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for PPOCRDetector");

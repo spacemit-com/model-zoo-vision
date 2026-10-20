@@ -40,6 +40,7 @@ public:
 
     static std::unique_ptr<vision_core::BaseModel> create(
         const YAML::Node& config, bool lazy) {
+        vision_core::yaml_utils::validateModelParams(config, {"decoder_model_path"});
         return std::make_unique<MobileSAMSegmentor>(config, lazy);
     }
 

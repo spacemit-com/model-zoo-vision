@@ -56,6 +56,8 @@ std::vector<std::string> parsePrompts(const YAML::Node& default_params) {
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> YoloWorldDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "clip_model_path", "bpe_merges_path", "prompts", "conf_threshold", "iou_threshold"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for YoloWorldDetector");

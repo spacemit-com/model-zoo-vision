@@ -37,7 +37,7 @@ python3 examples/siglip2/scripts/export_tokenizer_bin.py \
 | `scene_labels_path` | 标签文件（可选；未设且无 `--text`/`--labels` 时用内置 3 类） | 无 |
 | `default_params.text_model_path` | 文本 ONNX | `siglip2_text_encoder.dynq.onnx` |
 | `default_params.tokenizer_path` | tokenizer.bin | `~/.cache/models/vision/siglip2/tokenizer.bin` |
-| `image_size` | 视觉输入 | `[224, 224]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 
 文本编码走 `EncodeText` / `svc.encode_text()`。
 

@@ -210,6 +210,7 @@ BANet2D::BANet2D(
 std::unique_ptr<vision_core::BaseModel> BANet2D::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {});
     const std::string model_path =
         vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {

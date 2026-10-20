@@ -50,6 +50,8 @@ vision_operators::ImagePreprocessSpec make_scrfd_preprocess_spec(
 }  // namespace
 
 std::unique_ptr<vision_core::BaseModel> ScrfdDetector::create(const YAML::Node& config, bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "conf_threshold", "iou_threshold", "nms_threshold"});
     std::string model_path = vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {
         throw std::runtime_error("model_path not found in config for ScrfdDetector");
@@ -61,7 +63,8 @@ std::unique_ptr<vision_core::BaseModel> ScrfdDetector::create(const YAML::Node& 
     }
 
     float conf_threshold = vision_core::yaml_utils::getFloat(default_params, "conf_threshold", 0.5f);
-    float nms_threshold = vision_core::yaml_utils::getFloat(default_params, "nms_threshold", 0.4f);
+    float nms_threshold = vision_core::yaml_utils::getAliasedFloat(
+        default_params, "iou_threshold", "nms_threshold", 0.4f);
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
     std::string provider = vision_core::yaml_utils::getProvider(config);
 

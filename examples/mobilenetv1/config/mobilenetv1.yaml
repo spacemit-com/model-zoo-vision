@@ -3,7 +3,6 @@
 model_path: ~/.cache/models/vision/mobilenet/mobilenet_v1.q.onnx
 test_image: ~/.cache/assets/image/005_kitten.jpg
 label_file_path: assets/labels/imagenet.txt
-image_size: [224, 224]
 class: deploy.mobilenet.MobileNetV1Classifier
 default_params:
   # The distributed model already ends with Softmax.

@@ -245,6 +245,8 @@ SuperPointExtractor::SuperPointExtractor(
 std::unique_ptr<vision_core::BaseModel> SuperPointExtractor::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "num_keypoints", "nms_radius", "remove_borders", "feature_type"});
     const std::string model_path =
         vision_core::yaml_utils::getString(config, "model_path");
     if (model_path.empty()) {

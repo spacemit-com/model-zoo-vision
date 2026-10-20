@@ -25,7 +25,7 @@ bash examples/mobileclip2/scripts/download_models.sh
 | `test_image` | 默认测试图 | `007_dog.jpg` |
 | `default_params.text_model_path` | 文本编码 ONNX | `~/.cache/models/vision/mobileclip2/s3/text_encoder.onnx` |
 | `default_params.bpe_merges_path` | CLIP BPE 合并表 | `assets/clip/bpe_merges.txt` |
-| `image_size` | 视觉输入 | `[256, 256]` |
+| ONNX 输入尺寸 | 由模型自动读取，不能通过 YAML 改写 | 见模型文件 |
 
 文本编码走 `EncodeText` / `svc.encode_text()`。输出为 L2 归一化 embedding，比较时用余弦相似度（`EmbeddingSimilarity` / `embedding_similarity`）。
 

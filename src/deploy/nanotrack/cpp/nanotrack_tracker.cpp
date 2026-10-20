@@ -260,6 +260,9 @@ NanoTracker::NanoTracker(
 std::unique_ptr<vision_core::BaseModel> NanoTracker::create(
     const YAML::Node& config,
     bool lazy_load) {
+    vision_core::yaml_utils::validateModelParams(config, {
+        "template_model_path", "head_model_path", "template_num_threads", "head_num_threads",
+        "context_amount", "penalty_k", "window_influence", "learning_rate"});
     const std::string search_model_path =
         vision_core::yaml_utils::getString(config, "model_path");
     const YAML::Node params = config["default_params"];

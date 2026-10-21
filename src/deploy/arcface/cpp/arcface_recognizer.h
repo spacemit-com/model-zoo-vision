@@ -11,8 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
-#include "embedding_utils.h"
 
 namespace YAML {
 class Node;
@@ -26,7 +24,7 @@ namespace vision_deploy {
  * Extracts face embeddings for face recognition tasks.
  * The model should receive aligned face images as input.
  */
-class ArcFaceRecognizer : public vision_core::BaseModel, public vision_core::IEmbeddingModel {
+class ArcFaceRecognizer : public vision_core::BaseModel {
 public:
     ArcFaceRecognizer(const std::string& model_path,
                         int num_threads = 4,
@@ -48,16 +46,6 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    /**
-     * @brief Run inference and return face embedding
-     * @param image Input face image in BGR format
-     * @return Face embedding result with normalized vector (128 dimensions)
-     */
-    vision_common::EmbeddingResult infer_embedding(const cv::Mat& image) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -65,19 +53,11 @@ public:
     // Factory hook: used by vision_core::ModelRegistrar for self-registration
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
-    /**
-     * @brief Compute similarity between two face embeddings
-     * @param embedding1 First face embedding
-     * @param embedding2 Second face embedding
-     * @return Similarity score (-1 to 1, higher means more similar)
-     */
-    static float compute_similarity(const std::vector<float>& embedding1,
-                                    const std::vector<float>& embedding2) {
-        return vision_common::compute_similarity(embedding1, embedding2);
-    }
-
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     std::vector<float> postprocess(std::vector<Ort::Value>& outputs);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::EmbeddingResult infer_embedding_input(

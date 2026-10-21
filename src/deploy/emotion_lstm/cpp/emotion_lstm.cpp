@@ -131,19 +131,10 @@ vision_common::ActionResult EmotionLstm::predict(const float* feats) {
     return result;
 }
 
-vision_core::InferResponse EmotionLstm::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kInferSequence) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* sequence_input = std::get_if<vision_core::SequenceInput>(&request.input);
-    if (sequence_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "EmotionLstm expects SequenceInput";
-        return response;
-    }
+vision_core::InferResponse EmotionLstm::RunImpl(const vision_core::InferRequest& request) {
+    const auto& sequence_input = std::get<vision_core::SequenceInput>(request.input);
     const size_t expected = expected_sequence_size();
-    if (sequence_input->pts.size() != expected) {
+    if (sequence_input.pts.size() != expected) {
         vision_core::InferResponse response;
         response.ok = false;
         response.error_message =
@@ -151,7 +142,7 @@ vision_core::InferResponse EmotionLstm::Run(const vision_core::InferRequest& req
         return response;
     }
     vision_core::InferResponse response;
-    response.results.emplace_back(predict(sequence_input->pts.data()));
+    response.results.emplace_back(predict(sequence_input.pts.data()));
     return response;
 }
 

@@ -59,16 +59,15 @@ Ort::Env& shared_ort_env();
  *
  * Thread Safety Rules:
  * 1. load_model(), warmup(), release() must be called from a single thread
- * 2. Inference methods (detect, classify, etc.) CANNOT be called concurrently
+ * 2. Run() CANNOT be called concurrently
  *    on the same instance from multiple threads
- * 3. ONNX Runtime Session::Run() is NOT thread-safe
+ * 3. Input buffers, tracker state and profiling data belong to the model instance
  *
  * Correct Multi-threading Usage:
  * - Option 1: Create separate model instances for each thread (RECOMMENDED)
  * - Option 2: Use a thread pool with one model instance per worker thread
  * - Option 3: Protect with mutex (NOT recommended, serializes inference)
  *
- * See docs/THREAD_SAFETY.md for detailed examples.
  */
 class BaseModel {
 public:
@@ -134,9 +133,11 @@ public:
 
     /**
      * @brief Unified inference entry (internal; not part of public vision_service.h API).
+     * @note Requires an explicit intent. Validates intent/input types, then calls RunImpl.
      * @thread_safety NOT thread-safe.
      */
-    virtual InferResponse Run(const InferRequest& request) = 0;
+    // This is the first virtual declaration; final prevents bypassing validation.
+    virtual InferResponse Run(const InferRequest& request) final;  // NOLINT(readability/inheritance)
 
     /**
      * @brief Declared inference intents for dispatch validation.
@@ -183,6 +184,10 @@ public:
         const std::string& sampling);
 
 protected:
+    // Run validates the declared intent and input variant before dispatching here.
+    // Models retain validation of input contents and task-specific parameters.
+    virtual InferResponse RunImpl(const InferRequest& request) = 0;
+
     vision_operators::PreprocessFallback preprocess_fallback_{
         vision_operators::PreprocessFallback::kError};
     std::string model_path_;
@@ -206,7 +211,7 @@ protected:
 
     /**
      * @brief Run ONNX Runtime inference
-     * @thread_safety NOT thread-safe. ONNX Runtime Session::Run() is not thread-safe.
+     * @thread_safety NOT thread-safe: updates this model's runtime profile.
      */
     std::vector<Ort::Value> run_session(const cv::Mat& input_blob);
 

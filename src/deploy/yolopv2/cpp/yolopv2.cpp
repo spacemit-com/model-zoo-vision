@@ -383,22 +383,16 @@ vision_core::InferResponse YOLOPv2::infer_input(
     return response;
 }
 
-vision_core::InferResponse YOLOPv2::Run(
+vision_core::InferResponse YOLOPv2::RunImpl(
     const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kSegment) {
-        return {{}, false, "YOLOPv2 supports only kSegment"};
-    }
-    const auto* input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (input == nullptr) {
-        return {{}, false, "YOLOPv2 expects ImageInput"};
-    }
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
     const float conf = vision_core::resolve_probability_threshold(
         request.params.conf_threshold, conf_threshold_, "conf_threshold");
     const float iou = vision_core::resolve_probability_threshold(
         request.params.iou_threshold, iou_threshold_, "iou_threshold");
     const int max_det = request.params.max_det >= 0
         ? request.params.max_det : max_det_;
-    return infer_input(*input, conf, iou, max_det);
+    return infer_input(input, conf, iou, max_det);
 }
 
 std::vector<vision_core::InferIntent> YOLOPv2::supported_intents() const {

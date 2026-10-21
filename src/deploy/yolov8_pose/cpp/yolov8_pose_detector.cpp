@@ -111,14 +111,6 @@ cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image) {
 
 
 
-vision_common::PoseResultList YOLOv8PoseDetector::estimate_pose(const cv::Mat& image,
-                                                                float conf_threshold,
-                                                                float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return estimate_pose_input(input, conf_threshold, iou_threshold);
-}
-
 vision_common::PoseResultList
 YOLOv8PoseDetector::estimate_pose_input(
     const vision_core::ImageInput& input,
@@ -187,30 +179,16 @@ std::vector<vision_core::InferIntent> YOLOv8PoseDetector::supported_intents() co
     return {vision_core::InferIntent::kEstimatePose};
 }
 
-vision_core::InferResponse YOLOv8PoseDetector::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kEstimatePose) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "YOLOv8PoseDetector expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse YOLOv8PoseDetector::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::PoseResultList task_results =
         estimate_pose_input(
-            *image_input,
+            image_input,
             request.params.conf_threshold,
             request.params.iou_threshold, request.params.kp_threshold,
             request.params.max_det);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> YOLOv8PoseDetector::get_capabilities() const {

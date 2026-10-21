@@ -457,11 +457,64 @@ void BaseModel::enable_accelerated_image_preprocess() noexcept
     accelerated_image_preprocess_enabled_ = true;
 }
 
+InferResponse BaseModel::Run(const InferRequest& request)
+{
+    if (request.intent == InferIntent::kUnspecified) {
+        InferResponse response;
+        response.ok = false;
+        response.error_code = InferErrorCode::kInvalidArgument;
+        response.error_message = "inference intent must be specified";
+        return response;
+    }
+    const auto intents = supported_intents();
+    if (std::find(intents.begin(), intents.end(), request.intent) == intents.end()) {
+        return unsupported_intent_response(request.intent);
+    }
+
+    bool input_matches = false;
+    switch (request.intent) {
+    case InferIntent::kUnspecified:
+        break;
+    case InferIntent::kStereoDepth:
+        input_matches = std::holds_alternative<StereoImageInput>(request.input);
+        break;
+    case InferIntent::kMatchLocalFeatures:
+        input_matches = std::holds_alternative<LocalFeaturePairInput>(request.input);
+        break;
+    case InferIntent::kInferSequence:
+        input_matches = std::holds_alternative<SequenceInput>(request.input);
+        break;
+    case InferIntent::kEmbedText:
+        input_matches = std::holds_alternative<TextInput>(request.input);
+        break;
+    case InferIntent::kDetect:
+    case InferIntent::kClassify:
+    case InferIntent::kEstimatePose:
+    case InferIntent::kSegment:
+    case InferIntent::kTrack:
+    case InferIntent::kEmbed:
+    case InferIntent::kOcr:
+    case InferIntent::kMonocularDepth:
+    case InferIntent::kExtractLocalFeatures:
+        input_matches = std::holds_alternative<ImageInput>(request.input);
+        break;
+    }
+    if (!input_matches) {
+        InferResponse response;
+        response.ok = false;
+        response.error_code = InferErrorCode::kInvalidArgument;
+        response.error_message = "intent and input type mismatch";
+        return response;
+    }
+    return RunImpl(request);
+}
+
 InferResponse BaseModel::unsupported_intent_response(
     InferIntent requested_intent) const
 {
     const auto intent_name = [](InferIntent intent) {
         switch (intent) {
+        case InferIntent::kUnspecified: return "kUnspecified";
         case InferIntent::kDetect: return "kDetect";
         case InferIntent::kClassify: return "kClassify";
         case InferIntent::kEstimatePose: return "kEstimatePose";
@@ -481,6 +534,7 @@ InferResponse BaseModel::unsupported_intent_response(
 
     InferResponse response;
     response.ok = false;
+    response.error_code = InferErrorCode::kInvalidArgument;
     response.error_message = "unsupported inference intent " +
         std::string(intent_name(requested_intent)) + "; supported: ";
     const std::vector<InferIntent> supported = supported_intents();

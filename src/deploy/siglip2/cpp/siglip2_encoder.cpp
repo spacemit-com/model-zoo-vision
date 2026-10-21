@@ -173,12 +173,6 @@ std::vector<float> Siglip2Encoder::run_text(const std::vector<int64_t>& ids) {
     return postprocess_embedding(outputs);
 }
 
-vision_common::EmbeddingResult Siglip2Encoder::infer_embedding(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return infer_embedding_input(input);
-}
-
 vision_common::EmbeddingResult
 Siglip2Encoder::infer_embedding_input(
     const vision_core::ImageInput& input) {
@@ -245,31 +239,16 @@ vision_common::EmbeddingResult Siglip2Encoder::encode_text(const std::string& te
     return result;
 }
 
-vision_core::InferResponse Siglip2Encoder::Run(const vision_core::InferRequest& request) {
+vision_core::InferResponse Siglip2Encoder::RunImpl(const vision_core::InferRequest& request) {
     vision_core::InferResponse response;
     if (request.intent == vision_core::InferIntent::kEmbed) {
-        const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-        if (image_input == nullptr) {
-            response.ok = false;
-            response.error_message = "Siglip2Encoder expects ImageInput for kEmbed";
-            return response;
-        }
+        const auto& image_input = std::get<vision_core::ImageInput>(request.input);
         response.results.emplace_back(
-            infer_embedding_input(*image_input));
+            infer_embedding_input(image_input));
         return response;
     }
-    if (request.intent == vision_core::InferIntent::kEmbedText) {
-        const auto* text_input = std::get_if<vision_core::TextInput>(&request.input);
-        if (text_input == nullptr) {
-            response.ok = false;
-            response.error_message = "Siglip2Encoder expects TextInput for kEmbedText";
-            return response;
-        }
-        response.results.emplace_back(encode_text(text_input->text));
-        return response;
-    }
-    response.ok = false;
-    response.error_message = "Siglip2Encoder unsupported intent";
+    const auto& text_input = std::get<vision_core::TextInput>(request.input);
+    response.results.emplace_back(encode_text(text_input.text));
     return response;
 }
 

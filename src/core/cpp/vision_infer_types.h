@@ -11,6 +11,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -61,6 +62,7 @@ using InferInput = std::variant<
     TextInput>;
 
 enum class InferIntent {
+    kUnspecified = -1,
     kDetect,
     kClassify,
     kEstimatePose,
@@ -108,15 +110,33 @@ inline float resolve_probability_threshold(
 
 struct InferRequest {
     InferInput input;
-    InferIntent intent;
+    InferIntent intent = InferIntent::kUnspecified;
     InferParams params;
+};
+
+enum class InferErrorCode {
+    kInferenceFailed,
+    kInvalidArgument,
 };
 
 struct InferResponse {
     std::vector<vision_common::ModelResult> results;
     bool ok = true;
     std::string error_message;
+    // Only meaningful when !ok; existing model failures keep their status.
+    InferErrorCode error_code = InferErrorCode::kInferenceFailed;
 };
+
+// Require explicit ownership transfer so a missed std::move cannot copy payloads.
+template <typename Result>
+InferResponse make_infer_response(std::vector<Result>&& results) {
+    InferResponse response;
+    response.results.reserve(results.size());
+    for (auto& result : results) {
+        response.results.emplace_back(std::move(result));
+    }
+    return response;
+}
 
 }  // namespace vision_core
 

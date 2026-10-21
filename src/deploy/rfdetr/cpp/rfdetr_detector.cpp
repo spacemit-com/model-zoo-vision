@@ -363,31 +363,16 @@ vision_common::DetectionResultList RFDETRDetector::infer_input(
     return detections;
 }
 
-vision_core::InferResponse RFDETRDetector::Run(
+vision_core::InferResponse RFDETRDetector::RunImpl(
     const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kDetect) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "RFDETRDetector expects ImageInput";
-        return response;
-    }
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
     const float confidence = vision_core::resolve_probability_threshold(
         request.params.conf_threshold, conf_threshold_, "conf_threshold");
     const int max_det = request.params.max_det >= 0
         ? request.params.max_det : max_det_;
     vision_common::DetectionResultList detections = infer_input(
-        *image_input, confidence, max_det);
-    vision_core::InferResponse response;
-    response.results.reserve(detections.size());
-    for (auto& detection : detections) {
-        response.results.emplace_back(std::move(detection));
-    }
-    return response;
+        image_input, confidence, max_det);
+    return vision_core::make_infer_response(std::move(detections));
 }
 
 std::vector<vision_core::InferIntent>

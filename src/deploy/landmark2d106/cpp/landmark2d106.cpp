@@ -93,14 +93,6 @@ cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
     return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
-vision_common::PoseResultList Landmark2d106::estimate_pose(const cv::Mat& image,
-                                                            float /*conf_threshold*/,
-                                                            float /*iou_threshold*/) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return estimate_pose_input(input);
-}
-
 vision_common::PoseResultList Landmark2d106::estimate_pose_input(
     const vision_core::ImageInput& input) {
     ensure_model_loaded();
@@ -150,27 +142,14 @@ std::vector<vision_core::InferIntent> Landmark2d106::supported_intents() const {
     return {vision_core::InferIntent::kEstimatePose};
 }
 
-vision_core::InferResponse Landmark2d106::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kEstimatePose) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "Landmark2d106 expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse Landmark2d106::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::PoseResultList task_results =
-        estimate_pose_input(*image_input);
+        estimate_pose_input(image_input);
     vision_core::InferResponse response;
     if (request.params.max_det == 0) return response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> Landmark2d106::get_capabilities() const {

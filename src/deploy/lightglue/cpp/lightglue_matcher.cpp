@@ -346,31 +346,10 @@ std::vector<vision::FeatureMatch> LightGlueMatcher::match(
     return result;
 }
 
-vision_core::InferResponse LightGlueMatcher::Run(
+vision_core::InferResponse LightGlueMatcher::RunImpl(
     const vision_core::InferRequest& request) {
-    vision_core::InferResponse response;
-    if (request.intent !=
-        vision_core::InferIntent::kMatchLocalFeatures) {
-        response.ok = false;
-        response.error_message =
-            "LightGlueMatcher only supports kMatchLocalFeatures";
-        return response;
-    }
-    const auto* pair =
-        std::get_if<vision_core::LocalFeaturePairInput>(
-            &request.input);
-    if (pair == nullptr) {
-        response.ok = false;
-        response.error_message =
-            "LightGlueMatcher expects LocalFeaturePairInput";
-        return response;
-    }
-    std::vector<vision::FeatureMatch> matches = match(*pair);
-    response.results.reserve(matches.size());
-    for (auto& item : matches) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    const auto& pair = std::get<vision_core::LocalFeaturePairInput>(request.input);
+    return vision_core::make_infer_response(match(pair));
 }
 
 std::vector<vision_core::InferIntent>

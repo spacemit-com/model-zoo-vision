@@ -208,32 +208,18 @@ std::vector<vision_core::InferIntent> ScrfdDetector::supported_intents() const {
     return {vision_core::InferIntent::kEstimatePose};
 }
 
-vision_core::InferResponse ScrfdDetector::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kEstimatePose) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "ScrfdDetector expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse ScrfdDetector::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
-    cv::Mat bgr = image_input->image;
-    if (image_input->format == vision_core::ImagePixelFormat::kNv12) {
-        cv::cvtColor(image_input->image, bgr, cv::COLOR_YUV2BGR_NV12);
+    cv::Mat bgr = image_input.image;
+    if (image_input.format == vision_core::ImagePixelFormat::kNv12) {
+        cv::cvtColor(image_input.image, bgr, cv::COLOR_YUV2BGR_NV12);
     }
     vision_common::PoseResultList task_results =
         estimate_pose(bgr, request.params.conf_threshold, request.params.iou_threshold);
     vision_common::limit_by_score(task_results, request.params.max_det,
         [](const auto& pose) { return pose.score; });
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> ScrfdDetector::get_capabilities() const {

@@ -84,12 +84,6 @@ cv::Mat GenderAgeClassifier::preprocess(const cv::Mat& image) {
     return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
-vision_common::ClassificationResultList GenderAgeClassifier::classify(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return classify_input(input);
-}
-
 vision_common::ClassificationResultList
 GenderAgeClassifier::classify_input(
     const vision_core::ImageInput& input) {
@@ -135,26 +129,12 @@ std::vector<vision_core::InferIntent> GenderAgeClassifier::supported_intents() c
     return {vision_core::InferIntent::kClassify};
 }
 
-vision_core::InferResponse GenderAgeClassifier::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kClassify) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "GenderAgeClassifier expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse GenderAgeClassifier::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::ClassificationResultList task_results =
-        classify_input(*image_input);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+        classify_input(image_input);
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> GenderAgeClassifier::get_capabilities() const {

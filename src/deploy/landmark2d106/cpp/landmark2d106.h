@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -24,7 +23,7 @@ namespace vision_deploy {
  *
  * Expects a face crop (typically SCRFD bbox crop). Input is resized to 192x192.
  */
-class Landmark2d106 : public vision_core::BaseModel, public vision_core::IPoseModel {
+class Landmark2d106 : public vision_core::BaseModel {
 public:
     Landmark2d106(const std::string& model_path,
                     int num_threads = 4,
@@ -39,12 +38,6 @@ public:
 
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::PoseResultList estimate_pose(const cv::Mat& image,
-                                                float conf_threshold = -1.0f,
-                                                float iou_threshold = -1.0f) override;
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -52,6 +45,9 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs, const cv::Size& face_size);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::PoseResultList estimate_pose_input(

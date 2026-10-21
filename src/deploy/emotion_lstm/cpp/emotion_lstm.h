@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -47,15 +46,6 @@ public:
 
     void load_model() override;
 
-    /**
-     * @brief Run LSTM on a feature sequence.
-     * @param feats Flat array of kSeqLen * kFeatureDim floats, layout [t][d].
-     * @return ActionResult with 7-class probabilities (class_scores) + argmax label.
-     */
-    vision_common::ActionResult predict(const float* feats);
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     size_t expected_sequence_size() const override;
@@ -66,7 +56,17 @@ public:
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
+
 private:
+    /**
+     * @brief Run LSTM on a feature sequence.
+     * @param feats Flat array of kSeqLen * kFeatureDim floats, layout [t][d].
+     * @return ActionResult with 7-class probabilities (class_scores) + argmax label.
+     */
+    vision_common::ActionResult predict(const float* feats);
+
     int num_threads_;
     std::string provider_;
     std::vector<std::string> class_names_;

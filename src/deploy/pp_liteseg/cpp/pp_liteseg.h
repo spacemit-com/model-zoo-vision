@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -24,7 +23,7 @@ namespace vision_deploy {
  *
  * Pre/post-processing aligned with pp-liteseg/python/utils.py (RGB, scale+pad, mean/std 0.5).
  */
-class PPLiteSeg : public vision_core::BaseModel, public vision_core::ISegmentationModel {
+class PPLiteSeg : public vision_core::BaseModel {
 public:
     PPLiteSeg(const std::string& model_path,
                 int num_threads,
@@ -36,19 +35,14 @@ public:
 
     void load_model() override;
 
-    vision_common::SegmentationResultList segment(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::SegmentationResultList segment_input(

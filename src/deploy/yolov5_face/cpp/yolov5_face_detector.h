@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -41,7 +40,7 @@ struct Prediction {
  * 
  * Detects faces in images using YOLOv5-Face model.
  */
-class YOLOv5FaceDetector : public vision_core::BaseModel, public vision_core::IDetectionModel {
+class YOLOv5FaceDetector : public vision_core::BaseModel {
 public:
     YOLOv5FaceDetector(const std::string& model_path,
                         float conf_threshold = 0.25f,
@@ -64,14 +63,6 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::DetectionResultList detect(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -85,6 +76,9 @@ public:
         const cv::Size& orig_size,
         float conf_threshold,
         float iou_threshold);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::DetectionResultList detect_input(

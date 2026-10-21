@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 #include "mobileclip.hpp"
 
@@ -34,7 +33,7 @@ namespace vision_deploy {
  * proto {1, num_mask_coeffs, mh, mw}. When the model exposes >=2 outputs it is
  * treated as segmentation; a single-output export degrades to detection (empty masks).
  */
-class YoloeSegmentor : public vision_core::BaseModel, public vision_core::ISegmentationModel {
+class YoloeSegmentor : public vision_core::BaseModel {
 public:
     YoloeSegmentor(
         const std::string& model_path,
@@ -51,20 +50,6 @@ public:
 
     void load_model() override;
 
-    vision_common::SegmentationResultList segment(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
-    // Segment with an explicit prompt vocabulary (empty -> use yaml default).
-    vision_common::SegmentationResultList segment_with_prompts(
-        const cv::Mat& image,
-        const std::vector<std::string>& prompts,
-        float conf_threshold,
-        float iou_threshold);
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -73,6 +58,9 @@ public:
     std::vector<std::string> get_dynamic_class_names() const override { return active_labels_; }
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::SegmentationResultList segment_input_with_prompts(

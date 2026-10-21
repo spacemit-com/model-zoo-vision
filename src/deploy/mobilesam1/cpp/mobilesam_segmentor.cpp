@@ -86,16 +86,13 @@ public:
         return {vision_core::ModelCapability::kDraw};
     }
 
-    vision_core::InferResponse Run(
+protected:
+    vision_core::InferResponse RunImpl(
         const vision_core::InferRequest& request) override {
-        if (request.intent != vision_core::InferIntent::kSegment) {
-            return unsupported_intent_response(request.intent);
-        }
-        const auto* input =
-            std::get_if<vision_core::ImageInput>(&request.input);
-        if (!input || input->image.empty() ||
-            input->format != vision_core::ImagePixelFormat::kBgr8 ||
-            input->image.type() != CV_8UC3) {
+        const auto& input = std::get<vision_core::ImageInput>(request.input);
+        if (input.image.empty() ||
+            input.format != vision_core::ImagePixelFormat::kBgr8 ||
+            input.image.type() != CV_8UC3) {
             throw std::invalid_argument("MobileSAM requires a BGR8 image");
         }
         const auto& points = request.params.point_coords;
@@ -104,7 +101,7 @@ public:
             throw std::invalid_argument(
                 "MobileSAM requires matching points and labels");
         }
-        const cv::Mat& image = input->image;
+        const cv::Mat& image = input.image;
         const float scale = 448.0F / std::max(image.rows, image.cols);
         const int width =
             std::max(1, static_cast<int>(image.cols * scale + 0.5F));

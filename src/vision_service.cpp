@@ -180,6 +180,16 @@ std::vector<std::string> loadLabelsForConfig(const YAML::Node& config, const std
     }
 }
 
+VisionServiceStatus InferErrorStatus(vision_core::InferErrorCode code) {
+    switch (code) {
+    case vision_core::InferErrorCode::kInvalidArgument:
+        return VISION_SERVICE_INVALID_ARGUMENT;
+    case vision_core::InferErrorCode::kInferenceFailed:
+        return VISION_SERVICE_INFER_FAILED;
+    }
+    return VISION_SERVICE_INFER_FAILED;
+}
+
 bool IntentDeclared(const std::vector<vision_core::InferIntent>& intents,
                     vision_core::InferIntent intent) {
     for (vision_core::InferIntent declared : intents) {
@@ -188,24 +198,6 @@ bool IntentDeclared(const std::vector<vision_core::InferIntent>& intents,
         }
     }
     return false;
-}
-
-bool ValidateIntentInputPair(const vision_core::InferRequest& request) {
-    if (request.intent == vision_core::InferIntent::kStereoDepth) {
-        return std::holds_alternative<vision_core::StereoImageInput>(
-            request.input);
-    }
-    if (request.intent == vision_core::InferIntent::kMatchLocalFeatures) {
-        return std::holds_alternative<vision_core::LocalFeaturePairInput>(
-            request.input);
-    }
-    if (request.intent == vision_core::InferIntent::kInferSequence) {
-        return std::holds_alternative<vision_core::SequenceInput>(request.input);
-    }
-    if (request.intent == vision_core::InferIntent::kEmbedText) {
-        return std::holds_alternative<vision_core::TextInput>(request.input);
-    }
-    return std::holds_alternative<vision_core::ImageInput>(request.input);
 }
 
 std::optional<vision_core::InferIntent> PickImageIntent(
@@ -484,11 +476,7 @@ VisionServiceStatus VisionService::Infer(
             if (!IntentDeclared(
                     declared,
                     vision_core::InferIntent::kMatchLocalFeatures)) {
-                response->error_message =
-                    "current model does not support local feature matching";
-                return SetError(
-                    VISION_SERVICE_INFER_FAILED,
-                    response->error_message);
+                return invalid("current model does not support local feature matching");
             }
             intent = vision_core::InferIntent::kMatchLocalFeatures;
             vision_core::LocalFeaturePairInput pair;
@@ -497,8 +485,7 @@ VisionServiceStatus VisionService::Infer(
             input = std::move(pair);
         } else if (has_sequence) {
             if (!IntentDeclared(declared, vision_core::InferIntent::kInferSequence)) {
-                response->error_message = "current model does not support sequence inference";
-                return SetError(VISION_SERVICE_INFER_FAILED, response->error_message);
+                return invalid("current model does not support sequence inference");
             }
             intent = vision_core::InferIntent::kInferSequence;
             const size_t seq_size = model->expected_sequence_size();
@@ -530,11 +517,7 @@ VisionServiceStatus VisionService::Infer(
             if (!IntentDeclared(
                     declared,
                     vision_core::InferIntent::kStereoDepth)) {
-                response->error_message =
-                    "current model does not support stereo inference";
-                return SetError(
-                    VISION_SERVICE_INFER_FAILED,
-                    response->error_message);
+                return invalid("current model does not support stereo inference");
             }
             intent = vision_core::InferIntent::kStereoDepth;
             vision_core::StereoImageInput stereo;
@@ -558,8 +541,7 @@ VisionServiceStatus VisionService::Infer(
             } else if (IntentDeclared(declared, vision_core::InferIntent::kEmbed)) {
                 intent = vision_core::InferIntent::kEmbed;
             } else {
-                response->error_message = "model does not support inference on image input";
-                return SetError(VISION_SERVICE_INFER_FAILED, response->error_message);
+                return invalid("model does not support inference on image input");
             }
             if (request.has_initial_bbox &&
                 intent != vision_core::InferIntent::kTrack) {
@@ -604,15 +586,12 @@ VisionServiceStatus VisionService::Infer(
         infer_params.point_labels = request.point_labels;
 
         vision_core::InferRequest internal_request{std::move(input), intent, infer_params};
-        if (!ValidateIntentInputPair(internal_request)) {
-            response->error_message = "intent and input type mismatch";
-            return SetError(VISION_SERVICE_INVALID_ARGUMENT, response->error_message);
-        }
-
         vision_core::InferResponse internal_response = model->Run(internal_request);
         if (!internal_response.ok) {
             response->error_message = internal_response.error_message;
-            return SetError(VISION_SERVICE_INFER_FAILED, internal_response.error_message);
+            return SetError(
+                InferErrorStatus(internal_response.error_code),
+                internal_response.error_message);
         }
 
         // Internal ModelResult is an alias of vision::Result; move directly.
@@ -731,7 +710,7 @@ VisionServiceStatus VisionService::EncodeText(const std::string& text,
         vision_core::BaseModel* model = impl_->model.get();
         const std::vector<vision_core::InferIntent> declared = model->supported_intents();
         if (!IntentDeclared(declared, vision_core::InferIntent::kEmbedText)) {
-            return SetError(VISION_SERVICE_INFER_FAILED,
+            return SetError(VISION_SERVICE_INVALID_ARGUMENT,
                             "current model does not support text encoding");
         }
 
@@ -747,13 +726,11 @@ VisionServiceStatus VisionService::EncodeText(const std::string& text,
         text_input.text = text;
         vision_core::InferRequest internal_request{
             std::move(text_input), vision_core::InferIntent::kEmbedText, {}};
-        if (!ValidateIntentInputPair(internal_request)) {
-            return SetError(VISION_SERVICE_INVALID_ARGUMENT, "intent and input type mismatch");
-        }
-
         vision_core::InferResponse internal_response = model->Run(internal_request);
         if (!internal_response.ok) {
-            return SetError(VISION_SERVICE_INFER_FAILED, internal_response.error_message);
+            return SetError(
+                InferErrorStatus(internal_response.error_code),
+                internal_response.error_message);
         }
         if (internal_response.results.empty()) {
             return SetError(VISION_SERVICE_INFER_FAILED, "model returned no embedding");

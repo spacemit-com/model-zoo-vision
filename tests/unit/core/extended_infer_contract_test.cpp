@@ -56,47 +56,25 @@ public:
         return {vision_core::ModelCapability::kDraw};
     }
 
-    vision_core::InferResponse Run(
+    vision_core::InferResponse RunImpl(
         const vision_core::InferRequest& request) override {
-        bool supported = false;
-        for (const auto intent : supported_intents()) {
-            if (request.intent == intent) {
-                supported = true;
-                break;
-            }
-        }
-        if (!supported) {
-            return unsupported_intent_response(request.intent);
-        }
         vision_core::InferResponse response;
         if (request.intent == vision_core::InferIntent::kMatchLocalFeatures) {
-            const auto* pair =
-                std::get_if<vision_core::LocalFeaturePairInput>(&request.input);
-            if (pair == nullptr) {
-                response.ok = false;
-                response.error_message = "expected LocalFeaturePairInput";
-                return response;
-            }
+            const auto& pair = std::get<vision_core::LocalFeaturePairInput>(request.input);
             vision::FeatureMatch match;
             match.query_index = 0;
             match.train_index = 0;
-            match.query_point = pair->query.keypoints.front();
-            match.train_point = pair->train.keypoints.front();
+            match.query_point = pair.query.keypoints.front();
+            match.train_point = pair.train.keypoints.front();
             match.score = 0.75f;
             response.results.emplace_back(std::move(match));
             return response;
         }
         if (request.intent == vision_core::InferIntent::kStereoDepth) {
-            const auto* stereo =
-                std::get_if<vision_core::StereoImageInput>(&request.input);
-            if (stereo == nullptr) {
-                response.ok = false;
-                response.error_message = "expected StereoImageInput";
-                return response;
-            }
+            const auto& stereo = std::get<vision_core::StereoImageInput>(request.input);
             auto map = std::make_shared<cv::Mat>(
-                stereo->left.image.rows,
-                stereo->left.image.cols,
+                stereo.left.image.rows,
+                stereo.left.image.cols,
                 CV_32FC1);
             for (int y = 0; y < map->rows; ++y) {
                 for (int x = 0; x < map->cols; ++x) {
@@ -110,15 +88,9 @@ public:
             return response;
         }
 
-        const auto* image =
-            std::get_if<vision_core::ImageInput>(&request.input);
-        if (image == nullptr) {
-            response.ok = false;
-            response.error_message = "expected ImageInput";
-            return response;
-        }
+        const auto& image = std::get<vision_core::ImageInput>(request.input);
         vision::Tracking tracking;
-        tracking.bbox = image->initial_bbox;
+        tracking.bbox = image.initial_bbox;
         tracking.track_id = 0;
         response.results.emplace_back(std::move(tracking));
         return response;

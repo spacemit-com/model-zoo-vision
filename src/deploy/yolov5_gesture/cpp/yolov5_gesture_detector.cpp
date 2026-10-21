@@ -86,15 +86,6 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
         std::make_pair(inputHeight, inputWidth));
 }
 
-vision_common::DetectionResultList YOLOv5GestureDetector::detect(
-    const cv::Mat& image,
-    float conf_threshold,
-    float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return detect_input(input, conf_threshold, iou_threshold);
-}
-
 vision_common::DetectionResultList
 YOLOv5GestureDetector::detect_input(
     const vision_core::ImageInput& input,
@@ -157,29 +148,15 @@ std::vector<vision_core::InferIntent> YOLOv5GestureDetector::supported_intents()
     return {vision_core::InferIntent::kDetect};
 }
 
-vision_core::InferResponse YOLOv5GestureDetector::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kDetect) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "YOLOv5GestureDetector expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse YOLOv5GestureDetector::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::DetectionResultList task_results =
         detect_input(
-            *image_input,
+            image_input,
             request.params.conf_threshold,
             request.params.iou_threshold, request.params.max_det);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilities() const {

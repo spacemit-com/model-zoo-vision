@@ -29,8 +29,7 @@ public:
         std::string provider);
 
     void load_model() override;
-    vision_core::InferResponse Run(
-        const vision_core::InferRequest& request) override;
+
     std::vector<vision_core::InferIntent>
     supported_intents() const override;
     std::vector<vision_core::ModelCapability>
@@ -39,6 +38,10 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(
         const YAML::Node& config,
         bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(
+        const vision_core::InferRequest& request) override;
 
 private:
     cv::Mat preprocess(const cv::Mat& bgr) const;

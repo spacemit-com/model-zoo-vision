@@ -372,25 +372,11 @@ vision::LocalFeatures SuperPointExtractor::extract(
     return result;
 }
 
-vision_core::InferResponse SuperPointExtractor::Run(
+vision_core::InferResponse SuperPointExtractor::RunImpl(
     const vision_core::InferRequest& request) {
     vision_core::InferResponse response;
-    if (request.intent !=
-        vision_core::InferIntent::kExtractLocalFeatures) {
-        response.ok = false;
-        response.error_message =
-            "SuperPointExtractor only supports kExtractLocalFeatures";
-        return response;
-    }
-    const auto* image =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (image == nullptr) {
-        response.ok = false;
-        response.error_message =
-            "SuperPointExtractor expects ImageInput";
-        return response;
-    }
-    response.results.emplace_back(extract(*image));
+    const auto& image = std::get<vision_core::ImageInput>(request.input);
+    response.results.emplace_back(extract(image));
     return response;
 }
 

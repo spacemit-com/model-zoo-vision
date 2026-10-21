@@ -80,12 +80,6 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
     return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
-vision_common::ClassificationResultList EmotionRecognizer::classify(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return classify_input(input);
-}
-
 vision_core::BaseModel::PreparedImage
 EmotionRecognizer::prepare_input(
     const vision_core::ImageInput& input) {
@@ -136,12 +130,6 @@ EmotionRecognizer::classify_input(
 }
 
 
-vision_common::EmbeddingResult EmotionRecognizer::infer_embedding(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return infer_embedding_input(input);
-}
-
 vision_common::EmbeddingResult
 EmotionRecognizer::infer_embedding_input(
     const vision_core::ImageInput& input) {
@@ -181,38 +169,24 @@ std::vector<vision_core::InferIntent> EmotionRecognizer::supported_intents() con
     return {vision_core::InferIntent::kClassify};
 }
 
-vision_core::InferResponse EmotionRecognizer::Run(const vision_core::InferRequest& request) {
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "EmotionRecognizer expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse EmotionRecognizer::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_core::InferResponse response;
     if (request.intent == vision_core::InferIntent::kEmbed) {
         response.results.emplace_back(
-            infer_embedding_input(*image_input));
+            infer_embedding_input(image_input));
         return response;
     }
 
     // Default: classification
     vision_common::ClassificationResultList task_results =
-        classify_input(*image_input, request.params.top_k < 0 ? 1 : request.params.top_k);
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+        classify_input(image_input, request.params.top_k < 0 ? 1 : request.params.top_k);
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> EmotionRecognizer::get_capabilities() const {
     return {};
-}
-
-vision_common::ClassificationResultList EmotionRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    return postprocess(outputs, 1);
 }
 
 vision_common::ClassificationResultList EmotionRecognizer::postprocess(

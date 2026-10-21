@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -26,7 +25,7 @@ namespace vision_deploy {
  * Input: pts (T=30, V=13, C=3) in pixel coordinates; image_size for normalization.
  * Output: 7 class probabilities; class names come from the model's label file.
  */
-class StgcnActionRecognizer : public vision_core::BaseModel, public vision_core::ISequenceActionModel {
+class StgcnActionRecognizer : public vision_core::BaseModel {
 public:
     static constexpr int kSequenceLength = 30;
     static constexpr int kNumKeypoints = 13;
@@ -41,6 +40,20 @@ public:
 
     void load_model() override;
 
+    std::vector<vision_core::InferIntent> supported_intents() const override;
+
+    size_t expected_sequence_size() const override;
+
+    std::vector<std::string> get_sequence_class_names() const override;
+
+    std::vector<vision_core::ModelCapability> get_capabilities() const override;
+
+    static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
+
+private:
     /**
      * @brief Run action recognition on skeleton sequence (same as Python predict).
      * @param pts Flat array of size kSequenceLength * kNumKeypoints * 3, layout [t][v][c] (x, y, score) in pixel coords
@@ -52,32 +65,6 @@ public:
                                         int image_width,
                                         int image_height);
 
-    vision_common::ActionResult infer_sequence(const float* pts,
-        int image_width,
-        int image_height) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
-    std::vector<vision_core::InferIntent> supported_intents() const override;
-
-    size_t expected_sequence_size() const override;
-
-    std::vector<std::string> get_sequence_class_names() const override;
-
-    std::vector<vision_core::ModelCapability> get_capabilities() const override;
-
-    /** Overload: pts as vector. */
-    vision_common::ActionResult predict(const std::vector<float>& pts,
-                                        int image_width,
-                                        int image_height);
-
-    std::vector<std::string> get_class_names() const override { return class_names_; }
-    std::string get_class_name(int pred_class) const;
-
-    static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
-
-private:
     int num_threads_;
     std::string provider_;
     std::vector<std::string> class_names_;

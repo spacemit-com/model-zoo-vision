@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -24,7 +23,7 @@ namespace vision_deploy {
  * 
  * Detects objects and generates segmentation masks using YOLOv8-Seg model.
  */
-class YOLOv8SegDetector : public vision_core::BaseModel, public vision_core::ISegmentationModel {
+class YOLOv8SegDetector : public vision_core::BaseModel {
 public:
     YOLOv8SegDetector(const std::string& model_path,
                         float conf_threshold = 0.25f,
@@ -47,14 +46,6 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::SegmentationResultList segment(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -68,6 +59,9 @@ public:
         const cv::Size& orig_size,
         float conf_threshold,
         float iou_threshold);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::SegmentationResultList segment_input(

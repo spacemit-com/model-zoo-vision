@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -24,7 +23,7 @@ namespace vision_deploy {
  *
  * Returns vision::Pose with bbox + 5 facial keypoints per face.
  */
-class ScrfdDetector : public vision_core::BaseModel, public vision_core::IPoseModel {
+class ScrfdDetector : public vision_core::BaseModel {
 public:
     ScrfdDetector(const std::string& model_path,
                     float conf_threshold = 0.5f,
@@ -39,12 +38,6 @@ public:
 
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::PoseResultList estimate_pose(const cv::Mat& image,
-                                                float conf_threshold = -1.0f,
-                                                float iou_threshold = -1.0f) override;
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -57,7 +50,14 @@ public:
                                                 float nms_threshold,
                                                 float det_scale);
 
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
+
 private:
+    vision_common::PoseResultList estimate_pose(const cv::Mat& image,
+                                                float conf_threshold = -1.0f,
+                                                float iou_threshold = -1.0f);
+
     struct Anchor {
         float cx = 0.0f;
         float cy = 0.0f;

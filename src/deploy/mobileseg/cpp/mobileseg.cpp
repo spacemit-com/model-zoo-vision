@@ -354,34 +354,10 @@ std::vector<vision::Segmentation> MobileSeg::segment(
     return results;
 }
 
-vision_core::InferResponse MobileSeg::Run(
+vision_core::InferResponse MobileSeg::RunImpl(
     const vision_core::InferRequest& request) {
-    vision_core::InferResponse response;
-    if (request.intent !=
-        vision_core::InferIntent::kSegment) {
-        response.ok = false;
-        response.error_message =
-            "MobileSeg only supports kSegment";
-        return response;
-    }
-    const auto* input =
-        std::get_if<vision_core::ImageInput>(
-            &request.input);
-    if (input == nullptr) {
-        response.ok = false;
-        response.error_message =
-            "MobileSeg expects ImageInput";
-        return response;
-    }
-
-    std::vector<vision::Segmentation> results =
-        segment(*input);
-    response.results.reserve(results.size());
-    for (auto& result : results) {
-        response.results.emplace_back(
-            std::move(result));
-    }
-    return response;
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
+    return vision_core::make_infer_response(segment(input));
 }
 
 std::vector<vision_core::InferIntent>

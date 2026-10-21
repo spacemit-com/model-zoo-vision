@@ -403,20 +403,6 @@ void YoloeSegmentor::process_masks(
     }
 }
 
-vision_common::SegmentationResultList YoloeSegmentor::segment(
-    const cv::Mat& image, float conf_threshold, float iou_threshold) {
-    return segment_with_prompts(image, {}, conf_threshold, iou_threshold);
-}
-
-vision_common::SegmentationResultList YoloeSegmentor::segment_with_prompts(
-    const cv::Mat& image, const std::vector<std::string>& prompts,
-    float conf_threshold, float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return segment_input_with_prompts(
-        input, prompts, conf_threshold, iou_threshold);
-}
-
 vision_common::SegmentationResultList
 YoloeSegmentor::segment_input_with_prompts(
     const vision_core::ImageInput& input,
@@ -556,30 +542,16 @@ std::vector<vision_core::ModelCapability> YoloeSegmentor::get_capabilities() con
     return {vision_core::ModelCapability::kDraw};
 }
 
-vision_core::InferResponse YoloeSegmentor::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kSegment) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "YoloeSegmentor expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse YoloeSegmentor::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::SegmentationResultList task_results =
         segment_input_with_prompts(
-        *image_input, request.params.prompts,
+        image_input, request.params.prompts,
         request.params.conf_threshold, request.params.iou_threshold,
         request.params.max_det, request.params.mask_threshold);
 
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 static vision_core::ModelRegistrar<YoloeSegmentor> registrar("YoloeSegmentor");

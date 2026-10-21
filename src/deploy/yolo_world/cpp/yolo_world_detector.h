@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 #include "clip.hpp"
 
@@ -31,7 +30,7 @@ namespace vision_deploy {
  * prompts reuse the cache (no CLIP call), changed prompts trigger re-encoding.
  * Steady-state inference with an unchanged vocabulary skips CLIP.
  */
-class YoloWorldDetector : public vision_core::BaseModel, public vision_core::IDetectionModel {
+class YoloWorldDetector : public vision_core::BaseModel {
 public:
     YoloWorldDetector(
         const std::string& model_path,
@@ -48,32 +47,18 @@ public:
 
     void load_model() override;
 
-    vision_common::DetectionResultList detect(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
-    // Detect with an explicit prompt vocabulary (empty -> use yaml default).
-    vision_common::DetectionResultList detect_with_prompts(
-        const cv::Mat& image,
-        const std::vector<std::string>& prompts,
-        float conf_threshold,
-        float iou_threshold);
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
-
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
-
-    // Active vocabulary (labels for the last-used prompts). Used for drawing.
-    const std::vector<std::string>& active_labels() const { return active_labels_; }
 
     // Runtime labels from the active text prompts (open-vocabulary), so
     // VisionService::GetClassNames()/Draw() show prompt words, not "Class N".
     std::vector<std::string> get_dynamic_class_names() const override { return active_labels_; }
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::DetectionResultList detect_input_with_prompts(

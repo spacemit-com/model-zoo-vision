@@ -30,7 +30,7 @@ public:
 
     void load_model() override {}
 
-    vision_core::InferResponse Run(
+    vision_core::InferResponse RunImpl(
         const vision_core::InferRequest&) override
     {
         return {};
@@ -52,7 +52,7 @@ public:
 
     void load_model() override {}
 
-    vision_core::InferResponse Run(
+    vision_core::InferResponse RunImpl(
         const vision_core::InferRequest&) override
     {
         return {};

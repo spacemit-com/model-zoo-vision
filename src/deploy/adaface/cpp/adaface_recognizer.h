@@ -10,9 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "embedding_utils.h"
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -20,7 +18,7 @@ class Node;
 
 namespace vision_deploy {
 
-class AdaFaceRecognizer : public vision_core::BaseModel, public vision_core::IEmbeddingModel {
+class AdaFaceRecognizer : public vision_core::BaseModel {
 public:
     AdaFaceRecognizer(const std::string& model_path,
                         int num_threads = 4,
@@ -31,19 +29,15 @@ public:
 
     void load_model() override;
     cv::Mat preprocess(const cv::Mat& image);
-    vision_common::EmbeddingResult infer_embedding(const cv::Mat& image) override;
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
     std::vector<vision_core::InferIntent> supported_intents() const override;
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
-    static float compute_similarity(const std::vector<float>& embedding1,
-                                    const std::vector<float>& embedding2) {
-        return vision_common::compute_similarity(embedding1, embedding2);
-    }
-
     std::vector<float> postprocess(std::vector<Ort::Value>& outputs);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::EmbeddingResult infer_embedding_input(

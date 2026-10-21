@@ -66,22 +66,6 @@ void StgcnActionRecognizer::load_model() {
     model_loaded_ = true;
 }
 
-std::string StgcnActionRecognizer::get_class_name(int pred_class) const {
-    if (pred_class >= 0 && pred_class < static_cast<int>(class_names_.size())) {
-        return class_names_[static_cast<size_t>(pred_class)];
-    }
-    return std::to_string(pred_class);
-}
-
-vision_common::ActionResult StgcnActionRecognizer::predict(const std::vector<float>& pts,
-                                                int image_width,
-                                                int image_height) {
-    if (pts.size() < static_cast<size_t>(kSequenceLength * kNumKeypoints * 3)) {
-        throw std::runtime_error("StgcnActionRecognizer::predict pts size too small");
-    }
-    return predict(pts.data(), image_width, image_height);
-}
-
 vision_common::ActionResult StgcnActionRecognizer::predict(const float* pts,
                                                 int image_width,
                                                 int image_height) {
@@ -192,13 +176,6 @@ vision_common::ActionResult StgcnActionRecognizer::predict(const float* pts,
     return result;
 }
 
-vision_common::ActionResult StgcnActionRecognizer::infer_sequence(const float* pts,
-    int image_width,
-    int image_height) {
-    return predict(pts, image_width, image_height);
-}
-
-
 std::vector<vision_core::InferIntent> StgcnActionRecognizer::supported_intents() const {
     return {vision_core::InferIntent::kInferSequence};
 }
@@ -208,22 +185,13 @@ size_t StgcnActionRecognizer::expected_sequence_size() const {
 }
 
 std::vector<std::string> StgcnActionRecognizer::get_sequence_class_names() const {
-    return get_class_names();
+    return class_names_;
 }
 
-vision_core::InferResponse StgcnActionRecognizer::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kInferSequence) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* sequence_input = std::get_if<vision_core::SequenceInput>(&request.input);
-    if (sequence_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "StgcnActionRecognizer expects SequenceInput";
-        return response;
-    }
+vision_core::InferResponse StgcnActionRecognizer::RunImpl(const vision_core::InferRequest& request) {
+    const auto& sequence_input = std::get<vision_core::SequenceInput>(request.input);
     const size_t expected = static_cast<size_t>(kSequenceLength * kNumKeypoints * 3);
-    if (sequence_input->pts.size() != expected) {
+    if (sequence_input.pts.size() != expected) {
         vision_core::InferResponse response;
         response.ok = false;
         response.error_message = "StgcnActionRecognizer expects " + std::to_string(expected) + " sequence values";
@@ -231,7 +199,7 @@ vision_core::InferResponse StgcnActionRecognizer::Run(const vision_core::InferRe
     }
     vision_core::InferResponse response;
     response.results.emplace_back(
-        predict(sequence_input->pts.data(), sequence_input->image_width, sequence_input->image_height));
+        predict(sequence_input.pts.data(), sequence_input.image_width, sequence_input.image_height));
     return response;
 }
 

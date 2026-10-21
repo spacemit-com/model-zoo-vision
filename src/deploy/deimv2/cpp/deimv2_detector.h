@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -19,8 +18,7 @@ class Node;
 
 namespace vision_deploy {
 
-class DEIMv2Detector : public vision_core::BaseModel,
-                        public vision_core::IDetectionModel {
+class DEIMv2Detector : public vision_core::BaseModel {
 public:
     DEIMv2Detector(
         const std::string& model_path,
@@ -34,13 +32,6 @@ public:
 
     void load_model() override;
 
-    vision_common::DetectionResultList detect(
-        const cv::Mat& image,
-        float conf_threshold = -1.0F,
-        float iou_threshold = -1.0F) override;
-
-    vision_core::InferResponse Run(
-        const vision_core::InferRequest& request) override;
     std::vector<vision_core::InferIntent> supported_intents()
         const override;
     std::vector<vision_core::ModelCapability> get_capabilities()
@@ -49,6 +40,10 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(
         const YAML::Node& config,
         bool lazy_load);
+
+protected:
+    vision_core::InferResponse RunImpl(
+        const vision_core::InferRequest& request) override;
 
 private:
     struct LetterboxGeometry {

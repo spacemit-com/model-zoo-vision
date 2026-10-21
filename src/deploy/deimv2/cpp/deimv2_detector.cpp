@@ -397,16 +397,6 @@ vision_common::DetectionResultList DEIMv2Detector::postprocess(
     return detections;
 }
 
-vision_common::DetectionResultList DEIMv2Detector::detect(
-    const cv::Mat& image,
-    float conf_threshold,
-    float iou_threshold) {
-    (void)iou_threshold;
-    vision_core::ImageInput input;
-    input.image = image;
-    return detect_input(input, conf_threshold);
-}
-
 vision_common::DetectionResultList DEIMv2Detector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold, int max_det) {
@@ -460,27 +450,12 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
     return detections;
 }
 
-vision_core::InferResponse DEIMv2Detector::Run(
+vision_core::InferResponse DEIMv2Detector::RunImpl(
     const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kDetect) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "DEIMv2Detector expects ImageInput";
-        return response;
-    }
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
     vision_common::DetectionResultList detections = detect_input(
-        *image_input, request.params.conf_threshold, request.params.max_det);
-    vision_core::InferResponse response;
-    response.results.reserve(detections.size());
-    for (auto& detection : detections) {
-        response.results.emplace_back(std::move(detection));
-    }
-    return response;
+        image_input, request.params.conf_threshold, request.params.max_det);
+    return vision_core::make_infer_response(std::move(detections));
 }
 
 std::vector<vision_core::InferIntent>

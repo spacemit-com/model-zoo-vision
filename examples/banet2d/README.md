@@ -44,7 +44,16 @@ bash scripts/download_assets.sh
 
 ## 3. 命令行 / API 参数（与本示例相关）
 
-本示例仅提供 C++ 程序，位置参数如下：
+**Python 示例**（`python/banet2d.py`）：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--config` | 配置文件路径 | `examples/banet2d/config/banet2d.yaml` |
+| `--left` / `--right` | 左右图路径，必须同时提供 | YAML 中的 `test_image1` / `test_image2` |
+| `--output` | 彩色视差图输出路径 | `banet2d_disparity.png` |
+| `--model-path` | 覆盖主模型路径 | 无 |
+
+**C++ 示例**：位置参数如下：
 
 | 参数 | 说明 | 默认值 |
 |------|------|------|
@@ -52,12 +61,23 @@ bash scripts/download_assets.sh
 | 第 2、3 个参数 | 左图和右图路径，必须同时提供 | 使用 YAML 中的 `test_image1`、`test_image2` |
 
 程序通过 `VisionServiceRequest.image` 和 `image2` 提交双目图像，
-`VisionService::Infer()` 返回一个 `vision::Disparity`。输出文件名固定为
+`VisionService::Infer()` 返回一个 `vision::Disparity`。C++ 输出文件名固定为
 当前工作目录下的 `banet2d_disparity.png`。
+
+Python 通过 `service.infer_stereo(left, right)` 获取原始图像大小的视差图，单位为像素。
 
 ## 4. 运行示例
 
-运行前需按仓库 README 编译 C++ 示例。
+Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包；
+C++ 示例需按仓库 README 编译。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/banet2d/python/banet2d.py --config examples/banet2d/config/banet2d.yaml
+python examples/banet2d/python/banet2d.py --config examples/banet2d/config/banet2d.yaml \
+  --left /path/to/left.png --right /path/to/right.png --output result.png
+```
 
 **C++：** 在 `build` 目录运行：
 
@@ -67,11 +87,12 @@ bash scripts/download_assets.sh
   /path/to/left.png /path/to/right.png
 ```
 
-成功时程序会打印视差图尺寸，并生成伪彩色视差图
-`banet2d_disparity.png`。
+成功时程序会打印视差图尺寸，默认生成伪彩色视差图
+`banet2d_disparity.png`；Python 指定 `--output` 时保存到指定路径。
 
 ## 5. 故障排查
 
+- **Python 扩展导入失败**：安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
 - **模型未找到**：执行 `bash examples/banet2d/scripts/download_models.sh`，并检查 YAML 中的 `model_path`。
 - **测试图片未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **左右图尺寸不一致**：输入图必须具有完全相同的宽高，否则推理会明确失败。

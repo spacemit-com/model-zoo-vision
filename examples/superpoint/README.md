@@ -48,7 +48,16 @@ bash scripts/download_assets.sh
 
 ## 3. 命令行 / API 参数（与本示例相关）
 
-本示例仅提供 C++ 程序，位置参数如下：
+**Python 示例**（`python/superpoint.py`）：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--config` | 配置文件路径 | `examples/superpoint/config/superpoint.yaml` |
+| `--image` | 输入图片路径 | YAML 中的 `test_image` |
+| `--output` | 关键点图输出路径 | `superpoint_keypoints.jpg` |
+| `--model-path` | 覆盖主模型路径 | 无 |
+
+**C++ 示例**：位置参数如下：
 
 | 参数 | 说明 | 默认值 |
 |------|------|------|
@@ -56,12 +65,23 @@ bash scripts/download_assets.sh
 | 第 2 个参数 | 输入图片路径 | 使用 YAML 中的 `test_image` |
 
 程序调用 `VisionService::Infer()` 获取一个 `vision::LocalFeatures`，
-随后调用 `VisionService::Draw()` 绘制关键点。输出文件名固定为当前工作目录下的
+随后调用 `VisionService::Draw()` 绘制关键点。C++ 输出文件名固定为当前工作目录下的
 `superpoint_keypoints.jpg`。
+
+Python 通过 `service.extract_local_features(image)` 获取关键点和描述子，
+再调用 `service.draw(image)` 绘制结果。
 
 ## 4. 运行示例
 
-运行前需按仓库 README 编译 C++ 示例。
+Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包；
+C++ 示例需按仓库 README 编译。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/superpoint/python/superpoint.py --config examples/superpoint/config/superpoint.yaml
+python examples/superpoint/python/superpoint.py --config examples/superpoint/config/superpoint.yaml --image /path/to/image.jpg --output result.jpg
+```
 
 **C++：** 在 `build` 目录运行：
 
@@ -71,11 +91,12 @@ bash scripts/download_assets.sh
   /path/to/image.jpg
 ```
 
-成功时程序会打印关键点数量和描述子维度，并生成
-`superpoint_keypoints.jpg`。
+成功时程序会打印关键点数量和描述子维度，默认生成
+`superpoint_keypoints.jpg`；Python 指定 `--output` 时保存到指定路径。
 
 ## 5. 故障排查
 
+- **Python 扩展导入失败**：安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
 - **模型未找到**：执行 `bash examples/superpoint/scripts/download_models.sh`，并检查 YAML 中的 `model_path`。
 - **测试图片未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **LightGlue 提示特征不兼容**：确保两侧的 `feature_type`、关键点数量和描述子维度与 LightGlue 配置及权重契约一致。

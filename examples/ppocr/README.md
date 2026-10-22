@@ -6,7 +6,7 @@
 ## 1. 模型与权重
 
 - **模型类型**：文本检测 + 识别（PP-OCRv6 tiny / small）
-- **下载**（仓库根目录执行）：
+- **下载**：在仓库根目录执行：
 
 ```bash
 bash examples/ppocr/scripts/download_models.sh
@@ -39,7 +39,7 @@ bash examples/ppocr/scripts/download_models.sh
 
 ## 2. 配置文件说明（config/ppocr.yaml）
 
-| 配置项 | 含义 | 默认 |
+| 配置项 | 含义 | 默认或示例 |
 |--------|------|------|
 | `model_path` | 检测 ONNX | `~/.cache/models/vision/ppocr/PP-OCRv6_tiny_det_640x640.fp16.onnx` |
 | `test_image` | 默认测试图 | `~/.cache/assets/image/015_ocr.jpg` |
@@ -52,25 +52,26 @@ bash examples/ppocr/scripts/download_models.sh
 | `default_params.det_db_unclip_ratio` | 文本框膨胀系数 | `1.4` |
 | `default_params.rec_img_h` | 识别输入高度 | `48` |
 | `default_params.rec_img_w_max` | 识别输入最大宽度（不足则灰底 padding） | `320` |
-| `default_params.providers` | 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | 执行提供方 | `[SpaceMITExecutionProvider]` |
 
-## 3. 命令行参数
+## 3. 命令行 / API 参数（与本示例相关）
 
-**Python**（`python/ppocr.py`）：`--config` / `--image` / `--output` / `--model-path`。  
-**C++**（`build` 下）：第一个参数是配置路径，可选 `--image` / `--output` / `--model-path`。
+**Python 示例**（`python/ppocr.py`）：`--config` / `--image` / `--output` / `--model-path`。
+**C++ 示例**（`build` 下）：第一个参数是配置路径，可选 `--image` / `--output` / `--model-path`。
 
 结果字段：`.text`（识别文字）、`.polygon`（四点框，`.x`/`.y`）、`.score`（识别置信度）。
 
 ## 4. 运行示例
 
-**Python：**
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-cd examples/ppocr/python
-python ppocr.py --config ../config/ppocr.yaml --image ~/.cache/assets/image/015_ocr.jpg --output ppocr_result.jpg
+python examples/ppocr/python/ppocr.py --config examples/ppocr/config/ppocr.yaml --image ~/.cache/assets/image/015_ocr.jpg --output ppocr_result.jpg
 ```
 
-**C++：** 在 `build` 目录下：
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/ppocr ../examples/ppocr/config/ppocr.yaml \
@@ -78,7 +79,7 @@ python ppocr.py --config ../config/ppocr.yaml --image ~/.cache/assets/image/015_
   --output ppocr_result.jpg
 ```
 
-切换到 small 时，在 yaml 中改为：
+切换到 small 时，在 YAML 中改为：
 
 ```yaml
 model_path: ~/.cache/models/vision/ppocr/PP-OCRv6_small_det_640x640.fp16.onnx
@@ -87,7 +88,7 @@ default_params:
   dict_path: assets/labels/ppocrv6_small_dict.txt
 ```
 
-## 5. 已知限制与故障排查
+## 5. 故障排查
 
 - **中文叠加渲染**：`cv::putText` 只支持 ASCII，画到图上的中文会显示为 `?`；识别结果本身在打印输出和 `.text` 里是正确的。
 - **字典不匹配**：确认 `dict_path` 与当前 rec 模型一致（tiny / small 字典不能混用）。

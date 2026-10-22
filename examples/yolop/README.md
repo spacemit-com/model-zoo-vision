@@ -10,7 +10,7 @@
 - **默认测试图片**：`~/.cache/assets/image/020_yolop.jpg`
 - **类别标签文件**：`assets/labels/yolop.txt`
 
-在组件根目录执行：
+在仓库根目录执行：
 
 ```bash
 bash examples/yolop/scripts/download_models.sh
@@ -43,47 +43,38 @@ bash scripts/download_assets.sh
 `conf_threshold` 的正数请求值覆盖
 YAML 默认值，`<=0` 使用默认值。
 
-## 3. 命令行参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 Python 示例支持：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | 配置文件路径 | `examples/yolop/config/yolop.yaml` |
-| `--image` | 覆盖输入图片 | yaml 中的 `test_image` |
+| `--image` | 覆盖输入图片 | YAML 中的 `test_image` |
 | `--output` | 输出可视化图片 | `yolop_result.jpg` |
-| `--model-path` | 覆盖 yaml 中的模型路径 | 无 |
-| `--conf-threshold` | 覆盖置信度阈值 | 使用 yaml 配置 |
-| `--iou-threshold` | 覆盖 NMS IoU 阈值 | 使用 yaml 配置 |
+| `--model-path` | 覆盖 YAML 中的模型路径 | 无 |
+| `--conf-threshold` | 覆盖置信度阈值 | 使用 YAML 配置 |
+| `--iou-threshold` | 覆盖 NMS IoU 阈值 | 使用 YAML 配置 |
 
 C++ 示例的第一个参数必须是配置文件路径，并支持 `--image`、`--output`
 和 `--model-path`。
 
 ## 4. 运行示例
 
-**C++：** 在 `cv/build` 目录下：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/yolop/python/yolop.py --config examples/yolop/config/yolop.yaml
+python examples/yolop/python/yolop.py --config examples/yolop/config/yolop.yaml --image /path/to/image.jpg --output yolop_result.jpg
+```
+
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/yolop ../examples/yolop/config/yolop.yaml
-./examples/yolop ../examples/yolop/config/yolop.yaml \
-  --image /path/to/image.jpg --output yolop_result.jpg
-```
-
-使用已安装的 `spacemit_vision` Python 包：
-
-```bash
-python3 examples/yolop/python/yolop.py
-```
-
-直接使用当前源码树和 CMake 构建产物：
-
-```bash
-PYTHONPATH=build/python:src/python \
-  python3 examples/yolop/python/yolop.py
-
-PYTHONPATH=build/python:src/python \
-  python3 examples/yolop/python/yolop.py \
-  --image /path/to/image.jpg --output yolop_result.jpg
+./examples/yolop ../examples/yolop/config/yolop.yaml --image /path/to/image.jpg --output yolop_result.jpg
 ```
 
 ## 5. 故障排查
@@ -94,5 +85,4 @@ PYTHONPATH=build/python:src/python \
   `--image` 指定图片。
 - **模型创建失败**：确认配置中的模型路径、模型输入尺寸和
   `SpaceMITExecutionProvider` 可用。
-- **Python 无法导入原生扩展**：先构建 `_vision_service_cpp`，并使用已安装的
-  Python 包，或按上面的 `PYTHONPATH` 命令从源码树运行。
+- **Python 扩展导入失败**：安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。

@@ -11,19 +11,19 @@
 - **模型输出**：类别图 `int32 [1, 512, 1024]`
 - **默认模型文件**：`~/.cache/models/vision/mobileseg/mobileseg_mobilenetv2_cityscapes_1024x512.q.onnx`
 
-在组件根目录执行：
+在仓库根目录执行：
 
 ```bash
 bash examples/mobileseg/scripts/download_models.sh
 ```
 
-脚本会校验模型 SHA-256，并优先复制组件根目录下本次导入提供的同名
+脚本会校验模型 SHA-256，并优先复制仓库根目录下已有的同名
 模型；若本地模型不存在，则从 SpaceMIT 模型归档下载。也可分别使用
 `MOBILESEG_MODEL_SOURCE` 或 `MOBILESEG_BASE_URL` 指定本地模型和下载
 地址。
 
 默认测试图片为 `~/.cache/assets/image/009_test_unet.jpg`。若图片尚未
-准备，在组件根目录执行：
+准备，在仓库根目录执行：
 
 ```bash
 bash scripts/download_assets.sh
@@ -39,7 +39,7 @@ bash scripts/download_assets.sh
 | `class` | 工厂注册类 | `deploy.mobileseg.MobileSeg` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
 | `default_params.num_classes` | 输出类别数 | `19` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方 | `[SpaceMITExecutionProvider]` |
 | `default_params.preprocess.backend` | 图像预处理后端 | `cpu` |
 
 预处理与 PaddleSeg 导出契约一致：输入图像直接拉伸至
@@ -47,16 +47,16 @@ bash scripts/download_assets.sh
 模型已经内置 `ArgMax`，输出是类别编号而不是 logits。类别图用最近邻
 插值还原至原图大小，类别 `0`（road）也会作为有效掩码返回。
 
-## 3. 命令行 / API 参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 Python 示例支持：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | 配置文件路径 | `examples/mobileseg/config/mobileseg.yaml` |
-| `--image` | 覆盖输入图片 | yaml 中的 `test_image` |
+| `--image` | 覆盖输入图片 | YAML 中的 `test_image` |
 | `--output` | 输出可视化图片 | `mobileseg_result.jpg` |
-| `--model-path` | 覆盖 yaml 中的模型路径 | 无 |
+| `--model-path` | 覆盖 YAML 中的模型路径 | 无 |
 
 C++ 示例的第一个参数必须是配置文件路径，并支持相同的 `--image`、
 `--output` 和 `--model-path` 覆盖参数。
@@ -67,46 +67,20 @@ C++ 示例的第一个参数必须是配置文件路径，并支持相同的 `--
 
 ## 4. 运行示例
 
-在组件根目录配置并编译 C++ example 和 Python 原生扩展：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-cmake -S . -B build
-cmake --build build --target mobileseg --target _vision_service_cpp -j
+python examples/mobileseg/python/mobileseg.py --config examples/mobileseg/config/mobileseg.yaml
+python examples/mobileseg/python/mobileseg.py --config examples/mobileseg/config/mobileseg.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
-运行默认图片：
+**C++：** 在 `build` 目录运行：
 
 ```bash
-./build/examples/mobileseg \
-  examples/mobileseg/config/mobileseg.yaml
-```
-
-Python 示例使用同一个 C++ `VisionService`。使用已安装的
-`spacemit_vision` wheel 时执行：
-
-```bash
-python3 examples/mobileseg/python/mobileseg.py
-```
-
-直接使用当前源码树和 CMake 构建产物时执行：
-
-```bash
-PYTHONPATH=build/python:src/python \
-  python3 examples/mobileseg/python/mobileseg.py
-```
-
-指定输入和输出：
-
-```bash
-./build/examples/mobileseg \
-  examples/mobileseg/config/mobileseg.yaml \
-  --image /path/to/image.jpg \
-  --output mobileseg_result.jpg
-
-PYTHONPATH=build/python:src/python \
-  python3 examples/mobileseg/python/mobileseg.py \
-  --image /path/to/image.jpg \
-  --output mobileseg_result.jpg
+./examples/mobileseg ../examples/mobileseg/config/mobileseg.yaml
+./examples/mobileseg ../examples/mobileseg/config/mobileseg.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
 ## 5. 故障排查
@@ -121,6 +95,4 @@ PYTHONPATH=build/python:src/python \
   空间尺寸一致的 `int32 [1,H,W]` 类别图输出。
 - **颜色或分割结果异常**：确认输入是 OpenCV BGR 三通道图片；预处理
   会在内部完成 RGB 转换和 `0.5/0.5` 归一化。
-- **Python 无法导入原生扩展**：先构建 `_vision_service_cpp`，并使用
-  已安装的 wheel，或按上面的 `PYTHONPATH=build/python:src/python`
-  命令从源码树运行。
+- **Python 无法导入原生扩展**：构建并安装当前源码对应的 `spacemit_vision` 包，确认平台和 Python 版本匹配。

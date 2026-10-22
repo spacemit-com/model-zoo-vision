@@ -11,7 +11,7 @@ COCO 目标检测示例：对图像执行 DEIMv2-N 推理，输出检测框、�
 - **默认测试图片**：`~/.cache/assets/image/006_test.jpg`
 - **类别标签文件**：`assets/labels/coco.txt`
 
-在组件根目录执行：
+在仓库根目录执行：
 
 ```bash
 bash examples/deimv2/scripts/download_models.sh
@@ -49,7 +49,7 @@ DEIMv2 推理不会使用该参数。
 | `default_params.conf_threshold` | 置信度阈值 | `0.4` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
 | `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
-| `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
+| `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` / `v2d` | `auto` |
 | `default_params.preprocess.normalize` | 按模型文件名识别归一化，也可显式设为 `true` / `false` | `auto` |
 
 说明：通用字段（如 `class`、`default_params` 结构）与其他示例一致，
@@ -59,54 +59,40 @@ DEIMv2 推理不会使用该参数。
 `deimv2n`、`deimv2s`、`deimv2m` 文件名自动选择归一化方式。若模型被重命名，
 需在配置中将 `normalize` 显式设为 `true` 或 `false`。
 
-## 3. 命令行参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 Python 示例支持：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | 配置文件路径 | `examples/deimv2/config/deimv2.yaml` |
-| `--image` | 覆盖输入图片 | yaml 中的 `test_image` |
+| `--image` | 覆盖输入图片 | YAML 中的 `test_image` |
 | `--output` | 输出可视化图片 | `deimv2_result.jpg` |
-| `--model-path` | 覆盖 yaml 中的模型路径 | 无 |
-| `--conf-threshold` | 覆盖置信度阈值 | 使用 yaml 配置 |
+| `--model-path` | 覆盖 YAML 中的模型路径 | 无 |
+| `--conf-threshold` | 覆盖置信度阈值 | 使用 YAML 配置 |
 
 C++ 示例的第一个参数必须是配置文件路径，并支持 `--image`、`--output`
 和 `--model-path`。
 
 ## 4. 运行示例
 
-**C++：** 在 `cv/build` 目录下：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/deimv2/python/deimv2.py --config examples/deimv2/config/deimv2.yaml
+python examples/deimv2/python/deimv2.py --config examples/deimv2/config/deimv2.yaml --image /path/to/image.jpg --output result.jpg
+```
+
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/deimv2 ../examples/deimv2/config/deimv2.yaml
-./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
-  --model-path ~/.cache/models/vision/deimv2/deimv2s.fp16.onnx
-./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
-  --model-path ~/.cache/models/vision/deimv2/deimv2m.fp16.onnx
-./examples/deimv2 ../examples/deimv2/config/deimv2.yaml \
-  --image /path/to/image.jpg --output deimv2_result.jpg
+./examples/deimv2 ../examples/deimv2/config/deimv2.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
-使用已安装的 `spacemit_vision` Python 包。运行前需确认当前 Python 环境已经
-安装本仓库构建出的 wheel：
-
-```bash
-python3 examples/deimv2/python/deimv2.py
-python3 examples/deimv2/python/deimv2.py \
-  --model-path ~/.cache/models/vision/deimv2/deimv2s.fp16.onnx
-```
-
-直接使用当前源码树。运行前需先构建原生扩展，并通过 `build_wheel.sh` 将最新的
-扩展和 `libvision.so` 更新到源码包目录：
-
-```bash
-cmake -S . -B build -DBUILD_PYTHON_BINDINGS=ON
-cmake --build build -j8 --target _vision_service_cpp
-(cd src/python && PYTHON_BIN=python3 ./build_wheel.sh ../../build)
-PYTHONPATH=src/python \
-  python3 examples/deimv2/python/deimv2.py
-```
+可用 `--model-path` 切换下载脚本提供的兼容 S/M 权重；更换权重时需保持配置与导出格式一致。
 
 ## 5. 故障排查
 
@@ -116,5 +102,4 @@ PYTHONPATH=src/python \
   `--image` 指定图片。
 - **模型创建失败**：确认模型输入输出名称和形状与上表一致，并确认配置中的
   执行提供方可用。
-- **Python 无法导入原生扩展**：先构建 `_vision_service_cpp`，并使用已安装的
-  Python 包，或按上面的 `PYTHONPATH` 命令从源码树运行。
+- **Python 无法导入原生扩展**：构建并安装当前源码对应的 `spacemit_vision` 包，确认平台和 Python 版本匹配。

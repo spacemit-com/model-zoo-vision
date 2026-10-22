@@ -6,7 +6,7 @@
 
 - **模型类型**：人脸检测（SCRFD，buffalo_l det_10g）
 - **默认模型文件**：`~/.cache/models/vision/buffalo_l/det_10g_fixed.q.onnx`
-- **下载**：在本示例目录执行 `bash scripts/download_models.sh`。
+- **下载**：在仓库根目录执行 `bash examples/scrfd/scripts/download_models.sh`。
 
 本示例与 `applications/face_recognition` 共用 `buffalo_l` 权重缓存，
 下载脚本只获取检测模型，不下载识别、年龄性别等模型。
@@ -34,7 +34,7 @@ bash scripts/download_assets.sh
 
 ## 2. 配置文件说明（config/scrfd.yaml）
 
-| 配置项 | 含义 | 默认 |
+| 配置项 | 含义 | 默认或示例 |
 |--------|------|------|
 | `model_path` | 检测模型路径 | `~/.cache/models/vision/buffalo_l/det_10g_fixed.q.onnx` |
 | `test_image` | 默认测试图片 | `~/.cache/assets/image/006_test.jpg` |
@@ -43,7 +43,7 @@ bash scripts/download_assets.sh
 | `default_params.num_threads` | 推理线程数 | `8` |
 | `default_params.providers` | 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
 
-CPU 对照可将 provider 改为 `CPUExecutionProvider`。
+CPU 对照可将 `default_params.providers` 改为 `[CPUExecutionProvider]`。
 示例使用 BGR 图片和 CPU 预处理，不提供摄像头、MPP 或 OpenCL 参数。
 
 `default_params.iou_threshold` 设置 NMS IoU 阈值；旧名称 `nms_threshold`
@@ -52,11 +52,11 @@ CPU 对照可将 provider 改为 `CPUExecutionProvider`。
 `max_det` 仅通过 `VisionServiceInferParams` 设置：负数不限制数量，0 返回空结果，
 正数限制人脸数量；不要写入本模型的 `default_params`。
 
-## 3. 命令行 / API 参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 **Python 示例**（`python/scrfd.py`）：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | YAML 配置路径 | 示例内的 `config/scrfd.yaml` |
 | `--model-path` | 覆盖模型路径 | 无 |
@@ -71,17 +71,17 @@ CPU 对照可将 provider 改为 `CPUExecutionProvider`。
 
 ## 4. 运行示例
 
-**Python：** 先按仓库 README 安装当前构建的 `spacemit_vision` 包及 OpenCV 等依赖。
-从仓库根目录进入示例目录：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-cd examples/scrfd/python
-python3 scrfd.py --config ../config/scrfd.yaml
-python3 scrfd.py --config ../config/scrfd.yaml \
+python examples/scrfd/python/scrfd.py --config examples/scrfd/config/scrfd.yaml
+python examples/scrfd/python/scrfd.py --config examples/scrfd/config/scrfd.yaml \
   --image /path/to/face.jpg --output result.jpg
 ```
 
-**C++：** 按仓库 README 构建并启用 examples 后，在仓库的 `build/` 目录执行：
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/scrfd ../examples/scrfd/config/scrfd.yaml
@@ -93,7 +93,7 @@ python3 scrfd.py --config ../config/scrfd.yaml \
 
 ## 5. 故障排查
 
-- **模型未找到**：执行本示例的 `scripts/download_models.sh`；缓存目录是 `buffalo_l`，不是 `scrfd`。
+- **模型未找到**：执行本示例的 `bash examples/scrfd/scripts/download_models.sh`；缓存目录是 `buffalo_l`，不是 `scrfd`。
 - **图片未找到**：执行仓库根目录的 `scripts/download_assets.sh`，或指定 `--image`。
 - **没有检出人脸**：检查图片内容、人脸大小和遮挡情况，可在 YAML 中适当调低置信度阈值。
 - **输出契约错误**：确认使用默认的 `det_10g_fixed.q.onnx`，而非其他模型或不同输出排列的导出。

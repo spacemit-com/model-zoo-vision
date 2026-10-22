@@ -51,7 +51,18 @@ bash scripts/download_assets.sh
 
 ## 3. 命令行 / API 参数（与本示例相关）
 
-本示例仅提供 C++ 程序，位置参数如下：
+**Python 示例**（`python/nanotrack.py`）：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--config` | 配置文件路径 | `examples/nanotrack/config/nanotrack.yaml` |
+| `--video` | 输入视频路径 | YAML 中的 `test_video` |
+| `--bbox X1 Y1 X2 Y2` | 首帧目标框，使用原图像素坐标；注意与 YAML 的 xywh 格式不同 | YAML 中的 `initial_bbox`，自动转换为 xyxy |
+| `--output` | 结果视频路径 | `nanotrack_tracking.mp4` |
+| `--max-frames` | 处理帧数上限，0 表示处理完整视频 | `0` |
+| `--model-path` | 覆盖主模型路径；NanoTrack 仅覆盖搜索 backbone | 无 |
+
+**C++ 示例**：位置参数如下：
 
 | 参数 | 说明 | 默认值 |
 |------|------|------|
@@ -60,11 +71,24 @@ bash scripts/download_assets.sh
 
 首帧请求设置 `has_initial_bbox=true` 并传入 xyxy 初始框；后续帧复用同一个
 `VisionService` 实例且只传图像。再次提供初始框会重置模板和跟踪状态。
-输出文件名固定为当前工作目录下的 `nanotrack_tracking.mp4`。
+C++ 输出文件名固定为当前工作目录下的 `nanotrack_tracking.mp4`；
+Python 可通过 `--output` 指定输出路径。
+
+Python 首帧调用 `service.track(frame, initial_bbox_xyxy)`，后续帧调用
+`service.track(frame)`，始终复用同一个服务实例，并通过 `service.draw(frame)` 绘图。
 
 ## 4. 运行示例
 
-运行前需按仓库 README 编译 C++ 示例。
+Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包；
+C++ 示例需按仓库 README 编译。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/nanotrack/python/nanotrack.py --config examples/nanotrack/config/nanotrack.yaml
+python examples/nanotrack/python/nanotrack.py --config examples/nanotrack/config/nanotrack.yaml \
+  --video /path/to/video.mp4 --bbox 315 140 431 261 --max-frames 100 --output result.mp4
+```
 
 **C++：** 在 `build` 目录运行：
 
@@ -74,11 +98,15 @@ bash scripts/download_assets.sh
   /path/to/video.mp4
 ```
 
-自定义视频仍使用 YAML 中的 `initial_bbox`，运行前应按该视频首帧修改初始框。
-成功时程序会打印处理帧数，并生成 `nanotrack_tracking.mp4`。
+自定义视频需要与首帧对应的初始框。C++ 示例读取 YAML 的 `initial_bbox`；
+Python 也读取该默认值，或通过 `--bbox X1 Y1 X2 Y2` 覆盖。
+两个示例均只保存结果视频，不弹出窗口，可在无桌面的 SSH 环境运行。
+成功时程序会打印处理帧数，默认生成 `nanotrack_tracking.mp4`；
+Python 指定 `--output` 时保存到指定路径。
 
 ## 5. 故障排查
 
+- **Python 扩展导入失败**：安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
 - **模型未找到**：执行 `bash examples/nanotrack/scripts/download_models.sh`，并核对三个模型路径。
 - **测试视频未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **首帧跟踪目标不正确**：`initial_bbox` 使用 xywh 像素坐标，必须位于输入视频首帧范围内。

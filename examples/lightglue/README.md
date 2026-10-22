@@ -53,7 +53,17 @@ LightGlue ONNX 输入 shape 同时一致，否则模型会拒绝推理。
 
 ## 3. 命令行 / API 参数（与本示例相关）
 
-本示例仅提供 C++ 程序，位置参数如下：
+**Python 示例**（`python/lightglue.py`）：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--config` | 配置文件路径 | `examples/lightglue/config/lightglue.yaml` |
+| `--image1` / `--image2` | 两张输入图片，必须同时提供 | YAML 中的 `test_image1` / `test_image2` |
+| `--extractor-config` | SuperPoint 配置文件路径 | YAML 中的 `superpoint_config_path` |
+| `--output` | 匹配图输出路径 | `lightglue_matches.jpg` |
+| `--model-path` | 覆盖 LightGlue 主模型路径 | 无 |
+
+**C++ 示例**：位置参数如下：
 
 | 参数 | 说明 | 默认值 |
 |------|------|------|
@@ -62,11 +72,23 @@ LightGlue ONNX 输入 shape 同时一致，否则模型会拒绝推理。
 
 示例程序根据 `superpoint_config_path` 创建第二个 `VisionService` 提取两组特征，
 再通过 `VisionServiceRequest.local_features0` 和 `local_features1` 调用
-LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.jpg`。
+LightGlue。C++ 输出文件名固定为当前工作目录下的 `lightglue_matches.jpg`。
+
+Python 通过第二个 `VisionServiceNative` 提取两组 SuperPoint 特征，
+再调用 `matcher.match_local_features(features1, features2)` 获取匹配结果。
 
 ## 4. 运行示例
 
-运行前需按仓库 README 编译 C++ 示例。
+Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包；
+C++ 示例需按仓库 README 编译。
+
+**Python：** 在仓库根目录运行：
+
+```bash
+python examples/lightglue/python/lightglue.py --config examples/lightglue/config/lightglue.yaml
+python examples/lightglue/python/lightglue.py --config examples/lightglue/config/lightglue.yaml \
+  --image1 /path/to/image1.jpg --image2 /path/to/image2.jpg --output result.jpg
+```
 
 **C++：** 在 `build` 目录运行：
 
@@ -76,12 +98,15 @@ LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.
   /path/to/image1.jpg /path/to/image2.jpg
 ```
 
-成功时程序会打印匹配数量，并生成左右图拼接及绿色匹配连线组成的
-`lightglue_matches.jpg`。
+成功时程序会打印匹配数量，默认生成左右图拼接及绿色匹配连线组成的
+`lightglue_matches.jpg`；Python 指定 `--output` 时保存到指定路径。
 
 ## 5. 故障排查
 
-- **模型未找到**：LightGlue 示例同时依赖 SuperPoint 和 LightGlue 权重，请分别执行两个 `examples/lightglue/scripts/download_models.sh`。
+- **Python 扩展导入失败**：安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+- **模型未找到**：LightGlue 示例同时依赖 SuperPoint 和 LightGlue 权重，请执行
+  `bash examples/superpoint/scripts/download_models.sh` 和
+  `bash examples/lightglue/scripts/download_models.sh`。
 - **测试图片未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **特征契约不兼容**：核对两个配置中的 `feature_type`、`num_keypoints`、`descriptor_dim` 以及实际 ONNX 输入 shape。
 - **匹配结果为空**：先确认 SuperPoint 正常输出特征，再根据模型需要检查或调整 `filter_threshold`。

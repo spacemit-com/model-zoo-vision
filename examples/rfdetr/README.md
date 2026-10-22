@@ -11,7 +11,7 @@ COCO 目标检测示例：对图像执行 RF-DETR 推理，输出检测框、置
 - **默认测试图片**：`~/.cache/assets/image/006_test.jpg`
 - **类别标签文件**：`assets/labels/coco_sparse.txt`
 
-在组件根目录执行：
+在仓库根目录执行：
 
 ```bash
 bash examples/rfdetr/scripts/download_models.sh
@@ -50,7 +50,7 @@ RF-DETR 的 COCO 输出使用原始 category id 作为类别槽位，包含未�
 | `default_params.max_det` | 最多保留的检测结果数 | `300` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `8` |
 | `default_params.providers` | ONNX Runtime 执行提供方（单元素列表） | `[SpaceMITExecutionProvider]` |
-| `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` | `auto` |
+| `default_params.preprocess.backend` | 预处理策略：`cpu` / `auto` / `opencl` / `v2d` | `auto` |
 
 默认配置使用 Nano。切换到 Small 或 Medium 时只需通过 `--model-path` 指定模型，
 检测器会从 ONNX 输入自动读取分辨率。
@@ -60,51 +60,37 @@ RF-DETR 的 COCO 输出使用原始 category id 作为类别槽位，包含未�
 0 返回空检测结果，正数设置本次数量上限。`conf_threshold` 的正数请求值覆盖
 YAML 默认值，`<=0` 使用默认值。
 
-## 3. 命令行参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 Python 示例支持：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | 配置文件路径 | `examples/rfdetr/config/rfdetr.yaml` |
-| `--image` | 覆盖输入图片 | yaml 中的 `test_image` |
+| `--image` | 覆盖输入图片 | YAML 中的 `test_image` |
 | `--output` | 输出可视化图片 | `rfdetr_result.jpg` |
-| `--model-path` | 覆盖 yaml 中的模型路径 | 无 |
-| `--conf-threshold` | 覆盖置信度阈值 | 使用 yaml 配置 |
+| `--model-path` | 覆盖 YAML 中的模型路径 | 无 |
+| `--conf-threshold` | 覆盖置信度阈值 | 使用 YAML 配置 |
 
 C++ 示例的第一个参数必须是配置文件路径，并支持 `--image`、`--output` 和
 `--model-path`。
 
 ## 4. 运行示例
 
-在组件根目录运行 C++ 示例：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-./build/examples/rfdetr examples/rfdetr/config/rfdetr.yaml
-./build/examples/rfdetr examples/rfdetr/config/rfdetr.yaml \
-  --model-path ~/.cache/models/vision/rfdetr/rfdetr-small.fp16.onnx
-./build/examples/rfdetr examples/rfdetr/config/rfdetr.yaml \
-  --model-path ~/.cache/models/vision/rfdetr/rfdetr-medium.fp16.onnx
-./build/examples/rfdetr examples/rfdetr/config/rfdetr.yaml \
-  --image /path/to/image.jpg --output rfdetr_result.jpg
+python examples/rfdetr/python/rfdetr.py --config examples/rfdetr/config/rfdetr.yaml
+python examples/rfdetr/python/rfdetr.py --config examples/rfdetr/config/rfdetr.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
-使用已安装且由当前源码构建的 `spacemit_vision` Python 包：
+**C++：** 在 `build` 目录运行：
 
 ```bash
-python3 examples/rfdetr/python/rfdetr.py
-python3 examples/rfdetr/python/rfdetr.py \
-  --model-path ~/.cache/models/vision/rfdetr/rfdetr-small.fp16.onnx
-```
-
-直接使用当前源码树时，先构建原生扩展并更新源码包中的运行库：
-
-```bash
-cmake -S . -B build -DBUILD_PYTHON_BINDINGS=ON
-cmake --build build -j8 --target _vision_service_cpp
-(cd src/python && PYTHON_BIN=python3 ./build_wheel.sh ../../build)
-PYTHONPATH=src/python \
-  python3 examples/rfdetr/python/rfdetr.py
+./examples/rfdetr ../examples/rfdetr/config/rfdetr.yaml
+./examples/rfdetr ../examples/rfdetr/config/rfdetr.yaml --image /path/to/image.jpg --output result.jpg
 ```
 
 ## 5. 故障排查
@@ -115,5 +101,4 @@ PYTHONPATH=src/python \
   `--image` 指定图片。
 - **类别名称错位**：确认配置使用 `assets/labels/coco_sparse.txt`，不要改为
   紧凑的 80 类 COCO 标签文件。
-- **Python 无法导入原生扩展**：先构建 `_vision_service_cpp`，并使用当前构建
-  生成的 Python 包。
+- **Python 无法导入原生扩展**：构建并安装当前源码对应的 `spacemit_vision` 包，确认平台和 Python 版本匹配。

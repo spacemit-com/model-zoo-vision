@@ -10,7 +10,7 @@
 - **默认模型文件**：`~/.cache/models/vision/superpoint/superpoint_512x512_top512_batch1.q.onnx`
 - **可选模型文件**：`~/.cache/models/vision/superpoint/superpoint_512x512_top512_batch1.onnx`
 - **推理后端**：CPU 预处理、SpaceMIT Execution Provider
-- **下载**：在 cv 组件根目录执行：
+- **下载**：在仓库根目录执行：
 
 ```bash
 bash examples/superpoint/scripts/download_models.sh
@@ -21,7 +21,7 @@ bash examples/superpoint/scripts/download_models.sh
 
 **数据（测试图片）**：默认测试图为
 `~/.cache/assets/image/016_lightglue1.jpg`。若尚未下载资源，请在
-cv 组件根目录执行：
+仓库根目录执行：
 
 ```bash
 bash scripts/download_assets.sh
@@ -29,7 +29,7 @@ bash scripts/download_assets.sh
 
 ## 2. 配置文件说明（config/superpoint.yaml）
 
-本示例使用的配置文件为 `config/superpoint.yaml`。与本模块强相关的字段如下：
+本示例使用的配置文件为 `config/superpoint.yaml`。与本示例强相关的字段如下：
 
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
@@ -40,20 +40,20 @@ bash scripts/download_assets.sh
 | `default_params.remove_borders` | 忽略输入图边缘的像素宽度 | `4` |
 | `default_params.feature_type` | 特征类型标识，用于匹配器契约校验 | `superpoint` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `4` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方 | `[SpaceMITExecutionProvider]` |
 
 输入图会缩放到模型所需的 `512×512` 灰度输入。返回结果中的关键点坐标会映射回
 原图像素坐标系，描述子按 `关键点数量 × descriptor_dim` 展平存储；当前模型的
 `descriptor_dim` 为 `256`。
 
-## 3. 命令行 / API 参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 本示例仅提供 C++ 程序，位置参数如下：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | 第 1 个参数 | 配置文件路径 | 必填 |
-| 第 2 个参数 | 输入图片路径 | 使用 yaml 中的 `test_image` |
+| 第 2 个参数 | 输入图片路径 | 使用 YAML 中的 `test_image` |
 
 程序调用 `VisionService::Infer()` 获取一个 `vision::LocalFeatures`，
 随后调用 `VisionService::Draw()` 绘制关键点。输出文件名固定为当前工作目录下的
@@ -61,7 +61,9 @@ bash scripts/download_assets.sh
 
 ## 4. 运行示例
 
-**C++：** 在 `cv/build` 目录下：
+运行前需按仓库 README 编译 C++ 示例。
+
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/superpoint ../examples/superpoint/config/superpoint.yaml
@@ -74,7 +76,7 @@ bash scripts/download_assets.sh
 
 ## 5. 故障排查
 
-- **模型未找到**：执行 `bash examples/superpoint/scripts/download_models.sh`，并检查 yaml 中的 `model_path`。
-- **测试图未找到**：在 cv 组件根目录执行 `bash scripts/download_assets.sh`。
+- **模型未找到**：执行 `bash examples/superpoint/scripts/download_models.sh`，并检查 YAML 中的 `model_path`。
+- **测试图片未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **LightGlue 提示特征不兼容**：确保两侧的 `feature_type`、关键点数量和描述子维度与 LightGlue 配置及权重契约一致。
 - **模型创建或推理失败**：确认开发板环境可用 `SpaceMITExecutionProvider`，并查看程序输出的 `LastCreateError()` 或 `LastError()`。

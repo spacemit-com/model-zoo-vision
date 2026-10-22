@@ -8,9 +8,13 @@
 - **模型文件**（与 `config/yoloe.yaml` 一致）：
   - 分割：`~/.cache/models/vision/yoloe/yoloe-v8s-seg.dynq.onnx`
   - MobileCLIP 文本编码：`~/.cache/models/vision/yoloe/mobileclip.q.onnx`
-- **下载**：在本示例目录下执行
-  `bash scripts/download_models.sh`
-  会从 archive（`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/yoloe/`）
+- **下载**：在仓库根目录执行：
+
+```bash
+bash examples/yoloe/scripts/download_models.sh
+```
+
+会从 archive（`https://archive.spacemit.com/spacemit-ai/model_zoo/vision/yoloe/`）
   下载到 `~/.cache/models/vision/yoloe/`（已存在则跳过）。
 
 ### 开放词汇 + 分割的工作方式
@@ -36,25 +40,25 @@ mask 系数相乘、阈值化后 resize 回原图得到。处理约定：
 | `default_params.prompts` | 默认文本词汇（= 类别） | `[person, bus]` |
 | `default_params.conf_threshold` | 置信度阈值 | `0.25` |
 | `default_params.iou_threshold` | NMS IoU 阈值 | `0.45` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方 | `[SpaceMITExecutionProvider]` |
 
 说明：`prompts` 支持列表或逗号分隔字符串。类别标签来自当前词汇，无需 `label_file_path`。
 
-## 3. 命令行参数
+## 3. 命令行 / API 参数（与本示例相关）
 
 **Python 示例**（`python/yoloe.py`）：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | `--config` | 配置文件路径 | `examples/yoloe/config/yoloe.yaml` |
-| `--image` | 输入图片路径 | 使用 yaml 中 `test_image` |
+| `--image` | 输入图片路径 | 使用 YAML 中 `test_image` |
 | `--output` | 输出图片路径 | `yoloe_result.jpg` |
-| `--prompts` | 覆盖词汇，逗号分隔 `"person,bus"` | 空 → 用 config 默认 |
-| `--conf-threshold` / `--iou-threshold` | 阈值 | 来自 config |
-| `--use-camera` / `--camera-id` | 摄像头输入 / 设备 ID | 关 / `0` |
-| `--model-path` | 覆盖 yaml 中的 `model_path` | 无 |
+| `--prompts` | 覆盖词汇，逗号分隔 `"person,bus"` | 未指定时使用配置文件默认值 |
+| `--conf-threshold` / `--iou-threshold` | 阈值 | 来自配置文件|
+| `--use-camera` / `--camera-id` | 摄像头输入 / 设备 ID | 关闭 / `0` |
+| `--model-path` | 覆盖 YAML 中的 `model_path` | 无 |
 
-**C++ 示例**（需在 `cv/build` 下先编译）：第一个参数是配置文件路径，可选
+**C++ 示例**：第一个参数是配置文件路径，可选
 `--image`、`--output`、`--prompts`、`--model-path`。
 
 Python API 支持同时传入文本提示和单次推理参数：
@@ -75,16 +79,19 @@ status, results = service.infer_image(
 
 ## 4. 运行示例
 
-**Python：**
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+摄像头模式需要可用的摄像头设备和 OpenCV 图形显示环境；无桌面的 SSH 会话可先运行图片示例。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-cd examples/yoloe/python
-python yoloe.py --config ../config/yoloe.yaml
-python yoloe.py --config ../config/yoloe.yaml --prompts "person,bus" --output yoloe_result.jpg
-python yoloe.py --config ../config/yoloe.yaml --use-camera --prompts "person,dog"
+python examples/yoloe/python/yoloe.py --config examples/yoloe/config/yoloe.yaml
+python examples/yoloe/python/yoloe.py --config examples/yoloe/config/yoloe.yaml --prompts "person,bus" --output yoloe_result.jpg
+python examples/yoloe/python/yoloe.py --config examples/yoloe/config/yoloe.yaml --use-camera --prompts "person,dog"
 ```
 
-**C++：** 在 `cv/build` 目录下：
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/yoloe ../examples/yoloe/config/yoloe.yaml
@@ -93,10 +100,14 @@ python yoloe.py --config ../config/yoloe.yaml --use-camera --prompts "person,dog
 
 ## 5. 故障排查
 
-- **模型未找到**：确认已执行 `scripts/download_models.sh`，分割/MobileCLIP 两个模型都在
+- **模型未找到**：确认已执行 `bash examples/yoloe/scripts/download_models.sh`，分割/MobileCLIP 两个模型都在
   `~/.cache/models/vision/yoloe/` 下。
 - **bpe_merges 打不开**：`bpe_merges_path` 走仓库相对路径 `assets/clip/bpe_merges.txt`，
   从仓库根目录运行、或改绝对路径。
 - **没有 mask 只有框**：模型需为分割导出（≥2 个输出）；单输出模型会退化为纯检测。
 - **框标签是数字而非词**：确认走带 prompts 的推理路径；Python 侧需重编含 `infer_image_prompts`
   绑定的 wheel。
+
+- **引擎提示 Einsum 不支持**：所用 SpaceMIT 引擎版本尚不支持该权重的 Einsum 表达式。
+  可更新到支持该算子的引擎，或将 YAML 的 `default_params.providers` 改为
+  `[CPUExecutionProvider]` 后运行；CPU 路径的延迟与硬件加速路径不同。

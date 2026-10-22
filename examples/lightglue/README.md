@@ -11,7 +11,7 @@
 - **可选模型文件**：`~/.cache/models/vision/lightglue/lightglue_for_superpoint_512_depth9.fp16.onnx`
 - **前端依赖**：默认示例使用 `examples/superpoint/config/superpoint.yaml`
 - **推理后端**：CPU 预处理、SpaceMIT Execution Provider
-- **下载**：在 cv 组件根目录执行：
+- **下载**：在仓库根目录执行：
 
 ```bash
 bash examples/superpoint/scripts/download_models.sh
@@ -25,7 +25,7 @@ LightGlue 本身不负责从图像提取特征，也不固定只能使用 SuperP
 **数据（测试图片）**：默认测试图为
 `~/.cache/assets/image/016_lightglue1.jpg` 和
 `~/.cache/assets/image/017_lightglue2.jpg`。若尚未下载资源，请在
-cv 组件根目录执行：
+仓库根目录执行：
 
 ```bash
 bash scripts/download_assets.sh
@@ -33,7 +33,7 @@ bash scripts/download_assets.sh
 
 ## 2. 配置文件说明（config/lightglue.yaml）
 
-本示例使用的配置文件为 `config/lightglue.yaml`。与本模块强相关的字段如下：
+本示例使用的配置文件为 `config/lightglue.yaml`。与本示例强相关的字段如下：
 
 | 配置项 | 含义 | 默认或示例 |
 |--------|------|------------|
@@ -46,19 +46,19 @@ bash scripts/download_assets.sh
 | `default_params.descriptor_dim` | 每个关键点的描述子维度 | `256` |
 | `default_params.filter_threshold` | 匹配分数过滤阈值 | `0.1` |
 | `default_params.num_threads` | ONNX Runtime CPU 线程数 | `4` |
-| `default_params.providers` | ONNX Runtime 执行提供方 | `SpaceMITExecutionProvider` |
+| `default_params.providers` | ONNX Runtime 执行提供方 | `[SpaceMITExecutionProvider]` |
 
 `feature_type`、`num_keypoints` 和 `descriptor_dim` 必须与特征提取器输出及
 LightGlue ONNX 输入 shape 同时一致，否则模型会拒绝推理。
 
-## 3. 命令行 / API 参数（与本模块相关）
+## 3. 命令行 / API 参数（与本示例相关）
 
 本示例仅提供 C++ 程序，位置参数如下：
 
-| 参数 | 说明 | 默认 |
+| 参数 | 说明 | 默认值 |
 |------|------|------|
 | 第 1 个参数 | LightGlue 配置文件路径 | 必填 |
-| 第 2、3 个参数 | 两张输入图片路径，必须同时提供 | 使用 yaml 中的 `test_image1`、`test_image2` |
+| 第 2、3 个参数 | 两张输入图片路径，必须同时提供 | 使用 YAML 中的 `test_image1`、`test_image2` |
 
 示例程序根据 `superpoint_config_path` 创建第二个 `VisionService` 提取两组特征，
 再通过 `VisionServiceRequest.local_features0` 和 `local_features1` 调用
@@ -66,7 +66,9 @@ LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.
 
 ## 4. 运行示例
 
-**C++：** 在 `cv/build` 目录下：
+运行前需按仓库 README 编译 C++ 示例。
+
+**C++：** 在 `build` 目录运行：
 
 ```bash
 ./examples/lightglue ../examples/lightglue/config/lightglue.yaml
@@ -79,8 +81,8 @@ LightGlue。输出文件名固定为当前工作目录下的 `lightglue_matches.
 
 ## 5. 故障排查
 
-- **模型未找到**：LightGlue 示例同时依赖 SuperPoint 和 LightGlue 权重，请分别执行两个 `download_models.sh`。
-- **测试图未找到**：在 cv 组件根目录执行 `bash scripts/download_assets.sh`。
+- **模型未找到**：LightGlue 示例同时依赖 SuperPoint 和 LightGlue 权重，请分别执行两个 `examples/lightglue/scripts/download_models.sh`。
+- **测试图片未找到**：在仓库根目录执行 `bash scripts/download_assets.sh`。
 - **特征契约不兼容**：核对两个配置中的 `feature_type`、`num_keypoints`、`descriptor_dim` 以及实际 ONNX 输入 shape。
 - **匹配结果为空**：先确认 SuperPoint 正常输出特征，再根据模型需要检查或调整 `filter_threshold`。
 - **模型创建或推理失败**：确认开发板环境可用 `SpaceMITExecutionProvider`，并查看程序输出的创建、特征提取或匹配错误。

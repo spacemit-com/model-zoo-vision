@@ -34,44 +34,37 @@ bash scripts/download_assets.sh
 | `label_file_path` | COCO 80 类名称 | `assets/labels/coco.txt` |
 | `default_params.conf_threshold` | 输出分数阈值 | `0.3` |
 | `default_params.num_threads` | 推理线程数 | `8` |
-| `default_params.providers` | 推理 provider | `SpaceMITExecutionProvider` |
+| `default_params.providers` | 推理 执行提供方 | `[SpaceMITExecutionProvider]` |
 | `default_params.preprocess.backend` | 图像预处理后端 | `auto` |
 
 默认配置使用 RT-DETRv2-S；两份模型共用 COCO 80 类标签。
 
-## 3. 命令行参数
+## 3. 命令行 / API 参数（与本示例相关）
 
 Python 示例支持 `--config`、`--model-path`、`--image`、`--output` 和 `--conf-threshold`。C++ 示例的第一个参数为配置文件路径，并支持 `--model-path`、`--image` 和 `--output`。
 
 ## 4. 运行示例
 
-从仓库根目录运行 C++ 示例（先构建项目）：
+运行前需按仓库 README 编译 C++ 示例。Python 示例需安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+运行前需编译 C++ 示例，或安装与当前平台及 Python 版本匹配的 `spacemit_vision` 包。
+
+**Python：** 在仓库根目录运行：
 
 ```bash
-./build/examples/rtdetr examples/rtdetr/config/rtdetr.yaml
-./build/examples/rtdetr examples/rtdetr/config/rtdetr.yaml \
-  --image /path/to/image.jpg --output rtdetrv2_result.jpg
+python examples/rtdetr/python/rtdetr.py --config examples/rtdetr/config/rtdetr.yaml
+python examples/rtdetr/python/rtdetr.py --config examples/rtdetr/config/rtdetr.yaml --image /path/to/image.jpg --output rtdetrv2_result.jpg
 ```
 
-使用与当前源码对应的 `spacemit_vision` Python 包：
+**C++：** 在 `build` 目录运行：
 
 ```bash
-python3 examples/rtdetr/python/rtdetr.py
-python3 examples/rtdetr/python/rtdetr.py \
-  --image /path/to/image.jpg --output rtdetrv2_result.jpg
-```
-
-从源码树运行 Python 示例时，先构建原生绑定并更新源码包中的运行库，避免加载旧版本 `.so`：
-
-```bash
-cmake -S . -B build -DBUILD_PYTHON_BINDINGS=ON
-cmake --build build --target _vision_service_cpp -j8
-(cd src/python && PYTHON_BIN=python3 ./build_wheel.sh ../../build)
-PYTHONPATH=src/python python3 examples/rtdetr/python/rtdetr.py
+./examples/rtdetr ../examples/rtdetr/config/rtdetr.yaml
+./examples/rtdetr ../examples/rtdetr/config/rtdetr.yaml --image /path/to/image.jpg --output rtdetrv2_result.jpg
 ```
 
 ## 5. 故障排查
 
-- 模型找不到：先运行模型脚本，或通过 `--model-path` 指定现有权重。
-- 测试图找不到：运行 `bash scripts/download_assets.sh`，或通过 `--image` 指定图片。
-- 类别名称不匹配：确认配置使用紧凑的 80 类 `assets/labels/coco.txt`，不要使用 RF-DETR 的稀疏 COCO 标签文件。
+- **模型未找到**：先运行模型脚本，或通过 `--model-path` 指定现有权重。
+- **测试图找不到**：运行 `bash scripts/download_assets.sh`，或通过 `--image` 指定图片。
+- **类别名称不匹配**：确认配置使用紧凑的 80 类 `assets/labels/coco.txt`，不要使用 RF-DETR 的稀疏 COCO 标签文件。

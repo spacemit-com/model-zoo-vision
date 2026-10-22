@@ -325,24 +325,12 @@ vision::DepthMap YOLO26DepthEstimator::estimate_depth(
     return result;
 }
 
-vision_core::InferResponse YOLO26DepthEstimator::Run(
+vision_core::InferResponse YOLO26DepthEstimator::RunImpl(
     const vision_core::InferRequest& request) {
-    if (request.intent !=
-        vision_core::InferIntent::kMonocularDepth) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* input =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message =
-            "YOLO26DepthEstimator expects ImageInput";
-        return response;
-    }
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
 
     vision_core::InferResponse response;
-    response.results.emplace_back(estimate_depth(*input));
+    response.results.emplace_back(estimate_depth(input));
     return response;
 }
 

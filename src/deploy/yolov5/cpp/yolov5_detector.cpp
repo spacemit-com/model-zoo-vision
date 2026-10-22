@@ -96,15 +96,6 @@ cv::Mat YOLOv5Detector::preprocess(const cv::Mat& image) {
         std::make_pair(input_height, input_width));
 }
 
-vision_common::DetectionResultList YOLOv5Detector::detect(
-    const cv::Mat& image,
-    float conf_threshold,
-    float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return detect_input(input, conf_threshold, iou_threshold);
-}
-
 vision_common::DetectionResultList YOLOv5Detector::detect_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
@@ -167,29 +158,15 @@ std::vector<vision_core::InferIntent> YOLOv5Detector::supported_intents() const 
     return {vision_core::InferIntent::kDetect};
 }
 
-vision_core::InferResponse YOLOv5Detector::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kDetect) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "YOLOv5Detector expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse YOLOv5Detector::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::DetectionResultList task_results =
         detect_input(
-            *image_input,
+            image_input,
             request.params.conf_threshold,
             request.params.iou_threshold, request.params.max_det);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> YOLOv5Detector::get_capabilities() const {

@@ -74,7 +74,7 @@ std::vector<float> keypoints_to_stgcn_frame(const vision::KeyPoint* kpts, int co
     return frame;
 }
 
-/** Flatten 30 frames of 13*3 into pts array for StgcnActionRecognizer::predict (pixel coords). */
+/** Flatten 30 frames of 13*3 into the VisionService sequence input (pixel coords). */
 std::vector<float> keypoint_buffer_to_pts(const std::deque<std::vector<float>>& buffer) {
     const size_t need = static_cast<size_t>(STGCN_SEQUENCE_LENGTH * 13 * 3);
     std::vector<float> pts(need, 0.f);

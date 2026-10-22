@@ -684,12 +684,6 @@ std::string PPOCRDetector::rec_run(
 // Pipeline
 // ---------------------------------------------------------------------------
 
-vision_common::TextResultList PPOCRDetector::detect_text(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return detect_text_input(input);
-}
-
 vision_common::TextResultList PPOCRDetector::detect_text_input(
     const vision_core::ImageInput& input) {
     if (input.image.empty()) {
@@ -897,25 +891,11 @@ std::vector<vision_core::ModelCapability> PPOCRDetector::get_capabilities() cons
     return {vision_core::ModelCapability::kDraw};
 }
 
-vision_core::InferResponse PPOCRDetector::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kOcr) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "PPOCRDetector expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse PPOCRDetector::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
     vision_common::TextResultList task_results =
-        detect_text_input(*image_input);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+        detect_text_input(image_input);
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 static vision_core::ModelRegistrar<PPOCRDetector> registrar("PPOCRDetector");

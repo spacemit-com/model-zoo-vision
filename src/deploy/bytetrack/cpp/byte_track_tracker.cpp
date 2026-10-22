@@ -91,20 +91,6 @@ void ByteTrackTracker::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat ByteTrackTracker::preprocess(const cv::Mat& image) {
-    ensure_model_loaded();
-    return detector_->preprocess(image);
-}
-
-vision_common::TrackingResultList ByteTrackTracker::track(
-    const cv::Mat& image,
-    float conf_threshold,
-    float iou_threshold) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return track_input(input, conf_threshold, iou_threshold);
-}
-
 vision_common::TrackingResultList ByteTrackTracker::track_input(
     const vision_core::ImageInput& input,
     float conf_threshold,
@@ -119,7 +105,7 @@ vision_common::TrackingResultList ByteTrackTracker::track_input(
         detector_->detect_input(
             input, conf_threshold, iou_threshold);
     const auto t_det1 = std::chrono::steady_clock::now();
-    // detector_->detect() resets and completes the child instance's profile.
+    // detector_->detect_input() resets and completes the child instance's profile.
     // Snapshot it immediately: detect_ms below covers the full detector
     // pipeline, while detector.infer is pure ONNX execution.
     const vision_core::RuntimeProfile detector_profile =
@@ -161,29 +147,15 @@ std::vector<vision_core::InferIntent> ByteTrackTracker::supported_intents() cons
     return {vision_core::InferIntent::kTrack};
 }
 
-vision_core::InferResponse ByteTrackTracker::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kTrack) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "ByteTrackTracker expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse ByteTrackTracker::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::TrackingResultList task_results =
         track_input(
-            *image_input,
+            image_input,
             request.params.conf_threshold,
             request.params.iou_threshold);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> ByteTrackTracker::get_capabilities() const {

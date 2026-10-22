@@ -108,22 +108,19 @@ std::vector<vision_core::ModelCapability> RTMPoseEstimator::get_capabilities() c
     return {vision_core::ModelCapability::kDraw};
 }
 
-vision_core::InferResponse RTMPoseEstimator::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kEstimatePose) {
-        return unsupported_intent_response(request.intent);
-    }
+vision_core::InferResponse RTMPoseEstimator::RunImpl(const vision_core::InferRequest& request) {
     if (!std::isfinite(request.params.conf_threshold)) {
         throw std::invalid_argument("RTMPose confidence threshold must be finite");
     }
-    const auto* input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (input == nullptr || input->image.empty()) {
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
+    if (input.image.empty()) {
         return {{}, false, "RTMPose expects a non-empty ImageInput"};
     }
     cv::Mat bgr;
-    if (input->format == vision_core::ImagePixelFormat::kNv12) {
-        cv::cvtColor(input->image, bgr, cv::COLOR_YUV2BGR_NV12);
+    if (input.format == vision_core::ImagePixelFormat::kNv12) {
+        cv::cvtColor(input.image, bgr, cv::COLOR_YUV2BGR_NV12);
     } else {
-        bgr = input->image;
+        bgr = input.image;
     }
     if (bgr.type() != CV_8UC3) {
         return {{}, false, "RTMPose expects a BGR8 image (CV_8UC3)"};

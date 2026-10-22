@@ -304,15 +304,6 @@ vision_common::SegmentationResultList PPLiteSeg::split_semantic_masks(const cv::
     return out;
 }
 
-vision_common::SegmentationResultList PPLiteSeg::segment(
-    const cv::Mat& image,
-    float /*conf_threshold*/,
-    float /*iou_threshold*/) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return segment_input(input);
-}
-
 vision_common::SegmentationResultList PPLiteSeg::segment_input(
     const vision_core::ImageInput& input) {
     ensure_model_loaded();
@@ -369,26 +360,12 @@ std::vector<vision_core::InferIntent> PPLiteSeg::supported_intents() const {
     return {vision_core::InferIntent::kSegment};
 }
 
-vision_core::InferResponse PPLiteSeg::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kSegment) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "PPLiteSeg expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse PPLiteSeg::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::SegmentationResultList task_results =
-        segment_input(*image_input);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+        segment_input(image_input);
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> PPLiteSeg::get_capabilities() const {

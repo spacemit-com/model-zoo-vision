@@ -13,7 +13,6 @@
 #include "embedding_utils.h"
 #include "gemma_tokenizer.h"
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -21,7 +20,7 @@ class Node;
 
 namespace vision_deploy {
 
-class Siglip2Encoder : public vision_core::BaseModel, public vision_core::IEmbeddingModel {
+class Siglip2Encoder : public vision_core::BaseModel {
 public:
     Siglip2Encoder(const std::string& vision_model_path,
                     const std::string& text_model_path,
@@ -34,15 +33,17 @@ public:
 
     void load_model() override;
     cv::Mat preprocess(const cv::Mat& image);
-    vision_common::EmbeddingResult infer_embedding(const cv::Mat& image) override;
-    vision_common::EmbeddingResult encode_text(const std::string& text);
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
+
     std::vector<vision_core::InferIntent> supported_intents() const override;
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
+
 private:
+    vision_common::EmbeddingResult encode_text(const std::string& text);
     vision_common::EmbeddingResult infer_embedding_input(
         const vision_core::ImageInput& input);
 

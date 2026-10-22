@@ -19,7 +19,7 @@ public:
 
     void load_model() override {}
 
-    vision_core::InferResponse Run(const vision_core::InferRequest&) override {
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest&) override {
         return {};
     }
 

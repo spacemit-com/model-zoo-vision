@@ -393,28 +393,12 @@ YOLO26SemanticSegmentor::segment(
     return results;
 }
 
-vision_core::InferResponse YOLO26SemanticSegmentor::Run(
+vision_core::InferResponse YOLO26SemanticSegmentor::RunImpl(
     const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kSegment) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* input =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message =
-            "YOLO26SemanticSegmentor expects ImageInput";
-        return response;
-    }
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
 
-    std::vector<vision::Segmentation> results = segment(*input);
-    vision_core::InferResponse response;
-    response.results.reserve(results.size());
-    for (auto& result : results) {
-        response.results.emplace_back(std::move(result));
-    }
-    return response;
+    std::vector<vision::Segmentation> results = segment(input);
+    return vision_core::make_infer_response(std::move(results));
 }
 
 std::vector<vision_core::InferIntent>

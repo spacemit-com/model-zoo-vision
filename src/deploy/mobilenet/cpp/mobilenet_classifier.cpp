@@ -157,12 +157,6 @@ cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image) {
     return blob;
 }
 
-vision_common::ClassificationResultList MobileNetV1Classifier::classify(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return classify_input(input);
-}
-
 vision_common::ClassificationResultList
 MobileNetV1Classifier::classify_input(
     const vision_core::ImageInput& input, int top_k) {
@@ -217,34 +211,16 @@ std::vector<vision_core::InferIntent> MobileNetV1Classifier::supported_intents()
     return {vision_core::InferIntent::kClassify};
 }
 
-vision_core::InferResponse MobileNetV1Classifier::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kClassify) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "MobileNetV1Classifier expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse MobileNetV1Classifier::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
 
     vision_common::ClassificationResultList task_results =
-        classify_input(*image_input, request.params.top_k < 0 ? 5 : request.params.top_k);
-    vision_core::InferResponse response;
-    response.results.reserve(task_results.size());
-    for (auto& item : task_results) {
-        response.results.emplace_back(std::move(item));
-    }
-    return response;
+        classify_input(image_input, request.params.top_k < 0 ? 5 : request.params.top_k);
+    return vision_core::make_infer_response(std::move(task_results));
 }
 
 std::vector<vision_core::ModelCapability> MobileNetV1Classifier::get_capabilities() const {
     return {};
-}
-
-vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(std::vector<Ort::Value>& outputs) {
-    return postprocess(outputs, 5);
 }
 
 vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(

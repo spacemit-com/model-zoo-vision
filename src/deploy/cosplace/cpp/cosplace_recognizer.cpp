@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "common.h"
+#include "embedding_utils.h"
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
@@ -109,12 +110,6 @@ cv::Mat CosPlaceRecognizer::preprocess(const cv::Mat& image) {
     return vision_operators::preprocess_bgr_to_nchw(image, spec);
 }
 
-vision_common::EmbeddingResult CosPlaceRecognizer::infer_embedding(const cv::Mat& image) {
-    vision_core::ImageInput input;
-    input.image = image;
-    return infer_embedding_input(input);
-}
-
 vision_common::EmbeddingResult
 CosPlaceRecognizer::infer_embedding_input(
     const vision_core::ImageInput& input) {
@@ -162,20 +157,11 @@ std::vector<vision_core::InferIntent> CosPlaceRecognizer::supported_intents() co
     return {vision_core::InferIntent::kEmbed};
 }
 
-vision_core::InferResponse CosPlaceRecognizer::Run(const vision_core::InferRequest& request) {
-    if (request.intent != vision_core::InferIntent::kEmbed) {
-        return unsupported_intent_response(request.intent);
-    }
-    const auto* image_input = std::get_if<vision_core::ImageInput>(&request.input);
-    if (image_input == nullptr) {
-        vision_core::InferResponse response;
-        response.ok = false;
-        response.error_message = "CosPlaceRecognizer expects ImageInput";
-        return response;
-    }
+vision_core::InferResponse CosPlaceRecognizer::RunImpl(const vision_core::InferRequest& request) {
+    const auto& image_input = std::get<vision_core::ImageInput>(request.input);
     vision_core::InferResponse response;
     response.results.emplace_back(
-        infer_embedding_input(*image_input));
+        infer_embedding_input(image_input));
     return response;
 }
 
@@ -222,20 +208,6 @@ std::vector<float> CosPlaceRecognizer::postprocess(std::vector<Ort::Value>& outp
     embedding = vision_common::normalize_embedding(embedding);
 
     return embedding;
-}
-
-float CosPlaceRecognizer::compute_distance(const std::vector<float>& embedding1,
-        const std::vector<float>& embedding2) {
-    if (embedding1.size() != embedding2.size()) {
-        throw std::runtime_error("Embeddings must have the same dimension");
-    }
-
-    float sum = 0.0f;
-    for (size_t i = 0; i < embedding1.size(); ++i) {
-        float diff = embedding1[i] - embedding2[i];
-        sum += diff * diff;
-    }
-    return std::sqrt(sum);
 }
 
 // Self-registration (runs at program startup)

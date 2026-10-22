@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 
 namespace YAML {
 class Node;
@@ -26,7 +25,7 @@ namespace vision_deploy {
  * - 1 output: Ultralytics export, e.g. [1, 84, 8400]
  * - 6+ outputs: multi-branch DFL heads (boxes / scores / score_sum per scale)
  */
-class YOLOv8Detector : public vision_core::BaseModel, public vision_core::IDetectionModel {
+class YOLOv8Detector : public vision_core::BaseModel {
 public:
     YOLOv8Detector(const std::string& model_path,
                     float conf_threshold = 0.25f,
@@ -50,17 +49,10 @@ public:
      */
     cv::Mat preprocess(const cv::Mat& image);
 
-    vision_common::DetectionResultList detect(
-        const cv::Mat& image,
-        float conf_threshold = -1.0f,
-        float iou_threshold = -1.0f) override;
-
     vision_common::DetectionResultList detect_input(
         const vision_core::ImageInput& image,
         float conf_threshold = -1.0f,
         float iou_threshold = -1.0f);
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -75,6 +67,9 @@ public:
         const cv::Size& orig_size,
         float conf_threshold,
         float iou_threshold);
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::DetectionResultList detect_input(

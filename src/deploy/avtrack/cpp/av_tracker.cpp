@@ -309,34 +309,21 @@ vision::Tracking AVTracker::track(const cv::Mat& image) {
     return output;
 }
 
-vision_core::InferResponse AVTracker::Run(
+vision_core::InferResponse AVTracker::RunImpl(
     const vision_core::InferRequest& request) {
     vision_core::InferResponse response;
-    if (request.intent != vision_core::InferIntent::kTrack) {
-        response.ok = false;
-        response.error_message =
-            "AVTracker only supports kTrack";
-        return response;
-    }
-    const auto* input =
-        std::get_if<vision_core::ImageInput>(&request.input);
-    if (input == nullptr) {
-        response.ok = false;
-        response.error_message =
-            "AVTracker expects ImageInput";
-        return response;
-    }
-    if (!input->has_initial_bbox && !initialized_) {
+    const auto& input = std::get<vision_core::ImageInput>(request.input);
+    if (!input.has_initial_bbox && !initialized_) {
         response.ok = false;
         response.error_message =
             "AVTracker requires an initial bounding box";
         return response;
     }
     const cv::Mat image =
-        vision_operators::image_input_to_bgr_cpu(*input);
+        vision_operators::image_input_to_bgr_cpu(input);
     response.results.emplace_back(
-        input->has_initial_bbox
-            ? initialize(image, input->initial_bbox)
+        input.has_initial_bbox
+            ? initialize(image, input.initial_bbox)
             : track(image));
     return response;
 }

@@ -327,24 +327,11 @@ vision::Disparity BANet2D::infer_stereo(
     return result;
 }
 
-vision_core::InferResponse BANet2D::Run(
+vision_core::InferResponse BANet2D::RunImpl(
     const vision_core::InferRequest& request) {
     vision_core::InferResponse response;
-    if (request.intent != vision_core::InferIntent::kStereoDepth) {
-        response.ok = false;
-        response.error_message =
-            "BANet2D only supports kStereoDepth";
-        return response;
-    }
-    const auto* stereo =
-        std::get_if<vision_core::StereoImageInput>(&request.input);
-    if (stereo == nullptr) {
-        response.ok = false;
-        response.error_message =
-            "BANet2D expects StereoImageInput";
-        return response;
-    }
-    response.results.emplace_back(infer_stereo(*stereo));
+    const auto& stereo = std::get<vision_core::StereoImageInput>(request.input);
+    response.results.emplace_back(infer_stereo(stereo));
     return response;
 }
 

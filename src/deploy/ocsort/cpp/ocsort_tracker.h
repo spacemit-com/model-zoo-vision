@@ -13,7 +13,6 @@
 #include <opencv2/opencv.hpp>
 
 #include "vision_model_base.h"
-#include "vision_task_interfaces.h"
 #include "include/OCSort.hpp"
 #include "yolov8_detector.h"
 
@@ -30,7 +29,7 @@ namespace vision_deploy {
  * OC-SORT is an observation-centric SORT algorithm that improves tracking
  * by using observation-centric re-update and momentum.
  */
-class OCSortTracker : public vision_core::BaseModel, public vision_core::ITrackingModel {
+class OCSortTracker : public vision_core::BaseModel {
 public:
     OCSortTracker(const std::string& model_path,
                     float conf_threshold = 0.25f,
@@ -54,29 +53,8 @@ public:
      */
     void load_model() override;
 
-    /**
-     * @brief Preprocess image for detection
-     * @param image Input image in BGR format
-     * @return Preprocessed tensor
-     */
-    cv::Mat preprocess(const cv::Mat& image);
-
     // Factory hook: used by vision_core::ModelRegistrar for self-registration
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
-
-    /**
-     * @brief Update tracker with new detections
-     * @param image          Input image
-     * @param conf_threshold Detector confidence override; <= 0 keeps config default
-     * @param iou_threshold  Detector NMS IoU override; <= 0 keeps config default
-     * @return Vector of tracking results with track_id
-     */
-    vision_common::TrackingResultList track(const cv::Mat& image,
-                                            float conf_threshold = -1.0f,
-                                            float iou_threshold = -1.0f) override;
-
-
-    vision_core::InferResponse Run(const vision_core::InferRequest& request) override;
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -87,6 +65,9 @@ public:
     void configure_preprocess_fallback(const std::string& fallback) override;
     void configure_preprocess_opencl_sampling(
         const std::string& sampling) override;
+
+protected:
+    vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
 
 private:
     vision_common::TrackingResultList track_input(

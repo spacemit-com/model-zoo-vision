@@ -281,6 +281,7 @@ class VisionServiceNative:
         self,
         image_or_path: Union[str, npt.NDArray[np.uint8]],
     ) -> Tuple[object, List[float]]:
+        """Extract an embedding; a mismatched model result raises ValueError."""
         if isinstance(image_or_path, str):
             status, embedding, response = self._svc.infer_embedding(image_path=image_or_path)
         else:
@@ -298,7 +299,7 @@ class VisionServiceNative:
         left_bgr_uint8: npt.NDArray[np.uint8],
         right_bgr_uint8: npt.NDArray[np.uint8],
     ) -> Tuple[object, Optional[npt.NDArray[np.float32]]]:
-        """Run dense stereo inference and return a float32 disparity map."""
+        """Return a float32 disparity map; a mismatched model result raises ValueError."""
         left = np.ascontiguousarray(left_bgr_uint8)
         right = np.ascontiguousarray(right_bgr_uint8)
         if left.dtype != np.uint8 or right.dtype != np.uint8:
@@ -315,7 +316,7 @@ class VisionServiceNative:
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
     ) -> Tuple[object, Optional[npt.NDArray[np.float32]]]:
-        """Run monocular metric-depth inference and return metres."""
+        """Return monocular metric depth in metres; a mismatched model result raises ValueError."""
         image = np.ascontiguousarray(image_bgr_uint8)
         if image.dtype != np.uint8:
             raise TypeError("image must be uint8 BGR (HxWx3)")
@@ -331,7 +332,7 @@ class VisionServiceNative:
         self,
         image_bgr_uint8: npt.NDArray[np.uint8],
     ) -> Tuple[object, object]:
-        """Extract reusable local features from one BGR image."""
+        """Extract local features; a mismatched model result raises ValueError."""
         image = np.ascontiguousarray(image_bgr_uint8)
         if image.dtype != np.uint8:
             raise TypeError("image must be uint8 BGR (HxWx3)")

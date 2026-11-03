@@ -144,17 +144,7 @@ std::vector<vision_core::ModelCapability> AdaFaceRecognizer::get_capabilities() 
 }
 
 std::vector<float> AdaFaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> dims = tensor_info.GetShape();
-
-    size_t embedding_size = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        embedding_size *= static_cast<size_t>(dims[i]);
-    }
-
-    std::vector<float> embedding(output_data, output_data + embedding_size);
-    return vision_common::normalize_embedding(embedding);
+    return vision_common::normalize_embedding(read_output_vector(outputs));
 }
 
 static vision_core::ModelRegistrar<AdaFaceRecognizer> registrar("AdaFaceRecognizer");

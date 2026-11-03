@@ -257,7 +257,7 @@ std::vector<vision_core::ModelCapability> ResNetClassifier::get_capabilities() c
 vision_common::ClassificationResultList ResNetClassifier::postprocess(
     std::vector<Ort::Value>& outputs, int top_k) {
     return vision_common::build_classification_top_k(
-        read_output_scores(outputs), top_k, apply_softmax_);
+        read_output_vector(outputs), top_k, apply_softmax_);
 }
 
 // Self-registration (runs at program startup)

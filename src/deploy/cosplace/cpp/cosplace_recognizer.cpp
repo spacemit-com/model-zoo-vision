@@ -173,41 +173,7 @@ std::vector<vision_core::ModelCapability> CosPlaceRecognizer::get_capabilities()
 }
 
 std::vector<float> CosPlaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    if (outputs.empty()) {
-        throw std::runtime_error("CosPlaceRecognizer::postprocess: no output tensors returned");
-    }
-
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    if (tensor_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-        throw std::runtime_error("CosPlaceRecognizer::postprocess: expected a float32 output tensor");
-    }
-    std::vector<int64_t> dims = tensor_info.GetShape();
-
-    // Use all dimensions after the batch dimension (a 1-D output is treated as
-    // the full descriptor, so no batch dimension is stripped).
-    size_t embedding_size = 1;
-    for (size_t i = (dims.size() > 1 ? 1 : 0); i < dims.size(); ++i) {
-        if (dims[i] <= 0) {
-            throw std::runtime_error("CosPlaceRecognizer::postprocess: invalid output shape");
-        }
-        embedding_size *= static_cast<size_t>(dims[i]);
-    }
-    if (dims.empty() || embedding_size > tensor_info.GetElementCount()) {
-        throw std::runtime_error("CosPlaceRecognizer::postprocess: output tensor is smaller than expected");
-    }
-
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    if (output_data == nullptr) {
-        throw std::runtime_error("CosPlaceRecognizer::postprocess: null output data");
-    }
-
-    // Copy embedding data
-    std::vector<float> embedding(output_data, output_data + embedding_size);
-
-    // L2 normalize the descriptor
-    embedding = vision_common::normalize_embedding(embedding);
-
-    return embedding;
+    return vision_common::normalize_embedding(read_output_vector(outputs));
 }
 
 // Self-registration (runs at program startup)

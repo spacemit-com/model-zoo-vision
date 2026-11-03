@@ -13,7 +13,8 @@ namespace vision_common {
 /**
  * @brief L2 normalize embedding vector
  * @param embedding Input embedding vector
- * @return Normalized embedding vector
+ * @return Normalized embedding vector; zero vectors remain zero
+ * @throws std::runtime_error if any input value is non-finite
  */
 std::vector<float> normalize_embedding(const std::vector<float>& embedding);
 

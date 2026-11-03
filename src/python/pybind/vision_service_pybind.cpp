@@ -62,7 +62,8 @@ PyFlatResult ToFlatResult(const vision::Result& r) {
         out.keypoints = p->keypoints;
     } else if (const vision::Segmentation* s = std::get_if<vision::Segmentation>(&r)) {
         if (s->mask && !s->mask->empty()) {
-            out.mask = s->mask->clone();
+            // Share immutable native storage; NumPy getters still return copies.
+            out.mask = *s->mask;
         }
     } else if (const vision::Classification* c = std::get_if<vision::Classification>(&r)) {
         out.class_scores = c->class_scores;
@@ -73,11 +74,11 @@ PyFlatResult ToFlatResult(const vision::Result& r) {
         out.polygon = t->polygon;
     } else if (const vision::Disparity* d = std::get_if<vision::Disparity>(&r)) {
         if (d->map && !d->map->empty()) {
-            out.disparity = d->map->clone();
+            out.disparity = *d->map;
         }
     } else if (const vision::DepthMap* d = std::get_if<vision::DepthMap>(&r)) {
         if (d->map && !d->map->empty()) {
-            out.depth = d->map->clone();
+            out.depth = *d->map;
         }
     } else if (const vision::LocalFeatures* f =
                 std::get_if<vision::LocalFeatures>(&r)) {
@@ -234,15 +235,48 @@ cv::Mat NumpyToMat(const py::array& obj) {
     throw std::invalid_argument("mask must be HxW or HxWx3 uint8 numpy array");
 }
 
-const std::vector<float>& ExtractEmbedding(const VisionServiceResponse& response) {
-    if (response.results.empty()) {
-        static const std::vector<float> empty;
-        return empty;
+template <typename Result>
+const Result* RequireSingleResult(
+    VisionServiceStatus status, const VisionServiceResponse& response,
+    const char* method, const char* result_name) {
+    if (status != VISION_SERVICE_OK) {
+        return nullptr;
     }
-    if (const vision::Embedding* e = std::get_if<vision::Embedding>(&response.results.front())) {
-        return e->embedding;
+    if (response.results.size() == 1) {
+        if (const auto* result = std::get_if<Result>(&response.results.front())) {
+            return result;
+        }
     }
-    throw std::runtime_error("infer_embedding: model did not return an Embedding result");
+    throw std::invalid_argument(
+        std::string(method) + " requires exactly one " + result_name +
+        " result; check the configured model task");
+}
+
+template <typename Result>
+py::object ExtractDenseMap(
+    VisionServiceStatus status, const VisionServiceResponse& response,
+    const char* method, const char* result_name) {
+    const auto* result = RequireSingleResult<Result>(
+        status, response, method, result_name);
+    if (result == nullptr) {
+        return py::none();
+    }
+    if (!result->map || result->map->empty() || result->map->type() != CV_32FC1) {
+        throw std::runtime_error(
+            std::string(method) + " returned an invalid float32 map");
+    }
+    return MatToNumpy(*result->map);
+}
+
+const std::vector<float>& ExtractEmbedding(
+    VisionServiceStatus status, const VisionServiceResponse& response) {
+    const auto* result = RequireSingleResult<vision::Embedding>(
+        status, response, "infer_embedding", "Embedding");
+    if (result != nullptr) {
+        return result->embedding;
+    }
+    static const std::vector<float> empty;
+    return empty;
 }
 
 const std::vector<float>& ExtractClassScores(const VisionServiceResponse& response) {
@@ -543,16 +577,8 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                     CallWithoutGil([&] {
                         return self.Infer(request, &response);
                     });
-                py::object disparity = py::none();
-                if (status == VISION_SERVICE_OK &&
-                    response.results.size() == 1) {
-                    const auto* value = std::get_if<vision::Disparity>(
-                        &response.results.front());
-                    if (value != nullptr && value->map &&
-                        !value->map->empty()) {
-                        disparity = MatToNumpy(*value->map);
-                    }
-                }
+                py::object disparity = ExtractDenseMap<vision::Disparity>(
+                    status, response, "infer_stereo", "Disparity");
                 return py::make_tuple(status, std::move(disparity), std::move(response));
             },
             py::arg("left_bgr_uint8"),
@@ -566,16 +592,8 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                     CallWithoutGil([&] {
                         return self.Infer(mat, &response);
                     });
-                py::object depth = py::none();
-                if (status == VISION_SERVICE_OK &&
-                    response.results.size() == 1) {
-                    const auto* value = std::get_if<vision::DepthMap>(
-                        &response.results.front());
-                    if (value != nullptr && value->map &&
-                        !value->map->empty()) {
-                        depth = MatToNumpy(*value->map);
-                    }
-                }
+                py::object depth = ExtractDenseMap<vision::DepthMap>(
+                    status, response, "infer_depth", "DepthMap");
                 return py::make_tuple(status, std::move(depth), std::move(response));
             },
             py::arg("image_bgr_uint8"))
@@ -589,15 +607,9 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                         return self.Infer(mat, &response);
                     });
                 vision::LocalFeatures features;
-                if (status == VISION_SERVICE_OK &&
-                    response.results.size() == 1) {
-                    const auto* value =
-                        std::get_if<vision::LocalFeatures>(
-                            &response.results.front());
-                    if (value == nullptr) {
-                        throw std::runtime_error(
-                            "model did not return LocalFeatures");
-                    }
+                const auto* value = RequireSingleResult<vision::LocalFeatures>(
+                    status, response, "extract_local_features", "LocalFeatures");
+                if (value != nullptr) {
                     features = *value;
                 }
                 return py::make_tuple(status, std::move(features), std::move(response));
@@ -657,7 +669,7 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 const VisionServiceStatus st = CallWithoutGil([&] {
                     return self.Infer(path, &response, VisionServiceInferParams{});
                 });
-                py::object values = py::cast(ExtractEmbedding(response));
+                py::object values = py::cast(ExtractEmbedding(st, response));
                 return py::make_tuple(st, std::move(values), std::move(response));
             },
             py::arg("image_path"))
@@ -669,7 +681,7 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
                 const VisionServiceStatus st = CallWithoutGil([&] {
                     return self.Infer(mat, &response, VisionServiceInferParams{});
                 });
-                py::object values = py::cast(ExtractEmbedding(response));
+                py::object values = py::cast(ExtractEmbedding(st, response));
                 return py::make_tuple(st, std::move(values), std::move(response));
             },
             py::arg("image_bgr_uint8"))

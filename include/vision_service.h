@@ -414,6 +414,8 @@ public:
      *
      * Stateless: the results to draw are passed explicitly, so this is
      * re-entrant and not coupled to the last Infer() call.
+     * A successful empty response produces an unchanged image copy;
+     * a failed response is rejected.
      *
      * @thread_safety NOT thread-safe. Do not call concurrently on the same instance.
      */

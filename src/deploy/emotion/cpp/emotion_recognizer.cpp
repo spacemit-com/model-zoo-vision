@@ -151,7 +151,7 @@ EmotionRecognizer::infer_embedding_input(
     // Feature mode: return raw output vector (no argmax, no L2 normalization).
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::EmbeddingResult result;
-    result.embedding = read_output_scores(outputs);
+    result.embedding = read_output_vector(outputs);
     result.score = 1.0f;
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -192,7 +192,7 @@ std::vector<vision_core::ModelCapability> EmotionRecognizer::get_capabilities() 
 vision_common::ClassificationResultList EmotionRecognizer::postprocess(
     std::vector<Ort::Value>& outputs, int top_k) {
     // Preserve raw model scores and the default top-1 behavior.
-    return vision_common::build_classification_top_k(read_output_scores(outputs), top_k, false);
+    return vision_common::build_classification_top_k(read_output_vector(outputs), top_k, false);
 }
 
 // Self-registration (runs at program startup)

@@ -157,7 +157,7 @@ vision_common::ActionResult StgcnActionRecognizer::predict(const float* pts,
 
     const auto t_post0 = std::chrono::steady_clock::now();
 
-    std::vector<float> scores = read_output_scores(outputs);
+    std::vector<float> scores = read_output_vector(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 

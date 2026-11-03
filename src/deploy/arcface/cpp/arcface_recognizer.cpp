@@ -156,23 +156,7 @@ std::vector<vision_core::ModelCapability> ArcFaceRecognizer::get_capabilities() 
 }
 
 std::vector<float> ArcFaceRecognizer::postprocess(std::vector<Ort::Value>& outputs) {
-    // Extract embedding from outputs
-    const float* output_data = outputs[0].GetTensorMutableData<float>();
-    auto tensor_info = outputs[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> dims = tensor_info.GetShape();
-
-    size_t embedding_size = 1;
-    for (size_t i = 1; i < dims.size(); ++i) {
-        embedding_size *= dims[i];
-    }
-
-    // Copy embedding data
-    std::vector<float> embedding(output_data, output_data + embedding_size);
-
-    // L2 normalize using common function
-    embedding = vision_common::normalize_embedding(embedding);
-
-    return embedding;
+    return vision_common::normalize_embedding(read_output_vector(outputs));
 }
 
 // Self-registration (runs at program startup)

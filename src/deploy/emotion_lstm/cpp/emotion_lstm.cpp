@@ -116,7 +116,7 @@ vision_common::ActionResult EmotionLstm::predict(const float* feats) {
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    std::vector<float> scores = read_output_scores(outputs);
+    std::vector<float> scores = read_output_vector(outputs);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 

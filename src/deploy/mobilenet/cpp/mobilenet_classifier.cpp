@@ -225,7 +225,7 @@ std::vector<vision_core::ModelCapability> MobileNetV1Classifier::get_capabilitie
 
 vision_common::ClassificationResultList MobileNetV1Classifier::postprocess(
     std::vector<Ort::Value>& outputs, int top_k) {
-    auto class_scores = read_output_scores(outputs);
+    auto class_scores = read_output_vector(outputs);
 
     // Drop leading background class (index 0) for the 1001-class TF-Slim export,
     // so labels align with the 1000-class ImageNet file.

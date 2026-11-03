@@ -787,8 +787,8 @@ VisionServiceStatus VisionService::Draw(const cv::Mat& image,
     if (!impl_->model->supports_capability(vision_core::ModelCapability::kDraw)) {
         return SetError(VISION_SERVICE_INVALID_ARGUMENT, "current model does not support draw");
     }
-    if (response.results.empty()) {
-        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "No results to draw");
+    if (!response.ok) {
+        return SetError(VISION_SERVICE_INVALID_ARGUMENT, "Cannot draw a failed inference response");
     }
 
     try {

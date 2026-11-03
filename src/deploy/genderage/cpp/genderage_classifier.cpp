@@ -142,7 +142,7 @@ std::vector<vision_core::ModelCapability> GenderAgeClassifier::get_capabilities(
 }
 
 vision_common::ClassificationResultList GenderAgeClassifier::postprocess(std::vector<Ort::Value>& outputs) {
-    const auto gender = read_output_scores(outputs);
+    const auto gender = read_output_vector(outputs);
     vision_common::ClassificationResult result;
     int age = 0;
     if (outputs.size() == 1) {
@@ -155,7 +155,7 @@ vision_common::ClassificationResultList GenderAgeClassifier::postprocess(std::ve
         if (gender.size() != 2) {
             throw std::runtime_error("GenderAge gender output must contain exactly 2 scores");
         }
-        const auto age_scores = read_output_scores(outputs, 1);
+        const auto age_scores = read_output_vector(outputs, 1);
         age = static_cast<int>(std::max_element(age_scores.begin(), age_scores.end()) - age_scores.begin());
     }
     result.label = gender[1] > gender[0] ? 1 : 0;

@@ -13,17 +13,22 @@
 namespace vision_common {
 
 std::vector<float> normalize_embedding(const std::vector<float>& embedding) {
-    // Compute L2 norm
-    float norm = 0.0f;
+    // Double accumulation is safe for squares of finite float32 values.
+    double norm_squared = 0.0;
     for (float val : embedding) {
-        norm += val * val;
+        if (!std::isfinite(val)) {
+            throw std::runtime_error("Embedding values must be finite");
+        }
+        const double value = val;
+        norm_squared += value * value;
     }
-    norm = std::sqrt(norm) + 1e-8f;
+    const double norm = std::sqrt(norm_squared);
 
     // Normalize
     std::vector<float> normalized(embedding.size());
     for (size_t i = 0; i < embedding.size(); ++i) {
-        normalized[i] = embedding[i] / norm;
+        normalized[i] = norm > 0.0
+            ? static_cast<float>(embedding[i] / norm) : 0.0f;
     }
 
     return normalized;

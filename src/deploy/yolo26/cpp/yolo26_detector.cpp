@@ -77,7 +77,7 @@ void YOLO26Detector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLO26Detector::preprocess(const cv::Mat& image) {
+cv::Mat YOLO26Detector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -86,7 +86,7 @@ cv::Mat YOLO26Detector::preprocess(const cv::Mat& image) {
     int input_height = static_cast<int>(input_shape_[2]);
     return vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(input_height, input_width));
+        std::make_pair(input_height, input_width), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::DetectionResultList YOLO26Detector::detect_input(
@@ -101,11 +101,6 @@ vision_common::DetectionResultList YOLO26Detector::detect_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size orig_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = static_cast<int>(input_shape_[3]);
@@ -120,8 +115,8 @@ vision_common::DetectionResultList YOLO26Detector::detect_input(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -134,7 +129,7 @@ vision_common::DetectionResultList YOLO26Detector::detect_input(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::DetectionResultList results = postprocess(outputs, prepared.geometry(), use_conf, use_iou);
     vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -164,9 +159,11 @@ std::vector<vision_core::ModelCapability> YOLO26Detector::get_capabilities() con
 
 vision_common::DetectionResultList YOLO26Detector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     (void)iou_threshold;
     if (outputs.empty()) {
         return {};
@@ -180,8 +177,6 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
         throw std::runtime_error("YOLO26 output must be float32");
     }
 
-    const int input_height = static_cast<int>(input_shape_[2]);
-    const int input_width = static_cast<int>(input_shape_[3]);
     Ort::Value& out = outputs[0];
     auto info = out.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> dims = info.GetShape();
@@ -219,11 +214,6 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
         throw std::runtime_error("YOLO26 only supports [N,6] e2e output");
     }
 
-    const float gain = std::min(
-        static_cast<float>(input_height) / static_cast<float>(orig_size.height),
-        static_cast<float>(input_width) / static_cast<float>(orig_size.width));
-    const float pad_w = (static_cast<float>(input_width) - orig_size.width * gain) / 2.0f;
-    const float pad_h = (static_cast<float>(input_height) - orig_size.height * gain) / 2.0f;
     const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
     const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
 
@@ -244,10 +234,10 @@ vision_common::DetectionResultList YOLO26Detector::postprocess(
         }
         const int cls = static_cast<int>(label);
 
-        float x1 = (row[0] - pad_w) / gain;
-        float y1 = (row[1] - pad_h) / gain;
-        float x2 = (row[2] - pad_w) / gain;
-        float y2 = (row[3] - pad_h) / gain;
+        float x1 = geometry.restore_x(row[0]);
+        float y1 = geometry.restore_y(row[1]);
+        float x2 = geometry.restore_x(row[2]);
+        float y2 = geometry.restore_y(row[3]);
         x1 = std::clamp(x1, 0.0f, max_x);
         y1 = std::clamp(y1, 0.0f, max_y);
         x2 = std::clamp(x2, 0.0f, max_x);

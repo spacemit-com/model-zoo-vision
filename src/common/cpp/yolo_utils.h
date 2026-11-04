@@ -12,7 +12,15 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "operators/image_preprocess/image_preprocess_geometry.h"
+
 namespace vision_common {
+
+// Restore box edges with the actual preprocessing transform.
+void scale_coords(
+    float* coords,
+    const vision_operators::ImagePreprocessGeometry& geometry);
+
 
 /**
  * @brief DFL (Distribution Focal Loss) decoding for YOLO boxes
@@ -22,15 +30,11 @@ namespace vision_common {
  * @param grid_w Grid width
  * @param scale_w Scale factor for width
  * @param scale_h Scale factor for height
- * @param scale2orign Scale ratio to original image
- * @param pad_w Padding width
- * @param pad_h Padding height
- * @return Decoded box coordinates (x1, y1, x2, y2)
+ * @return Decoded box edges (x1, y1, x2, y2) in tensor coordinates
  */
 std::tuple<float, float, float, float> dfl_decode(
     const float* boxes, int anchor_idx, int anchors,
-    int grid_w, float scale_w, float scale_h,
-    float scale2orign, int pad_w, int pad_h
+    int grid_w, float scale_w, float scale_h
 );
 
 /**
@@ -46,14 +50,6 @@ float sigmoid(float x);
  * @param xyxy Output box in [x1, y1, x2, y2] format
  */
 void xywh2xyxy(const float* xywh, float* xyxy);
-
-/**
- * @brief Scale coordinates from preprocessed image to original image
- * @param img1_shape Preprocessed image shape (width, height)
- * @param coords Coordinates to scale [x1, y1, x2, y2] (modified in-place)
- * @param img0_shape Original image shape (width, height)
- */
-void scale_coords(const cv::Size& img1_shape, float* coords, const cv::Size& img0_shape);
 
 /**
  * @brief Flatten YOLO output tensor from (batch, channels, h, w) to (batch*h*w, channels)
@@ -80,21 +76,6 @@ std::vector<std::vector<float>> process_box_dfl(
     const float* position,
     const std::pair<int, int>& input_shape,
     int reg_max = 16
-);
-
-/**
- * @brief Scale boxes from letterboxed image back to original image size
- * @param boxes Bounding boxes in [x1, y1, x2, y2] format
- * @param ratio Scale ratio used during letterbox preprocessing
- * @param pad Padding (pad_w, pad_h) applied during letterbox
- * @param orig_shape Original image shape (height, width)
- * @return Scaled boxes
- */
-std::vector<std::vector<float>> scale_boxes_letterbox(
-    const std::vector<std::vector<float>>& boxes,
-    float ratio,
-    const std::pair<float, float>& pad,
-    const std::pair<int, int>& orig_shape
 );
 
 }  // namespace vision_common

@@ -47,7 +47,8 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    cv::Mat preprocess(const cv::Mat& bgr) const;
+    cv::Mat preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry = nullptr) const;
     vision_common::DetectionResultList infer_input(
         const vision_core::ImageInput& input,
         float conf_threshold,

@@ -45,7 +45,7 @@ public:
      * @param image Input image in BGR format
      * @return Preprocessed tensor
      */
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -56,7 +56,7 @@ public:
 
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float iou_threshold);
 
@@ -69,7 +69,7 @@ private:
         float conf_threshold,
         float iou_threshold, float kp_threshold = -1.0f, int max_det = -1);
     vision_common::PoseResultList postprocess_impl(
-        std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+        std::vector<Ort::Value>& outputs, const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold, float iou_threshold, float kp_threshold, int max_det);
 
     float conf_threshold_;

@@ -147,7 +147,7 @@ void ScrfdDetector::generate_anchors() {
     }
 }
 
-cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
+cv::Mat ScrfdDetector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -158,16 +158,7 @@ cv::Mat ScrfdDetector::preprocess(const cv::Mat& image) {
     }
     const vision_operators::ImagePreprocessSpec spec =
         make_scrfd_preprocess_spec(input_width_, input_height_);
-    const vision_operators::FitResizeDimensions resized =
-        vision_operators::calculate_fit_resize_dimensions(
-            static_cast<float>(image.cols),
-            static_cast<float>(image.rows),
-            input_width_,
-            input_height_,
-            spec.resize_rounding);
-    last_det_scale_ =
-        static_cast<float>(resized.height) / image.rows;
-    return vision_operators::preprocess_bgr_to_nchw(image, spec);
+    return vision_operators::preprocess_bgr_to_nchw(image, spec, geometry);
 }
 
 vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
@@ -181,10 +172,9 @@ vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size orig_size = image.size();
-
     const auto t_pre0 = std::chrono::steady_clock::now();
-    cv::Mat input_tensor = preprocess(image);
+    vision_operators::ImagePreprocessGeometry geometry;
+    cv::Mat input_tensor = preprocess(image, &geometry);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
@@ -195,7 +185,7 @@ vision_common::PoseResultList ScrfdDetector::estimate_pose(const cv::Mat& image,
 
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::PoseResultList results =
-        postprocess(outputs, orig_size, use_conf, use_nms, last_det_scale_);
+        postprocess(outputs, geometry, use_conf, use_nms);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -227,18 +217,15 @@ std::vector<vision_core::ModelCapability> ScrfdDetector::get_capabilities() cons
 }
 
 vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>& outputs,
-                                                        const cv::Size& orig_size,
+                                                        const vision_operators::ImagePreprocessGeometry& geometry,
                                                         float conf_threshold,
-                                                        float nms_threshold,
-                                                        float det_scale) {
+                                                        float nms_threshold) {
     if (outputs.size() < 9) {
         throw std::runtime_error("ScrfdDetector expects 9 ONNX outputs");
     }
 
-    if (orig_size.width <= 0 || orig_size.height <= 0 ||
-        !std::isfinite(det_scale) || det_scale <= 0.0f || !std::isfinite(1.0f / det_scale)) {
-        throw std::invalid_argument("SCRFD expects a positive image size and finite positive scale");
-    }
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     size_t expected_offset = 0;
     for (int level = 0; level < 3; ++level) {
         const int stride = 8 << level;
@@ -294,8 +281,8 @@ vision_common::PoseResultList ScrfdDetector::postprocess(std::vector<Ort::Value>
         static_cast<int>(outputs[2].GetTensorTypeAndShapeInfo().GetElementCount()),
     };
 
-    const float scale_x = 1.0f / det_scale;
-    const float scale_y = 1.0f / det_scale;
+    const float scale_x = geometry.src_width / geometry.dst_width;
+    const float scale_y = geometry.src_height / geometry.dst_height;
     const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
     const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
 

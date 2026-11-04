@@ -135,7 +135,7 @@ void MobileNetV1Classifier::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image) {
+cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -152,7 +152,7 @@ cv::Mat MobileNetV1Classifier::preprocess(const cv::Mat& image) {
         std_,
         resize_size_,
         center_crop_,
-        interpolation_);
+        interpolation_, geometry);
 
     return blob;
 }
@@ -184,8 +184,8 @@ MobileNetV1Classifier::classify_input(
     }
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());

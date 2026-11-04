@@ -70,10 +70,10 @@ private:
     // Lazily (re)compute cached text features for the given prompts.
     void ensure_text_features(const std::vector<std::string>& prompts);
 
-    void preprocess(const cv::Mat& image, cv::Mat& blob);
+    void preprocess(const cv::Mat& image, cv::Mat& blob, vision_operators::ImagePreprocessGeometry* geometry);
     vision_common::DetectionResultList postprocess(
         const float* output, int offset, int anchors,
-        const cv::Size& orig_size, float conf_threshold, float iou_threshold);
+        const vision_operators::ImagePreprocessGeometry& geometry, float conf_threshold, float iou_threshold);
 
     std::string clip_model_path_;
     std::string bpe_merges_path_;
@@ -97,11 +97,6 @@ private:
     std::vector<float> text_feature_data_;    // {num_classes*feat_dim}, padded to model capacity
     bool text_features_ready_ = false;
 
-    // Letterbox state from last preprocess (reused by postprocess so the
-    // forward/inverse transform can't drift).
-    float letterbox_scale_ = 1.0f;
-    int letterbox_ox_ = 0;
-    int letterbox_oy_ = 0;
 };
 
 }  // namespace vision_deploy

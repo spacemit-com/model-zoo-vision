@@ -20,16 +20,6 @@ namespace vision_deploy {
 
 class YOLOP : public vision_core::BaseModel {
 public:
-    struct Geometry {
-        float ratio = 1.0F;
-        float pad_w = 0.0F;
-        float pad_h = 0.0F;
-        int resized_width = 0;
-        int resized_height = 0;
-        int original_width = 0;
-        int original_height = 0;
-    };
-
     YOLOP(
         const std::string& model_path,
         float conf_threshold,
@@ -55,7 +45,7 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    cv::Mat preprocess_cpu(const cv::Mat& image, Geometry* geometry) const;
+    cv::Mat preprocess_cpu(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) const;
     vision_core::InferResponse infer_input(
         const vision_core::ImageInput& input,
         float conf_threshold,

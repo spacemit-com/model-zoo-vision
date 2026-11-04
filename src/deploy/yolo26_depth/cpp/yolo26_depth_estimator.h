@@ -44,12 +44,13 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    cv::Mat preprocess(const cv::Mat& bgr) const;
+    cv::Mat preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry = nullptr) const;
     vision::DepthMap estimate_depth(
         const vision_core::ImageInput& input);
     cv::Mat restore_depth(
         const Ort::Value& output,
-        const cv::Size& original_size) const;
+        const vision_operators::ImagePreprocessGeometry& geometry) const;
 
     int num_threads_;
     std::string provider_;

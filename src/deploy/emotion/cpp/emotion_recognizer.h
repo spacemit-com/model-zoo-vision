@@ -49,7 +49,7 @@ public:
      * @param image Input face image in BGR format (should be cropped face)
      * @return Preprocessed tensor
      */
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 

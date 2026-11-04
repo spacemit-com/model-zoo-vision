@@ -203,35 +203,25 @@ void YoloeSegmentor::ensure_text_features(const std::vector<std::string>& prompt
     text_features_ready_ = true;
 }
 
-void YoloeSegmentor::preprocess(const cv::Mat& image, cv::Mat& blob) {
+void YoloeSegmentor::preprocess(const cv::Mat& image, cv::Mat& blob,
+        vision_operators::ImagePreprocessGeometry* geometry) {
     const int dst_h = static_cast<int>(input_image_dims_[2]);
     const int dst_w = static_cast<int>(input_image_dims_[3]);
 
-    // Store the exact scale/offset that vision_common::letterbox applies, so
-    // postprocess inverts the same transform (no drift). Mirrors letterbox().
-    const float r = std::min(static_cast<float>(dst_h) / static_cast<float>(image.rows),
-        static_cast<float>(dst_w) / static_cast<float>(image.cols));
-    const int new_w = static_cast<int>(std::round(image.cols * r));
-    const int new_h = static_cast<int>(std::round(image.rows * r));
-    letterbox_scale_ = r;
-    letterbox_ox_ = static_cast<int>(std::round((dst_w - new_w) / 2.0f - 0.1));
-    letterbox_oy_ = static_cast<int>(std::round((dst_h - new_h) / 2.0f - 0.1));
-
     blob = vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(dst_h, dst_w));
+        std::make_pair(dst_h, dst_w), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
     const float* det, int offset, int anchors,
-    const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+    const vision_operators::ImagePreprocessGeometry& geometry, float conf_threshold, float iou_threshold,
     int max_det, float mask_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     (void)offset;
     (void)mask_threshold;
     if (max_det == 0) return {};
-    const float ratio = letterbox_scale_;
-    const float dw = static_cast<float>(letterbox_ox_);
-    const float dh = static_cast<float>(letterbox_oy_);
     const int active_classes = std::min(static_cast<int>(active_labels_.size()), num_classes_);
 
     vision_common::SegmentationResultList candidates;
@@ -253,10 +243,10 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
             det[2 * anchors + j] <= 0.0f || det[3 * anchors + j] <= 0.0f) continue;
         const float half_w = det[2 * anchors + j] / 2.0f;
         const float half_h = det[3 * anchors + j] / 2.0f;
-        float x1 = std::max(0.0f, (det[j] - half_w - dw) / ratio);
-        float y1 = std::max(0.0f, (det[anchors + j] - half_h - dh) / ratio);
-        float x2 = std::min(static_cast<float>(orig_size.width), (det[j] + half_w - dw) / ratio);
-        float y2 = std::min(static_cast<float>(orig_size.height), (det[anchors + j] + half_h - dh) / ratio);
+        float x1 = std::max(0.0f, geometry.restore_x(det[j] - half_w));
+        float y1 = std::max(0.0f, geometry.restore_y(det[anchors + j] - half_h));
+        float x2 = std::min(static_cast<float>(orig_size.width), geometry.restore_x(det[j] + half_w));
+        float y2 = std::min(static_cast<float>(orig_size.height), geometry.restore_y(det[anchors + j] + half_h));
 
         if (!std::isfinite(x1) || !std::isfinite(y1) ||
             !std::isfinite(x2) || !std::isfinite(y2) || x2 <= x1 || y2 <= y1) continue;
@@ -275,13 +265,12 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_det(
 vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
     const float* det, int offset, int anchors,
     const float* proto, const std::vector<int64_t>& proto_dims,
-    const cv::Size& orig_size, float conf_threshold, float iou_threshold,
+    const vision_operators::ImagePreprocessGeometry& geometry, float conf_threshold, float iou_threshold,
     int max_det, float mask_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     (void)offset;
     if (max_det == 0) return {};
-    const float ratio = letterbox_scale_;
-    const float dw = static_cast<float>(letterbox_ox_);
-    const float dh = static_cast<float>(letterbox_oy_);
     auto at = [&](int c, int j) -> float { return det[c * anchors + j]; };
 
     // Only argmax over the ACTIVE prompt count: open-vocabulary fills just the
@@ -314,10 +303,10 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
             at(2, j) <= 0.0f || at(3, j) <= 0.0f) continue;
         const float half_w = at(2, j) / 2.0f;
         const float half_h = at(3, j) / 2.0f;
-        float x1 = std::max(0.0f, (at(0, j) - half_w - dw) / ratio);
-        float y1 = std::max(0.0f, (at(1, j) - half_h - dh) / ratio);
-        float x2 = std::min(static_cast<float>(orig_size.width), (at(0, j) + half_w - dw) / ratio);
-        float y2 = std::min(static_cast<float>(orig_size.height), (at(1, j) + half_h - dh) / ratio);
+        float x1 = std::max(0.0f, geometry.restore_x(at(0, j) - half_w));
+        float y1 = std::max(0.0f, geometry.restore_y(at(1, j) - half_h));
+        float x2 = std::min(static_cast<float>(orig_size.width), geometry.restore_x(at(0, j) + half_w));
+        float y2 = std::min(static_cast<float>(orig_size.height), geometry.restore_y(at(1, j) + half_h));
 
         if (!std::isfinite(x1) || !std::isfinite(y1) ||
             !std::isfinite(x2) || !std::isfinite(y2) || x2 <= x1 || y2 <= y1) continue;
@@ -352,7 +341,7 @@ vision_common::SegmentationResultList YoloeSegmentor::postprocess_seg(
         kept_coeffs.push_back(std::move(cand_coeffs[index]));
     }
     if (!kept.empty()) {
-        process_masks(proto, proto_dims, kept_coeffs, kept, orig_size, mask_threshold);
+        process_masks(proto, proto_dims, kept_coeffs, kept, geometry, mask_threshold);
     }
     return kept;
 }
@@ -361,7 +350,8 @@ void YoloeSegmentor::process_masks(
     const float* proto, const std::vector<int64_t>& proto_dims,
     const std::vector<std::vector<float>>& mask_coeffs,
     vision_common::SegmentationResultList& objects,
-    const cv::Size& orig_shape, float mask_threshold) {
+    const vision_operators::ImagePreprocessGeometry& geometry, float mask_threshold) {
+    geometry.validate();
     if (proto_dims.size() != 4 || proto_dims[0] != 1 ||
         proto_dims[1] <= 0 || proto_dims[1] > std::numeric_limits<int>::max() ||
         proto_dims[2] <= 0 || proto_dims[3] <= 0 ||
@@ -399,7 +389,7 @@ void YoloeSegmentor::process_masks(
     for (size_t i = 0; i < objects.size(); ++i) {
         cv::Mat logits(mask_h, mask_w, CV_32F, raw_masks.data() + i * proto_size);
         objects[i].mask = std::make_shared<cv::Mat>(vision_common::restore_instance_mask(
-            logits, objects[i].bbox, orig_shape, mask_threshold));
+            logits, objects[i].bbox, geometry, mask_threshold));
     }
 }
 
@@ -425,24 +415,8 @@ YoloeSegmentor::segment_input_with_prompts(
     ensure_text_features(prompts);
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    const cv::Size original_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
     const int dst_h = static_cast<int>(input_image_dims_[2]);
     const int dst_w = static_cast<int>(input_image_dims_[3]);
-    letterbox_scale_ = std::min(
-        static_cast<float>(dst_h) / original_size.height,
-        static_cast<float>(dst_w) / original_size.width);
-    const int resized_width = static_cast<int>(
-        std::round(original_size.width * letterbox_scale_));
-    const int resized_height = static_cast<int>(
-        std::round(original_size.height * letterbox_scale_));
-    letterbox_ox_ = static_cast<int>(std::round(
-        (dst_w - resized_width) / 2.0F - 0.1F));
-    letterbox_oy_ = static_cast<int>(std::round(
-        (dst_h - resized_height) / 2.0F - 0.1F));
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = dst_w;
     spec.output_height = dst_h;
@@ -456,9 +430,9 @@ YoloeSegmentor::segment_input_with_prompts(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
             cv::Mat blob;
-            preprocess(bgr, blob);
+            preprocess(bgr, blob, &geometry);
             return blob;
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
@@ -520,10 +494,10 @@ YoloeSegmentor::segment_input_with_prompts(
         const float* proto = outputs[1].GetTensorData<float>();
         results = postprocess_seg(
             det, offset, anchors, proto, proto_dims,
-            original_size, use_conf, use_iou, max_det, mask_threshold);
+            prepared.geometry(), use_conf, use_iou, max_det, mask_threshold);
     } else {
         results = postprocess_det(
-            det, offset, anchors, original_size,
+            det, offset, anchors, prepared.geometry(),
             use_conf, use_iou, max_det, mask_threshold);
     }
     const auto t_post1 = std::chrono::steady_clock::now();

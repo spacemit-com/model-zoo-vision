@@ -44,7 +44,7 @@ public:
      * @param image Input image in BGR format
      * @return Preprocessed tensor
      */
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -56,7 +56,7 @@ public:
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     vision_common::SegmentationResultList postprocess(
         std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float iou_threshold);
 
@@ -69,7 +69,7 @@ private:
         float conf_threshold,
         float iou_threshold, int max_det = -1, float mask_threshold = 0.5f);
     vision_common::SegmentationResultList postprocess_impl(
-        std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+        std::vector<Ort::Value>& outputs, const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold, float iou_threshold,
         int max_det, float mask_threshold);
 
@@ -83,7 +83,7 @@ private:
     /** @brief Ultralytics single-output seg path: output0 = [1, 4+nc+nm, anchors], proto. */
     vision_common::SegmentationResultList postprocess_single_output_seg(
         std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float iou_threshold, int max_det, float mask_threshold);
 
@@ -91,7 +91,7 @@ private:
         const float* protos, const std::vector<int64_t>& proto_dims,
         const std::vector<std::vector<float>>& mask_coeffs,
         const vision_common::SegmentationResultList& results,
-        const cv::Size& orig_shape, float mask_threshold);
+        const vision_operators::ImagePreprocessGeometry& geometry, float mask_threshold);
 
 };
 

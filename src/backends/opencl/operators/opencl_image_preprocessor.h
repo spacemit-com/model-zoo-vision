@@ -28,7 +28,8 @@ public:
     OpenClImagePreprocessor& operator=(const OpenClImagePreprocessor&) = delete;
 
     cv::Mat process(
-        const vision_core::ImageInput& input) override;
+        const vision_core::ImageInput& input,
+        vision_operators::ImagePreprocessGeometry& geometry) override;
     void complete() override;
     void finish_cpu_read();
 

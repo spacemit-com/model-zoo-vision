@@ -93,7 +93,7 @@ void YOLOv8PoseDetector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image) {
+cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -106,7 +106,7 @@ cv::Mat YOLOv8PoseDetector::preprocess(const cv::Mat& image) {
     return vision_common::letterbox_to_nchw_rgb_blob(
         image,
         std::make_pair(inputHeight, inputWidth),
-        cv::Scalar(0, 0, 0));
+        cv::Scalar(0, 0, 0), nullptr, geometry);
 }
 
 
@@ -126,11 +126,6 @@ YOLOv8PoseDetector::estimate_pose_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size orig_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
 
     // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
@@ -147,8 +142,8 @@ YOLOv8PoseDetector::estimate_pose_input(
     spec.padding = {0.0F, 0.0F, 0.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -164,7 +159,7 @@ YOLOv8PoseDetector::estimate_pose_input(
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::PoseResultList results = postprocess_impl(
-        outputs, orig_size, use_conf, use_iou, use_kp, max_det);
+        outputs, prepared.geometry(), use_conf, use_iou, use_kp, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -197,17 +192,20 @@ std::vector<vision_core::ModelCapability> YOLOv8PoseDetector::get_capabilities()
 
 vision_common::PoseResultList YOLOv8PoseDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold) {
+    geometry.validate();
 
-    return postprocess_impl(outputs, orig_size, conf_threshold, iou_threshold,
+    return postprocess_impl(outputs, geometry, conf_threshold, iou_threshold,
         point_confidence_threshold_, -1);
 }
 
 vision_common::PoseResultList YOLOv8PoseDetector::postprocess_impl(
-    std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+    std::vector<Ort::Value>& outputs, const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold, float iou_threshold, float kp_threshold, int max_det) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     if (outputs.empty() || !outputs[0].IsTensor()) {
         throw std::runtime_error("YOLOv8-Pose expects a float32 [1,56,N] output");
     }
@@ -228,18 +226,6 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess_impl(
 
     int anchors = static_cast<int>(dets_dims[2]);  // 2100
 
-    int inputWidth = static_cast<int>(input_shape_[3]);
-    int inputHeight = static_cast<int>(input_shape_[2]);
-
-    float ratio = std::min(
-        static_cast<float>(inputWidth) / static_cast<float>(orig_size.width),
-        static_cast<float>(inputHeight) / static_cast<float>(orig_size.height));
-    int unpad_w = static_cast<int>(std::round(orig_size.width * ratio));
-    int unpad_h = static_cast<int>(std::round(orig_size.height * ratio));
-
-    const float dw = std::round((inputWidth - unpad_w) / 2.0f - 0.1f);
-    const float dh = std::round((inputHeight - unpad_h) / 2.0f - 0.1f);
-
     // First pass: extract all detections with confidence > threshold
     vision_common::PoseResultList objects;
     for (int j = 0; j < anchors; ++j) {
@@ -252,10 +238,10 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess_impl(
             // Decode box
             float half_width = output_data[2 * anchors + j] / 2;
             float half_height = output_data[3 * anchors + j] / 2;
-            float x1 = (output_data[j] - half_width - dw) / ratio;
-            float y1 = (output_data[anchors + j] - half_height - dh) / ratio;
-            float x2 = (output_data[j] + half_width - dw) / ratio;
-            float y2 = (output_data[anchors + j] + half_height - dh) / ratio;
+            float x1 = geometry.restore_x(output_data[j] - half_width);
+            float y1 = geometry.restore_y(output_data[anchors + j] - half_height);
+            float x2 = geometry.restore_x(output_data[j] + half_width);
+            float y2 = geometry.restore_y(output_data[anchors + j] + half_height);
 
             if (!std::isfinite(x1) || !std::isfinite(y1) ||
                 !std::isfinite(x2) || !std::isfinite(y2)) continue;
@@ -281,8 +267,8 @@ vision_common::PoseResultList YOLOv8PoseDetector::postprocess_impl(
             bool finite_keypoints = true;
             for (int k = 0; k < 17; ++k) {
                 vision_common::KeyPoint kp;
-                kp.x = (output_data[(5 + k * 3) * anchors + j] - dw) / ratio;
-                kp.y = (output_data[(5 + k * 3 + 1) * anchors + j] - dh) / ratio;
+                kp.x = geometry.restore_x(output_data[(5 + k * 3) * anchors + j]);
+                kp.y = geometry.restore_y(output_data[(5 + k * 3 + 1) * anchors + j]);
                 kp.visibility = output_data[(5 + k * 3 + 2) * anchors + j];
                 if (!std::isfinite(kp.x) || !std::isfinite(kp.y) || !std::isfinite(kp.visibility)) {
                     finite_keypoints = false;

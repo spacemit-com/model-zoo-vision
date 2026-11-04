@@ -82,7 +82,7 @@ public:
         return prepare_image(
             input,
             spec,
-            [](const cv::Mat& source) {
+            [](const cv::Mat& source, vision_operators::ImagePreprocessGeometry&) {
                 return source.clone();
             });
     }

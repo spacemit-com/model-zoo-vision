@@ -223,7 +223,7 @@ protected:
     PreparedImage prepare_image(
         const ImageInput& input,
         const vision_operators::ImagePreprocessSpec& spec,
-        const std::function<cv::Mat(const cv::Mat&)>& cpu_preprocess);
+        const vision_operators::CpuImagePreprocess& cpu_preprocess);
 
     void enable_accelerated_image_preprocess() noexcept;
 

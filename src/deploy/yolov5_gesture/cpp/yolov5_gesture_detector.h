@@ -39,7 +39,7 @@ public:
     virtual ~YOLOv5GestureDetector() = default;
 
     void load_model() override;
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
     std::vector<vision_core::ModelCapability> get_capabilities() const override;
@@ -50,7 +50,7 @@ public:
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     vision_common::DetectionResultList postprocess(
         std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float iou_threshold);
 

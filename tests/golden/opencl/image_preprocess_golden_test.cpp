@@ -126,7 +126,7 @@ void check_color_and_sampling()
     auto rgb_result = dispatcher.process(
         input,
         rgb_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     const float* rgb = rgb_result.tensor().ptr<float>();
@@ -158,7 +158,7 @@ void check_color_and_sampling()
     auto bgr_result = dispatcher.process(
         input,
         bgr_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     const float* bgr = bgr_result.tensor().ptr<float>();
@@ -181,7 +181,7 @@ void check_color_and_sampling()
     auto nearest_result = dispatcher.process(
         input,
         nearest_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     const float* nearest = nearest_result.tensor().ptr<float>();
@@ -200,7 +200,7 @@ void check_color_and_sampling()
     auto bilinear_result = dispatcher.process(
         input,
         bilinear_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     cv::Mat edge_bgr;
@@ -242,7 +242,7 @@ void check_color_and_sampling()
     auto identity_letterbox_result = dispatcher.process(
         input,
         identity_letterbox_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     cv::Mat identity_letterbox_cpu = vision_common::letterbox(
@@ -272,7 +272,7 @@ void check_color_and_sampling()
     auto identity_letterbox_fp16_result = dispatcher.process(
         input,
         identity_letterbox_fp16_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     cv::Mat identity_letterbox_fp16_as_float;
@@ -293,7 +293,7 @@ void check_color_and_sampling()
     auto resized_result = dispatcher.process(
         input,
         resized_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     cv::Mat edge_resized;
@@ -336,7 +336,7 @@ void check_color_and_sampling()
     auto fast_result = dispatcher.process(
         input,
         fast_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     const float* fast = fast_result.tensor().ptr<float>();
@@ -362,7 +362,7 @@ void check_color_and_sampling()
     auto fast_nearest_result = dispatcher.process(
         input,
         fast_nearest_spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
     check(
@@ -417,7 +417,7 @@ void check_letterbox()
     auto result = dispatcher.process(
         input,
         spec,
-        [](const cv::Mat& bgr) {
+        [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
             return bgr.clone();
         });
 
@@ -509,7 +509,7 @@ void check_bgr_host_input()
     auto result = dispatcher.process(
         input,
         spec,
-        [&](const cv::Mat& image) {
+        [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             cpu_called = true;
             return image.clone();
         });
@@ -545,7 +545,7 @@ void check_bgr_host_input()
     auto identity_result = dispatcher.process(
         input,
         identity_spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     const cv::Mat identity_cpu =
@@ -566,7 +566,7 @@ void check_bgr_host_input()
     auto identity_bgr_result = dispatcher.process(
         input,
         identity_bgr_spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     cv::Mat identity_bgr_cpu = identity_cpu.clone();
@@ -592,7 +592,7 @@ void check_bgr_host_input()
     auto identity_fp16_result = dispatcher.process(
         input,
         identity_fp16_spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     cv::Mat identity_fp16_as_float;
@@ -619,7 +619,7 @@ void check_bgr_host_input()
     auto offset_result = dispatcher.process(
         offset_input,
         offset_spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     const cv::Mat offset_cpu =
@@ -649,7 +649,7 @@ void check_bgr_host_input()
     auto odd_result = dispatcher.process(
         odd_input,
         odd_spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     const cv::Mat odd_cpu =

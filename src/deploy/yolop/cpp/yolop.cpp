@@ -79,7 +79,7 @@ float area(const vision::Detection& detection) {
 
 std::vector<vision::Detection> decode_detections(
     std::vector<Ort::Value>& outputs,
-    const YOLOP::Geometry& geometry,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold,
     int max_det) {
@@ -171,16 +171,16 @@ std::vector<vision::Detection> decode_detections(
     const float max_y = static_cast<float>(geometry.original_height);
     for (vision::Detection& detection : kept) {
         detection.bbox.x1 = std::round(std::clamp(
-            (detection.bbox.x1 - geometry.pad_w) / geometry.ratio,
+            geometry.restore_x(detection.bbox.x1),
             0.0F, max_x));
         detection.bbox.y1 = std::round(std::clamp(
-            (detection.bbox.y1 - geometry.pad_h) / geometry.ratio,
+            geometry.restore_y(detection.bbox.y1),
             0.0F, max_y));
         detection.bbox.x2 = std::round(std::clamp(
-            (detection.bbox.x2 - geometry.pad_w) / geometry.ratio,
+            geometry.restore_x(detection.bbox.x2),
             0.0F, max_x));
         detection.bbox.y2 = std::round(std::clamp(
-            (detection.bbox.y2 - geometry.pad_h) / geometry.ratio,
+            geometry.restore_y(detection.bbox.y2),
             0.0F, max_y));
     }
     return kept;
@@ -188,7 +188,7 @@ std::vector<vision::Detection> decode_detections(
 
 cv::Mat decode_mask(
     Ort::Value& output,
-    const YOLOP::Geometry& geometry) {
+    const vision_operators::ImagePreprocessGeometry& geometry) {
     const auto info = output.GetTensorTypeAndShapeInfo();
     const std::vector<int64_t> shape = info.GetShape();
     if (shape.size() != 4 || shape[0] != 1 || shape[1] < 2 ||
@@ -198,10 +198,10 @@ cv::Mat decode_mask(
     const int channels = static_cast<int>(shape[1]);
     const size_t plane = static_cast<size_t>(kInputHeight) * kInputWidth;
     const float* data = output.GetTensorData<float>();
-    const int top = static_cast<int>(std::lround(geometry.pad_h - 0.1F));
-    const int left = static_cast<int>(std::lround(geometry.pad_w - 0.1F));
-    const int height = std::min(geometry.resized_height, kInputHeight - top);
-    const int width = std::min(geometry.resized_width, kInputWidth - left);
+    const int top = geometry.dst_y;
+    const int left = geometry.dst_x;
+    const int height = std::min(geometry.dst_height, kInputHeight - top);
+    const int width = std::min(geometry.dst_width, kInputWidth - left);
     cv::Mat content(height, width, CV_8UC1);
     cv::parallel_for_(cv::Range(0, height), [&](const cv::Range& rows) {
         for (int y = rows.start; y < rows.end; ++y) {
@@ -303,25 +303,14 @@ void YOLOP::load_model() {
 
 cv::Mat YOLOP::preprocess_cpu(
     const cv::Mat& image,
-    Geometry* geometry) const {
+    vision_operators::ImagePreprocessGeometry* geometry) const {
     if (image.empty() || image.type() != CV_8UC3 || geometry == nullptr) {
         throw std::invalid_argument("YOLOP expects a non-empty BGR8 image");
     }
-    geometry->original_width = image.cols;
-    geometry->original_height = image.rows;
-    geometry->ratio = std::min(
-        static_cast<float>(kInputWidth) / image.cols,
-        static_cast<float>(kInputHeight) / image.rows);
-    geometry->resized_width = static_cast<int>(
-        std::lround(image.cols * geometry->ratio));
-    geometry->resized_height = static_cast<int>(
-        std::lround(image.rows * geometry->ratio));
-    geometry->pad_w = (kInputWidth - geometry->resized_width) * 0.5F;
-    geometry->pad_h = (kInputHeight - geometry->resized_height) * 0.5F;
     return vision_operators::preprocess_bgr_to_nchw(
         image,
         make_preprocess_spec(),
-        make_cpu_transform());
+        make_cpu_transform(), geometry);
 }
 
 vision_core::InferResponse YOLOP::infer_input(
@@ -332,14 +321,13 @@ vision_core::InferResponse YOLOP::infer_input(
     ensure_model_loaded();
     reset_runtime_profile();
     const auto begin = std::chrono::steady_clock::now();
-    Geometry geometry;
     const vision_operators::ImagePreprocessSpec spec =
         make_preprocess_spec();
 
     const auto preprocess_begin = std::chrono::steady_clock::now();
     auto prepared = prepare_image(
         input, spec,
-        [this, &geometry](const cv::Mat& bgr) {
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
             return preprocess_cpu(bgr, &geometry);
         });
     const auto preprocess_end = std::chrono::steady_clock::now();
@@ -351,6 +339,7 @@ vision_core::InferResponse YOLOP::infer_input(
     prepared.complete();
     set_runtime_model_infer_ms(elapsed_ms(infer_begin, infer_end));
 
+    const auto& geometry = prepared.geometry();
     const auto postprocess_begin = std::chrono::steady_clock::now();
     std::vector<vision::Detection> detections = decode_detections(
         outputs, geometry, conf_threshold, iou_threshold, max_det);

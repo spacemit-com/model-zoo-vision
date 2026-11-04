@@ -36,7 +36,7 @@ public:
 
     void load_model() override;
 
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -45,10 +45,9 @@ public:
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
     vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs,
-                                                const cv::Size& orig_size,
+                                                const vision_operators::ImagePreprocessGeometry& geometry,
                                                 float conf_threshold,
-                                                float nms_threshold,
-                                                float det_scale);
+                                                float nms_threshold);
 
 protected:
     vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;
@@ -76,7 +75,6 @@ private:
     int input_width_ = 640;
     int input_height_ = 640;
     std::vector<Anchor> anchors_;
-    float last_det_scale_ = 1.0f;
 };
 
 }  // namespace vision_deploy

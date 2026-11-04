@@ -72,7 +72,7 @@ void YOLOv5GestureDetector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
+cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -83,7 +83,7 @@ cv::Mat YOLOv5GestureDetector::preprocess(const cv::Mat& image) {
 
     return vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(inputHeight, inputWidth));
+        std::make_pair(inputHeight, inputWidth), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::DetectionResultList
@@ -99,11 +99,6 @@ YOLOv5GestureDetector::detect_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size orig_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = static_cast<int>(input_shape_[3]);
@@ -118,8 +113,8 @@ YOLOv5GestureDetector::detect_input(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -132,7 +127,7 @@ YOLOv5GestureDetector::detect_input(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::DetectionResultList results = postprocess(outputs, orig_size, use_conf, use_iou);
+    vision_common::DetectionResultList results = postprocess(outputs, prepared.geometry(), use_conf, use_iou);
     vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
@@ -165,9 +160,10 @@ std::vector<vision_core::ModelCapability> YOLOv5GestureDetector::get_capabilitie
 
 vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold) {
+    geometry.validate();
 
     if (outputs.empty()) {
         return {};
@@ -301,7 +297,7 @@ vision_common::DetectionResultList YOLOv5GestureDetector::postprocess(
     const cv::Size input_shape(inputWidth, inputHeight);
     for (auto& r : results) {
         float coords[4] = {r.bbox.x1, r.bbox.y1, r.bbox.x2, r.bbox.y2};
-        vision_common::scale_coords(input_shape, coords, orig_size);
+        vision_common::scale_coords(coords, geometry);
         r.bbox.x1 = coords[0];
         r.bbox.y1 = coords[1];
         r.bbox.x2 = coords[2];

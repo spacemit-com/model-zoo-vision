@@ -186,34 +186,21 @@ void YoloWorldDetector::ensure_text_features(const std::vector<std::string>& pro
     text_features_ready_ = true;
 }
 
-void YoloWorldDetector::preprocess(const cv::Mat& image, cv::Mat& blob) {
+void YoloWorldDetector::preprocess(const cv::Mat& image, cv::Mat& blob,
+        vision_operators::ImagePreprocessGeometry* geometry) {
     const int dst_h = static_cast<int>(input_image_dims_[2]);
     const int dst_w = static_cast<int>(input_image_dims_[3]);
 
-    // Store the exact scale/offset that vision_common::letterbox applies, so
-    // postprocess inverts the same transform (no drift). Mirrors letterbox():
-    // r = min(...), new = round(orig*r), pad = (dst-new)/2, left/top = round(pad-0.1).
-    const float r = std::min(static_cast<float>(dst_h) / static_cast<float>(image.rows),
-        static_cast<float>(dst_w) / static_cast<float>(image.cols));
-    const int new_w = static_cast<int>(std::round(image.cols * r));
-    const int new_h = static_cast<int>(std::round(image.rows * r));
-    letterbox_scale_ = r;
-    letterbox_ox_ = static_cast<int>(std::round((dst_w - new_w) / 2.0f - 0.1));
-    letterbox_oy_ = static_cast<int>(std::round((dst_h - new_h) / 2.0f - 0.1));
-
     blob = vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(dst_h, dst_w));
+        std::make_pair(dst_h, dst_w), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::DetectionResultList YoloWorldDetector::postprocess(
     const float* output, int offset, int anchors,
-    const cv::Size& orig_size, float conf_threshold, float iou_threshold) {
-    // Invert exactly the transform applied in preprocess (shared scale/offsets),
-    // so forward/inverse can't drift.
-    const float ratio = letterbox_scale_;
-    const float dw = static_cast<float>(letterbox_ox_);
-    const float dh = static_cast<float>(letterbox_oy_);
+    const vision_operators::ImagePreprocessGeometry& geometry, float conf_threshold, float iou_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
 
     // Collect candidates (CN layout: output[c * anchors + j]) as DetectionResult,
     // then reuse the shared per-class NMS (vision_common::multi_class_nms).
@@ -245,10 +232,10 @@ vision_common::DetectionResultList YoloWorldDetector::postprocess(
         }
         const float half_w = output[2 * anchors + j] / 2.0f;
         const float half_h = output[3 * anchors + j] / 2.0f;
-        float x1 = (output[j] - half_w - dw) / ratio;
-        float y1 = (output[anchors + j] - half_h - dh) / ratio;
-        float x2 = (output[j] + half_w - dw) / ratio;
-        float y2 = (output[anchors + j] + half_h - dh) / ratio;
+        float x1 = geometry.restore_x(output[j] - half_w);
+        float y1 = geometry.restore_y(output[anchors + j] - half_h);
+        float x2 = geometry.restore_x(output[j] + half_w);
+        float y2 = geometry.restore_y(output[anchors + j] + half_h);
         x1 = std::max(0.0f, x1);
         y1 = std::max(0.0f, y1);
         x2 = std::min(static_cast<float>(orig_size.width), x2);
@@ -285,24 +272,8 @@ YoloWorldDetector::detect_input_with_prompts(
     ensure_text_features(prompts);
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    const cv::Size original_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
     const int dst_h = static_cast<int>(input_image_dims_[2]);
     const int dst_w = static_cast<int>(input_image_dims_[3]);
-    letterbox_scale_ = std::min(
-        static_cast<float>(dst_h) / original_size.height,
-        static_cast<float>(dst_w) / original_size.width);
-    const int resized_width = static_cast<int>(
-        std::round(original_size.width * letterbox_scale_));
-    const int resized_height = static_cast<int>(
-        std::round(original_size.height * letterbox_scale_));
-    letterbox_ox_ = static_cast<int>(std::round(
-        (dst_w - resized_width) / 2.0F - 0.1F));
-    letterbox_oy_ = static_cast<int>(std::round(
-        (dst_h - resized_height) / 2.0F - 0.1F));
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = dst_w;
     spec.output_height = dst_h;
@@ -316,9 +287,9 @@ YoloWorldDetector::detect_input_with_prompts(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
             cv::Mat blob;
-            preprocess(bgr, blob);
+            preprocess(bgr, blob, &geometry);
             return blob;
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
@@ -370,7 +341,7 @@ YoloWorldDetector::detect_input_with_prompts(
     const int anchors = static_cast<int>(dets_dims[2]);
     vision_common::DetectionResultList results =
         postprocess(
-            dets, offset, anchors, original_size,
+            dets, offset, anchors, prepared.geometry(),
             use_conf, use_iou);
     vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();

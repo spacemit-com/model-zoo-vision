@@ -214,7 +214,7 @@ void RFDETRDetector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat RFDETRDetector::preprocess(const cv::Mat& bgr) const {
+cv::Mat RFDETRDetector::preprocess(const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry* geometry) const {
     if (bgr.empty() || bgr.type() != CV_8UC3) {
         throw std::invalid_argument(
             "RF-DETR expects a non-empty BGR8 image");
@@ -226,7 +226,7 @@ cv::Mat RFDETRDetector::preprocess(const cv::Mat& bgr) const {
     return vision_operators::preprocess_bgr_to_nchw(
         bgr,
         make_preprocess_spec(input_width_, input_height_),
-        transform);
+        transform, geometry);
 }
 
 vision_common::DetectionResultList RFDETRDetector::postprocess(
@@ -341,7 +341,9 @@ vision_common::DetectionResultList RFDETRDetector::infer_input(
     auto prepared = prepare_image(
         input,
         make_preprocess_spec(input_width_, input_height_),
-        [this](const cv::Mat& bgr) { return preprocess(bgr); });
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
+        });
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(

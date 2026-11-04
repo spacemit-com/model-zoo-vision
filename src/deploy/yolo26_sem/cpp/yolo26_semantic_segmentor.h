@@ -45,12 +45,13 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    cv::Mat preprocess(const cv::Mat& bgr) const;
+    cv::Mat preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry = nullptr) const;
     std::vector<vision::Segmentation> segment(
         const vision_core::ImageInput& input);
     cv::Mat decode_label_map(
         const Ort::Value& output,
-        const cv::Size& original_size) const;
+        const vision_operators::ImagePreprocessGeometry& geometry) const;
     std::vector<vision::Segmentation> split_semantic_masks(
         const cv::Mat& label_map) const;
 

@@ -47,7 +47,7 @@ public:
      * @param image Input image in BGR format
      * @return Preprocessed tensor
      */
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     vision_common::DetectionResultList detect_input(
         const vision_core::ImageInput& image,
@@ -64,7 +64,7 @@ public:
     /** @brief Postprocess (task layer, callable separately e.g. for benchmark). */
     vision_common::DetectionResultList postprocess(
         std::vector<Ort::Value>& outputs,
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float iou_threshold);
 
@@ -83,13 +83,11 @@ private:
     std::string provider_;
 
     void get_dets(
-        const cv::Size& orig_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         const float* boxes,
         const float* scores,
         const float* score_sum,
         const std::vector<int64_t>& dims,
-        int tensor_width,
-        int tensor_height,
         float conf_threshold,
         vision_common::DetectionResultList& objects);
 };

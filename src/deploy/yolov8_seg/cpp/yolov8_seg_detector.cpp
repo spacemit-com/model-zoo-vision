@@ -185,7 +185,7 @@ void YOLOv8SegDetector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image) {
+cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -197,7 +197,7 @@ cv::Mat YOLOv8SegDetector::preprocess(const cv::Mat& image) {
 
     return vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(inputHeight, inputWidth));
+        std::make_pair(inputHeight, inputWidth), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::SegmentationResultList
@@ -215,11 +215,6 @@ YOLOv8SegDetector::segment_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size orig_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
 
     // Preprocess
     const auto t_pre0 = std::chrono::steady_clock::now();
@@ -236,8 +231,8 @@ YOLOv8SegDetector::segment_input(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -253,7 +248,7 @@ YOLOv8SegDetector::segment_input(
     // Postprocess
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::SegmentationResultList results = postprocess_impl(
-        outputs, orig_size, use_conf, use_iou, max_det, use_mask);
+        outputs, prepared.geometry(), use_conf, use_iou, max_det, use_mask);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -285,15 +280,18 @@ std::vector<vision_core::ModelCapability> YOLOv8SegDetector::get_capabilities() 
 }
 
 vision_common::SegmentationResultList YOLOv8SegDetector::postprocess(std::vector<Ort::Value>& outputs,
-                                                                const cv::Size& orig_size,
+                                                                const vision_operators::ImagePreprocessGeometry& geometry,
                                                                 float conf_threshold,
                                                                 float iou_threshold) {
-    return postprocess_impl(outputs, orig_size, conf_threshold, iou_threshold, -1, 0.5f);
+    geometry.validate();
+    return postprocess_impl(outputs, geometry, conf_threshold, iou_threshold, -1, 0.5f);
 }
 
 vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
-    std::vector<Ort::Value>& outputs, const cv::Size& orig_size,
+    std::vector<Ort::Value>& outputs, const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold, float iou_threshold, int max_det, float mask_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     vision_common::mask_logit_threshold(mask_threshold);
     if (orig_size.width <= 0 || orig_size.height <= 0) {
         throw std::invalid_argument("YOLOv8-Seg expects a positive original image size");
@@ -304,7 +302,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
     // the same output_num_.
     if (outputs.size() == 2) {
         return postprocess_single_output_seg(
-            outputs, orig_size, conf_threshold, iou_threshold, max_det, mask_threshold);
+            outputs, geometry, conf_threshold, iou_threshold, max_det, mask_threshold);
     }
 
     // DFL path indexes outputs[0..8] (box/score/score_sum x3), outputs[9..11] (seg coeffs)
@@ -361,16 +359,6 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
         float scale_w = static_cast<float>(inputWidth) / static_cast<float>(grid_w);
         float scale_h = static_cast<float>(inputHeight) / static_cast<float>(grid_h);
 
-        int orig_height = orig_size.height;
-        int orig_width = orig_size.width;
-        float scale2orign = std::min(
-            static_cast<float>(inputHeight) / static_cast<float>(orig_height),
-            static_cast<float>(inputWidth) / static_cast<float>(orig_width));
-        int pad_h = static_cast<int>(std::round(
-            (inputHeight - std::round(orig_height * scale2orign)) / 2.0f - 0.1f));
-        int pad_w = static_cast<int>(std::round(
-            (inputWidth - std::round(orig_width * scale2orign)) / 2.0f - 0.1f));
-
         for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
             if (score_sum[anchor_idx] < conf_threshold) {
                 continue;
@@ -389,7 +377,11 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
 
             if (classId >= 0) {
                 auto [x1, y1, x2, y2] = vision_common::dfl_decode(boxes, anchor_idx, anchors_per_branch,
-                    grid_w, scale_w, scale_h, scale2orign, pad_w, pad_h);
+                    grid_w, scale_w, scale_h);
+                x1 = geometry.restore_x(x1);
+                y1 = geometry.restore_y(y1);
+                x2 = geometry.restore_x(x2);
+                y2 = geometry.restore_y(y2);
 
                 if (!std::isfinite(x1) || !std::isfinite(y1) ||
                     !std::isfinite(x2) || !std::isfinite(y2) || x2 <= x1 || y2 <= y1) continue;
@@ -445,7 +437,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
         const float* output_proto = outputs[12].GetTensorMutableData<float>();
         const auto proto_dims = outputs[12].GetTensorTypeAndShapeInfo().GetShape();
         auto masks = _process_masks(
-            output_proto, proto_dims, mask_coeffs_list, results, orig_size, mask_threshold);
+            output_proto, proto_dims, mask_coeffs_list, results, geometry, mask_threshold);
         for (size_t i = 0; i < results.size(); ++i) results[i].mask = std::move(masks[i]);
     }
 
@@ -455,17 +447,17 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_impl(
 
 vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_output_seg(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold, int max_det, float mask_threshold) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     Ort::Value& out0 = outputs[0];
     std::vector<int64_t> dims = seg_tensor_shape(out0, 3);
     if (dims.size() != 3) {
         throw std::runtime_error("Unexpected YOLOv8-Seg single output rank (expected 3)");
     }
 
-    const int input_height = static_cast<int>(input_shape_[2]);
-    const int input_width = static_cast<int>(input_shape_[3]);
 
     std::vector<int64_t> proto_dims = seg_tensor_shape(outputs[1], 4);
     // Expect 4-D [1, C, H, W] (same assumption as load_model); reject a batch-less
@@ -505,11 +497,6 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_outp
     cand_labels.reserve(256);
     cand_coeffs.reserve(256);
 
-    const float gain = std::min(
-        static_cast<float>(input_height) / static_cast<float>(orig_size.height),
-        static_cast<float>(input_width) / static_cast<float>(orig_size.width));
-    const float pad_w = std::round((input_width - std::round(orig_size.width * gain)) / 2.0f - 0.1f);
-    const float pad_h = std::round((input_height - std::round(orig_size.height * gain)) / 2.0f - 0.1f);
     const float max_x = static_cast<float>(orig_size.width);
     const float max_y = static_cast<float>(orig_size.height);
 
@@ -535,10 +522,10 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_outp
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(w) ||
             !std::isfinite(h) || !std::isfinite(x + w) || !std::isfinite(y + h) ||
             w <= 0.0f || h <= 0.0f) continue;
-        const float x1 = std::clamp((x - pad_w) / gain, 0.0f, max_x);
-        const float y1 = std::clamp((y - pad_h) / gain, 0.0f, max_y);
-        const float x2 = std::clamp((x + w - pad_w) / gain, 0.0f, max_x);
-        const float y2 = std::clamp((y + h - pad_h) / gain, 0.0f, max_y);
+        const float x1 = std::clamp(geometry.restore_x(x), 0.0f, max_x);
+        const float y1 = std::clamp(geometry.restore_y(y), 0.0f, max_y);
+        const float x2 = std::clamp(geometry.restore_x(x + w), 0.0f, max_x);
+        const float y2 = std::clamp(geometry.restore_y(y + h), 0.0f, max_y);
         if (x2 <= x1 || y2 <= y1) continue;
 
         std::vector<float> coeffs;
@@ -586,10 +573,10 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_outp
     kept_coeffs.reserve(kept_candidates.size());
     for (size_t idx : kept_candidates) {
         const cv::Rect2f& b = cand_rects[idx];
-        float x1 = (b.x - pad_w) / gain;
-        float y1 = (b.y - pad_h) / gain;
-        float x2 = (b.x + b.width - pad_w) / gain;
-        float y2 = (b.y + b.height - pad_h) / gain;
+        float x1 = geometry.restore_x(b.x);
+        float y1 = geometry.restore_y(b.y);
+        float x2 = geometry.restore_x(b.x + b.width);
+        float y2 = geometry.restore_y(b.y + b.height);
         x1 = std::max(0.0f, std::min(x1, max_x));
         y1 = std::max(0.0f, std::min(y1, max_y));
         x2 = std::max(0.0f, std::min(x2, max_x));
@@ -610,7 +597,7 @@ vision_common::SegmentationResultList YOLOv8SegDetector::postprocess_single_outp
     // proto = outputs[1] = [1, proto_channels, mask_h, mask_w]
     const float* proto = outputs[1].GetTensorData<float>();
     std::vector<std::shared_ptr<cv::Mat>> masks =
-        _process_masks(proto, proto_dims, kept_coeffs, results, orig_size, mask_threshold);
+        _process_masks(proto, proto_dims, kept_coeffs, results, geometry, mask_threshold);
     for (size_t i = 0; i < results.size() && i < masks.size(); ++i) {
         results[i].mask = masks[i];
     }
@@ -624,7 +611,8 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
     const std::vector<int64_t>& proto_dims,
     const std::vector<std::vector<float>>& mask_coeffs,
     const vision_common::SegmentationResultList& results,
-    const cv::Size& orig_shape, float mask_threshold) {
+    const vision_operators::ImagePreprocessGeometry& geometry, float mask_threshold) {
+    geometry.validate();
     if (proto_dims.size() != 4 || proto_dims[0] != 1 ||
         proto_dims[1] <= 0 || proto_dims[1] > std::numeric_limits<int>::max() ||
         proto_dims[2] <= 0 || proto_dims[3] <= 0 ||
@@ -669,7 +657,7 @@ std::vector<std::shared_ptr<cv::Mat>> YOLOv8SegDetector::_process_masks(
     for (size_t i = 0; i < results.size(); ++i) {
         cv::Mat logits(mask_h, mask_w, CV_32F, raw_masks.data() + i * proto_size);
         masks.push_back(std::make_shared<cv::Mat>(vision_common::restore_instance_mask(
-            logits, results[i].bbox, orig_shape, mask_threshold)));
+            logits, results[i].bbox, geometry, mask_threshold)));
     }
     return masks;
 }

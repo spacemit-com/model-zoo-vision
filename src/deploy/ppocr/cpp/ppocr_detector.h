@@ -73,11 +73,8 @@ private:
     };
 
     // --- detection (DBNet) ---
-    // When det_input_h/w > 0: aspect-preserving bilinear resize, then pad to HxW.
-    // Sets *net_h/*net_w to the tensor shape; stores content size in det_resize_*.
-    cv::Mat det_preprocess(const cv::Mat& image, int* net_h, int* net_w);
-    std::vector<TextBox> db_postprocess(const cv::Mat& prob_map, int ori_h, int ori_w,
-                                        int net_h, int net_w);
+    std::vector<TextBox> db_postprocess(
+        const cv::Mat& prob_map, const vision_operators::ImagePreprocessGeometry& geometry);
     std::vector<cv::Point> unclip(const std::vector<cv::Point>& poly);
     float box_score(const cv::Mat& prob_map, const std::vector<cv::Point>& box);
     static void sort_box_points(std::vector<cv::Point>& pts);
@@ -105,8 +102,6 @@ private:
     int det_limit_side_len_;
     int det_input_h_;  // >0 with det_input_w_: fixed HxW after letterbox pad
     int det_input_w_;
-    int det_resize_h_ = 0;  // content H after aspect resize (before pad)
-    int det_resize_w_ = 0;  // content W after aspect resize (before pad)
     float det_db_thresh_;
     float det_db_box_thresh_;
     float det_db_unclip_ratio_;

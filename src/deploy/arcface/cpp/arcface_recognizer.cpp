@@ -68,7 +68,7 @@ void ArcFaceRecognizer::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
+cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -85,7 +85,7 @@ cv::Mat ArcFaceRecognizer::preprocess(const cv::Mat& image) {
     spec.output_height = inputHeight;
     spec.mean = {127.5F, 127.5F, 127.5F};
     spec.scale = {inv_std, inv_std, inv_std};
-    return vision_operators::preprocess_bgr_to_nchw(image, spec);
+    return vision_operators::preprocess_bgr_to_nchw(image, spec, geometry);
 }
 
 vision_common::EmbeddingResult
@@ -108,8 +108,8 @@ ArcFaceRecognizer::infer_embedding_input(
         1.0F / norm_std_};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());

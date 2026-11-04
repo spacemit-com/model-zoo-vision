@@ -257,7 +257,7 @@ void DEIMv2Detector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat DEIMv2Detector::preprocess(const cv::Mat& image) const {
+cv::Mat DEIMv2Detector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) const {
     const auto spec = make_preprocess_spec(
         static_cast<int>(input_shape_[3]),
         static_cast<int>(input_shape_[2]),
@@ -268,29 +268,9 @@ cv::Mat DEIMv2Detector::preprocess(const cv::Mat& image) const {
         transform.mean = kImageNetMean;
         transform.output_divisor = kImageNetStd;
         return vision_operators::preprocess_bgr_to_nchw(
-            image, spec, transform);
+            image, spec, transform, geometry);
     }
-    return vision_operators::preprocess_bgr_to_nchw(image, spec);
-}
-
-DEIMv2Detector::LetterboxGeometry DEIMv2Detector::calculate_geometry(
-    const cv::Size& original_size) const {
-    if (original_size.width <= 0 || original_size.height <= 0) {
-        throw std::runtime_error("DEIMv2 input image dimensions are invalid");
-    }
-    const int input_width = static_cast<int>(input_shape_[3]);
-    const int input_height = static_cast<int>(input_shape_[2]);
-    LetterboxGeometry geometry;
-    geometry.ratio = std::min(
-        static_cast<float>(input_width) / original_size.width,
-        static_cast<float>(input_height) / original_size.height);
-    const int resized_width =
-        static_cast<int>(original_size.width * geometry.ratio);
-    const int resized_height =
-        static_cast<int>(original_size.height * geometry.ratio);
-    geometry.left = (input_width - resized_width) / 2;
-    geometry.top = (input_height - resized_height) / 2;
-    return geometry;
+    return vision_operators::preprocess_bgr_to_nchw(image, spec, geometry);
 }
 
 std::vector<Ort::Value> DEIMv2Detector::run_session_two_inputs(
@@ -329,9 +309,10 @@ std::vector<Ort::Value> DEIMv2Detector::run_session_two_inputs(
 
 vision_common::DetectionResultList DEIMv2Detector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& original_size,
-    const LetterboxGeometry& geometry,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold) const {
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
     if (outputs.size() != 3) {
         throw std::runtime_error("DEIMv2 inference must return three outputs");
     }
@@ -370,19 +351,19 @@ vision_common::DetectionResultList DEIMv2Detector::postprocess(
             continue;
         }
         const float x1 = std::clamp(
-            (boxes[offset] - geometry.left) / geometry.ratio,
+            geometry.restore_x(boxes[offset]),
             0.0F,
             max_x);
         const float y1 = std::clamp(
-            (boxes[offset + 1] - geometry.top) / geometry.ratio,
+            geometry.restore_y(boxes[offset + 1]),
             0.0F,
             max_y);
         const float x2 = std::clamp(
-            (boxes[offset + 2] - geometry.left) / geometry.ratio,
+            geometry.restore_x(boxes[offset + 2]),
             0.0F,
             max_x);
         const float y2 = std::clamp(
-            (boxes[offset + 3] - geometry.top) / geometry.ratio,
+            geometry.restore_y(boxes[offset + 3]),
             0.0F,
             max_y);
         if (x2 <= x1 || y2 <= y1) {
@@ -405,13 +386,6 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
     ensure_model_loaded();
     reset_runtime_profile();
     const auto total_start = std::chrono::steady_clock::now();
-    const cv::Size original_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
-    const LetterboxGeometry geometry = calculate_geometry(original_size);
-
     const auto spec = make_preprocess_spec(
         static_cast<int>(input_shape_[3]),
         static_cast<int>(input_shape_[2]),
@@ -421,7 +395,9 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
     auto prepared = prepare_image(
         input,
         spec,
-        [this](const cv::Mat& bgr) { return preprocess(bgr); });
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
+        });
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(
@@ -438,7 +414,7 @@ vision_common::DetectionResultList DEIMv2Detector::detect_input(
 
     const auto postprocess_start = std::chrono::steady_clock::now();
     vision_common::DetectionResultList detections = postprocess(
-        outputs, original_size, geometry, effective_confidence);
+        outputs, prepared.geometry(), effective_confidence);
     vision_common::filter_and_limit_detections(detections, max_det);
     const auto postprocess_end = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(

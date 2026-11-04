@@ -205,11 +205,12 @@ public:
                 continue;
             }
             try {
-                cv::Mat tensor = b.processor->process(input);
+                ImagePreprocessGeometry geometry;
+                cv::Mat tensor = b.processor->process(input, geometry);
                 auto retained = b.processor;
                 auto self = shared_from_this();
                 return ImagePreprocessResult(
-                    std::move(tensor), b.kind, [self, retained, i, can_fallback]() {
+                    std::move(tensor), b.kind, geometry, [self, retained, i, can_fallback]() {
                         try {
                             retained->complete();
                         } catch (const std::exception& e) {

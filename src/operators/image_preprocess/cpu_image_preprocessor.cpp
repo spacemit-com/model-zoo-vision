@@ -96,7 +96,8 @@ int opencv_interpolation(PreprocessInterpolation interpolation)
 cv::Mat crop_source(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    CpuPreprocessScratch* scratch)
+    CpuPreprocessScratch* scratch,
+    ImagePreprocessGeometry* geometry)
 {
     if (spec.crop_mode == PreprocessCropMode::kNone) {
         return bgr;
@@ -105,6 +106,8 @@ cv::Mat crop_source(
         const int side = std::min(bgr.cols, bgr.rows);
         const int x = (bgr.cols - side) / 2;
         const int y = (bgr.rows - side) / 2;
+        geometry->src_x = static_cast<float>(x);
+        geometry->src_y = static_cast<float>(y);
         return bgr(cv::Rect(x, y, side, side));
     }
     if (spec.resize_width <= 0 || spec.resize_height <= 0 ||
@@ -122,6 +125,8 @@ cv::Mat crop_source(
         opencv_interpolation(spec.interpolation));
     const int x = (spec.resize_width - spec.output_width) / 2;
     const int y = (spec.resize_height - spec.output_height) / 2;
+    geometry->src_x = static_cast<float>(x) * bgr.cols / spec.resize_width;
+    geometry->src_y = static_cast<float>(y) * bgr.rows / spec.resize_height;
     return scratch->intermediate(
         cv::Rect(x, y, spec.output_width, spec.output_height));
 }
@@ -129,10 +134,10 @@ cv::Mat crop_source(
 cv::Mat resize_source(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    const ImagePreprocessGeometry& geometry,
+    ImagePreprocessGeometry& geometry,
     CpuPreprocessScratch* scratch)
 {
-    const cv::Mat source = crop_source(bgr, spec, scratch);
+    const cv::Mat source = crop_source(bgr, spec, scratch, &geometry);
     if (source.cols == geometry.dst_width &&
         source.rows == geometry.dst_height) {
         return source;
@@ -201,7 +206,8 @@ cv::Mat image_input_to_bgr_cpu(
 cv::Mat preprocess_bgr_to_nchw(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    const CpuChannelTransform& transform)
+    const CpuChannelTransform& transform,
+    ImagePreprocessGeometry* actual_geometry)
 {
     if (bgr.empty() || bgr.type() != CV_8UC3) {
         throw std::invalid_argument(
@@ -213,7 +219,7 @@ cv::Mat preprocess_bgr_to_nchw(
         throw std::invalid_argument(
             "CPU fused preprocessing requires float32 [1,3,H,W] output");
     }
-    const ImagePreprocessGeometry geometry =
+    ImagePreprocessGeometry geometry =
         make_image_preprocess_geometry(
             spec, bgr.cols, bgr.rows);
     if (geometry.dst_x < 0 || geometry.dst_y < 0 ||
@@ -330,23 +336,26 @@ cv::Mat preprocess_bgr_to_nchw(
     } else {
         pack_rows(cv::Range(0, geometry.dst_height));
     }
+    if (actual_geometry) *actual_geometry = geometry;
     return tensor;
 }
 
 cv::Mat preprocess_bgr_to_nchw(
     const cv::Mat& bgr,
-    const ImagePreprocessSpec& spec)
+    const ImagePreprocessSpec& spec,
+    ImagePreprocessGeometry* geometry)
 {
     CpuChannelTransform transform;
     transform.mean = spec.mean;
     transform.output_scale = spec.scale;
-    return preprocess_bgr_to_nchw(bgr, spec, transform);
+    return preprocess_bgr_to_nchw(bgr, spec, transform, geometry);
 }
 
 cv::Mat preprocess_bgr_to_gray_nchw(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    const CpuGrayscaleTransform& transform)
+    const CpuGrayscaleTransform& transform,
+    ImagePreprocessGeometry* actual_geometry)
 {
     if (bgr.empty() || bgr.type() != CV_8UC3) {
         throw std::invalid_argument(
@@ -360,7 +369,7 @@ cv::Mat preprocess_bgr_to_gray_nchw(
             "CPU fused grayscale preprocessing requires float32 "
             "[1,1,H,W] output");
     }
-    const ImagePreprocessGeometry geometry =
+    ImagePreprocessGeometry geometry =
         make_image_preprocess_geometry(spec, bgr.cols, bgr.rows);
     if (geometry.dst_x < 0 || geometry.dst_y < 0 ||
         geometry.dst_width <= 0 || geometry.dst_height <= 0 ||
@@ -479,6 +488,7 @@ cv::Mat preprocess_bgr_to_gray_nchw(
     } else {
         pack_rows(cv::Range(0, geometry.dst_height));
     }
+    if (actual_geometry) *actual_geometry = geometry;
     return tensor;
 }
 
@@ -490,17 +500,18 @@ ImagePreprocessResult run_cpu_image_preprocess(
         throw std::invalid_argument(
             "CPU image preprocess callback is empty");
     }
+    ImagePreprocessGeometry geometry;
     if (input.format == vision_core::ImagePixelFormat::kBgr8) {
         DmaCpuReadGuard read_guard(input.dma_fd);
-        cv::Mat tensor = cpu_preprocess(input.image);
+        cv::Mat tensor = cpu_preprocess(input.image, geometry);
         read_guard.complete();
         return ImagePreprocessResult(
             std::move(tensor),
-            PreprocessBackend::kCpu);
+            PreprocessBackend::kCpu, geometry);
     }
+    cv::Mat tensor = cpu_preprocess(image_input_to_bgr_cpu(input), geometry);
     return ImagePreprocessResult(
-        cpu_preprocess(image_input_to_bgr_cpu(input)),
-        PreprocessBackend::kCpu);
+        std::move(tensor), PreprocessBackend::kCpu, geometry);
 }
 
 }  // namespace vision_operators

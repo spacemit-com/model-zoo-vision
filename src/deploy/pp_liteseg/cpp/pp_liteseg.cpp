@@ -128,7 +128,7 @@ void PPLiteSeg::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) {
+cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -141,31 +141,19 @@ cv::Mat PPLiteSeg::preprocess(const cv::Mat& image, int& valid_h, int& valid_w) 
         throw std::runtime_error("PPLiteSeg: invalid input spatial dims in ONNX (expected positive H,W)");
     }
 
-    // Compute scale and valid region on original uint8 image
-    const int h = image.rows;
-    const int w = image.cols;
-    const vision_operators::FitResizeDimensions dimensions =
-        vision_operators::calculate_fit_resize_dimensions(
-            static_cast<float>(w), static_cast<float>(h),
-            in_w, in_h);
-    const int new_h = dimensions.height;
-    const int new_w = dimensions.width;
-    valid_h = new_h;
-    valid_w = new_w;
-
     return vision_operators::preprocess_bgr_to_nchw(
         image,
         make_pp_liteseg_preprocess_spec(
             in_w, in_h, mean_val_, std_val_),
         make_pp_liteseg_cpu_transform(
-            mean_val_, std_val_));
+            mean_val_, std_val_), geometry);
 }
 
 cv::Mat PPLiteSeg::postprocess_to_label_map(std::vector<Ort::Value>& outputs,
-                                                int origin_h,
-                                                int origin_w,
-                                                int valid_h,
-                                                int valid_w) {
+    const vision_operators::ImagePreprocessGeometry& geometry) {
+    geometry.validate();
+    const int origin_h = geometry.original_height;
+    const int origin_w = geometry.original_width;
     if (outputs.empty()) {
         throw std::runtime_error("PPLiteSeg: empty model output");
     }
@@ -275,7 +263,7 @@ cv::Mat PPLiteSeg::postprocess_to_label_map(std::vector<Ort::Value>& outputs,
     }
 
     cv::Mat pred_origin;
-    cv::resize(pred_small(cv::Rect(0, 0, valid_w, valid_h)),
+    cv::resize(pred_small(vision_common::preprocess_content_rect(geometry, pred_small.size())),
         pred_origin, cv::Size(origin_w, origin_h),
         0, 0, cv::INTER_NEAREST);
     return pred_origin;
@@ -310,29 +298,16 @@ vision_common::SegmentationResultList PPLiteSeg::segment_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const int origin_h =
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows;
-    const int origin_w = input.image.cols;
-
     const int in_h = positive_dim(input_shape_[2], 512);
     const int in_w = positive_dim(input_shape_[3], 1024);
-    const vision_operators::FitResizeDimensions valid_dimensions =
-        vision_operators::calculate_fit_resize_dimensions(
-            static_cast<float>(origin_w),
-            static_cast<float>(origin_h),
-            in_w, in_h);
-    int valid_h = valid_dimensions.height;
-    int valid_w = valid_dimensions.width;
     const auto t_pre0 = std::chrono::steady_clock::now();
     const vision_operators::ImagePreprocessSpec spec =
         make_pp_liteseg_preprocess_spec(
             in_w, in_h, mean_val_, std_val_);
     auto prepared = prepare_image(
         input, spec,
-        [this, &valid_h, &valid_w](const cv::Mat& bgr) {
-            return preprocess(bgr, valid_h, valid_w);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -344,7 +319,7 @@ vision_common::SegmentationResultList PPLiteSeg::segment_input(
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    cv::Mat label_map = postprocess_to_label_map(outputs, origin_h, origin_w, valid_h, valid_w);
+    cv::Mat label_map = postprocess_to_label_map(outputs, prepared.geometry());
     vision_common::SegmentationResultList results = split_semantic_masks(label_map);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());

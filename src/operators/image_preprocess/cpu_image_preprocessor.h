@@ -17,8 +17,10 @@
 
 namespace vision_operators {
 
+// Report geometry from the actual resize/crop/pad operations, including custom
+// stages. The dispatcher must preserve it when falling back to CPU.
 using CpuImagePreprocess =
-    std::function<cv::Mat(const cv::Mat&)>;
+    std::function<cv::Mat(const cv::Mat&, ImagePreprocessGeometry&)>;
 
 struct CpuChannelTransform {
     std::array<float, 3> input_scale{1.0F, 1.0F, 1.0F};
@@ -46,7 +48,8 @@ cv::Mat image_input_to_bgr_cpu(
 // an independent float32 [1,3,H,W] cv::Mat.
 cv::Mat preprocess_bgr_to_nchw(
     const cv::Mat& bgr,
-    const ImagePreprocessSpec& spec);
+    const ImagePreprocessSpec& spec,
+    ImagePreprocessGeometry* geometry = nullptr);
 
 // Variant for models whose reference implementation first scales uint8 input
 // (for example by 1/255), then subtracts mean and applies a second scale. This
@@ -55,7 +58,8 @@ cv::Mat preprocess_bgr_to_nchw(
 cv::Mat preprocess_bgr_to_nchw(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    const CpuChannelTransform& transform);
+    const CpuChannelTransform& transform,
+    ImagePreprocessGeometry* geometry = nullptr);
 
 // Resize/crop a BGR8 image and directly write a normalized grayscale
 // float32 [1,1,H,W] tensor. Channel conversion and tensor packing are fused
@@ -63,7 +67,8 @@ cv::Mat preprocess_bgr_to_nchw(
 cv::Mat preprocess_bgr_to_gray_nchw(
     const cv::Mat& bgr,
     const ImagePreprocessSpec& spec,
-    const CpuGrayscaleTransform& transform = {});
+    const CpuGrayscaleTransform& transform = {},
+    ImagePreprocessGeometry* geometry = nullptr);
 
 ImagePreprocessResult run_cpu_image_preprocess(
     const vision_core::ImageInput& input,

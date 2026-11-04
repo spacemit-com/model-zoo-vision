@@ -53,10 +53,16 @@ cv::Mat restore_instance_mask(
     cv::Mat mask = cv::Mat::zeros(original_size, CV_8U);
     if (!std::isfinite(box.x1) || !std::isfinite(box.y1) ||
         !std::isfinite(box.x2) || !std::isfinite(box.y2)) return mask;
-    const int x1 = static_cast<int>(std::clamp(box.x1, 0.0f, static_cast<float>(original_size.width)));
-    const int y1 = static_cast<int>(std::clamp(box.y1, 0.0f, static_cast<float>(original_size.height)));
-    const int x2 = static_cast<int>(std::clamp(box.x2, 0.0f, static_cast<float>(original_size.width)));
-    const int y2 = static_cast<int>(std::clamp(box.y2, 0.0f, static_cast<float>(original_size.height)));
+    // Match x1 <= x < x2 and y1 <= y < y2 on the integer pixel grid.
+    // Both boundaries map to ceil; clip in double before converting to int.
+    const auto pixel_boundary = [](float coordinate, int limit) {
+        return static_cast<int>(std::ceil(std::clamp(
+            static_cast<double>(coordinate), 0.0, static_cast<double>(limit))));
+    };
+    const int x1 = pixel_boundary(box.x1, original_size.width);
+    const int y1 = pixel_boundary(box.y1, original_size.height);
+    const int x2 = pixel_boundary(box.x2, original_size.width);
+    const int y2 = pixel_boundary(box.y2, original_size.height);
     if (x1 >= x2 || y1 >= y2) return mask;
 
     // Resize in full-image coordinates before cropping the bbox. Resizing a

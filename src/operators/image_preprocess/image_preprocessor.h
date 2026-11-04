@@ -13,6 +13,7 @@
 #include <opencv2/core.hpp>
 
 #include "image_preprocess_spec.h"
+#include "image_preprocess_geometry.h"
 #include "core/cpp/vision_infer_types.h"
 
 namespace vision_operators {
@@ -35,7 +36,8 @@ public:
     virtual ~ImagePreprocessor() = default;
 
     virtual cv::Mat process(
-        const vision_core::ImageInput& input) = 0;
+        const vision_core::ImageInput& input,
+        ImagePreprocessGeometry& geometry) = 0;
     virtual void complete() = 0;
 };
 

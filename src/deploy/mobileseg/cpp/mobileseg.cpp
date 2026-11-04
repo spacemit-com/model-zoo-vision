@@ -268,7 +268,7 @@ void MobileSeg::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat MobileSeg::preprocess(const cv::Mat& bgr) const {
+cv::Mat MobileSeg::preprocess(const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry* geometry) const {
     if (bgr.empty() || bgr.type() != CV_8UC3 ||
         input_width_ <= 0 || input_height_ <= 0) {
         throw std::invalid_argument(
@@ -278,7 +278,7 @@ cv::Mat MobileSeg::preprocess(const cv::Mat& bgr) const {
     return vision_operators::preprocess_bgr_to_nchw(
         bgr,
         make_mobileseg_preprocess_spec(
-            input_width_, input_height_));
+            input_width_, input_height_), geometry);
 }
 
 std::vector<vision::Segmentation> MobileSeg::segment(
@@ -298,8 +298,8 @@ std::vector<vision::Segmentation> MobileSeg::segment(
     auto prepared = prepare_image(
         input,
         spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto preprocess_end =
         std::chrono::steady_clock::now();

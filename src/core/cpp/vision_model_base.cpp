@@ -397,7 +397,7 @@ void BaseModel::configure_preprocess_opencl_sampling(
 BaseModel::PreparedImage BaseModel::prepare_image(
     const ImageInput& input,
     const vision_operators::ImagePreprocessSpec& spec,
-    const std::function<cv::Mat(const cv::Mat&)>& cpu_preprocess)
+    const vision_operators::CpuImagePreprocess& cpu_preprocess)
 {
     const auto start = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec effective_spec = spec;

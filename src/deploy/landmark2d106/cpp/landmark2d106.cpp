@@ -78,7 +78,7 @@ void Landmark2d106::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
+cv::Mat Landmark2d106::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -90,7 +90,7 @@ cv::Mat Landmark2d106::preprocess(const cv::Mat& image) {
     spec.output_height = input_size_;
     spec.mean = {input_mean_, input_mean_, input_mean_};
     spec.scale = {inv_std, inv_std, inv_std};
-    return vision_operators::preprocess_bgr_to_nchw(image, spec);
+    return vision_operators::preprocess_bgr_to_nchw(image, spec, geometry);
 }
 
 vision_common::PoseResultList Landmark2d106::estimate_pose_input(
@@ -99,11 +99,6 @@ vision_common::PoseResultList Landmark2d106::estimate_pose_input(
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
 
-    const cv::Size face_size(
-        input.image.cols,
-        input.format == vision_core::ImagePixelFormat::kNv12
-            ? input.image.rows * 2 / 3
-            : input.image.rows);
     const auto t_pre0 = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec spec;
     spec.output_width = input_size_;
@@ -116,8 +111,8 @@ vision_common::PoseResultList Landmark2d106::estimate_pose_input(
         1.0F / input_std_};
     auto prepared = prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
@@ -125,11 +120,12 @@ vision_common::PoseResultList Landmark2d106::estimate_pose_input(
     const auto t_infer0 = std::chrono::steady_clock::now();
     std::vector<Ort::Value> outputs =
         run_session(prepared.tensor());
+    prepared.complete();
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 
     const auto t_post0 = std::chrono::steady_clock::now();
-    vision_common::PoseResultList results = postprocess(outputs, face_size);
+    vision_common::PoseResultList results = postprocess(outputs, prepared.geometry());
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(std::chrono::duration<double, std::milli>(t_post1 - t_post0).count());
 
@@ -157,7 +153,9 @@ std::vector<vision_core::ModelCapability> Landmark2d106::get_capabilities() cons
 }
 
 vision_common::PoseResultList Landmark2d106::postprocess(std::vector<Ort::Value>& outputs,
-                                                        const cv::Size& face_size) {
+                                                        const vision_operators::ImagePreprocessGeometry& geometry) {
+    geometry.validate();
+    const cv::Size face_size(geometry.original_width, geometry.original_height);
     if (outputs.empty() || !outputs[0].IsTensor()) {
         throw std::runtime_error("Landmark2d106 expects a float32 tensor of 106 coordinate pairs");
     }
@@ -188,8 +186,8 @@ vision_common::PoseResultList Landmark2d106::postprocess(std::vector<Ort::Value>
         const float y_norm = landmarks_data[i * 2 + 1];
         const float x_input = (x_norm + 1.0f) * (static_cast<float>(input_size_) * 0.5f);
         const float y_input = (y_norm + 1.0f) * (static_cast<float>(input_size_) * 0.5f);
-        kp.x = x_input * static_cast<float>(face_size.width) / static_cast<float>(input_size_);
-        kp.y = y_input * static_cast<float>(face_size.height) / static_cast<float>(input_size_);
+        kp.x = geometry.restore_x(x_input);
+        kp.y = geometry.restore_y(y_input);
         if (!std::isfinite(kp.x) || !std::isfinite(kp.y)) {
             throw std::runtime_error("Landmark2d106 coordinate transform overflowed");
         }

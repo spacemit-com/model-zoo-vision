@@ -43,7 +43,8 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    cv::Mat preprocess(const cv::Mat& bgr) const;
+    cv::Mat preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry = nullptr) const;
     vision_common::SegmentationResultList segment_input(
         const vision_core::ImageInput& input,
         float conf_threshold,
@@ -51,7 +52,7 @@ private:
         int max_det);
     vision_common::SegmentationResultList postprocess(
         const std::vector<Ort::Value>& outputs,
-        const cv::Size& original_size,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold,
         float mask_threshold,
         int max_det) const;

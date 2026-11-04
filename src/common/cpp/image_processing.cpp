@@ -32,23 +32,40 @@ float mask_logit_threshold(float threshold) {
         : std::log(threshold / (1.0f - threshold));
 }
 
+cv::Rect preprocess_content_rect(
+    const vision_operators::ImagePreprocessGeometry& geometry,
+    const cv::Size& map_size) {
+    geometry.validate();
+    if (map_size.width <= 0 || map_size.height <= 0) {
+        throw std::invalid_argument("dense output dimensions must be positive");
+    }
+    const double sx = static_cast<double>(map_size.width) / geometry.output_width;
+    const double sy = static_cast<double>(map_size.height) / geometry.output_height;
+    const int left = std::clamp(static_cast<int>(std::round(geometry.dst_x * sx - 0.1)), 0, map_size.width - 1);
+    const int top = std::clamp(static_cast<int>(std::round(geometry.dst_y * sy - 0.1)), 0, map_size.height - 1);
+    const int right = std::clamp(map_size.width - static_cast<int>(std::round(
+        (geometry.output_width - geometry.dst_x - geometry.dst_width) * sx + 0.1)), left + 1, map_size.width);
+    const int bottom = std::clamp(map_size.height - static_cast<int>(std::round(
+        (geometry.output_height - geometry.dst_y - geometry.dst_height) * sy + 0.1)), top + 1, map_size.height);
+    return cv::Rect(left, top, right - left, bottom - top);
+}
+
 cv::Mat restore_instance_mask(
     const cv::Mat& logits, const BoundingBox& box,
-    const cv::Size& original_size, float mask_threshold) {
+    const vision_operators::ImagePreprocessGeometry& geometry, float mask_threshold) {
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
+    if (geometry.src_x != 0.0F || geometry.src_y != 0.0F ||
+        geometry.src_width != static_cast<float>(geometry.original_width) ||
+        geometry.src_height != static_cast<float>(geometry.original_height)) {
+        throw std::invalid_argument("instance mask restoration requires an uncropped source image");
+    }
     const float threshold = mask_logit_threshold(mask_threshold);
     if (logits.empty() || logits.type() != CV_32FC1 || logits.dims != 2 ||
         original_size.width <= 0 || original_size.height <= 0) {
         throw std::invalid_argument("Invalid instance mask or original image size");
     }
-    const float gain = std::min(
-        static_cast<float>(logits.rows) / original_size.height,
-        static_cast<float>(logits.cols) / original_size.width);
-    const float pad_w = (logits.cols - original_size.width * gain) / 2.0f;
-    const float pad_h = (logits.rows - original_size.height * gain) / 2.0f;
-    const int top = std::clamp(static_cast<int>(std::round(pad_h - 0.1f)), 0, logits.rows - 1);
-    const int left = std::clamp(static_cast<int>(std::round(pad_w - 0.1f)), 0, logits.cols - 1);
-    const int bottom = std::clamp(logits.rows - static_cast<int>(std::round(pad_h + 0.1f)), top + 1, logits.rows);
-    const int right = std::clamp(logits.cols - static_cast<int>(std::round(pad_w + 0.1f)), left + 1, logits.cols);
+    const cv::Rect content = preprocess_content_rect(geometry, logits.size());
 
     cv::Mat mask = cv::Mat::zeros(original_size, CV_8U);
     if (!std::isfinite(box.x1) || !std::isfinite(box.y1) ||
@@ -68,7 +85,7 @@ cv::Mat restore_instance_mask(
     // Resize in full-image coordinates before cropping the bbox. Resizing a
     // rounded source bbox separately shifts the sampling phase and mask edges.
     cv::Mat restored;
-    cv::resize(logits(cv::Rect(left, top, right - left, bottom - top)),
+    cv::resize(logits(content),
         restored, original_size, 0, 0, cv::INTER_LINEAR);
     const cv::Rect roi(x1, y1, x2 - x1, y2 - y1);
     cv::Mat destination = mask(roi);
@@ -124,7 +141,8 @@ cv::Mat letterbox_to_nchw_rgb_blob(
     const cv::Mat& image,
     const std::pair<int, int>& target_size,
     const cv::Scalar& pad_color,
-    cv::Mat* resized_scratch) {
+    cv::Mat* resized_scratch,
+    vision_operators::ImagePreprocessGeometry* geometry) {
     const int input_height = target_size.first;
     const int input_width = target_size.second;
     if (image.empty()) {
@@ -233,6 +251,19 @@ cv::Mat letterbox_to_nchw_rgb_blob(
                 }
             }
         });
+    if (geometry) {
+        *geometry = {};
+        geometry->original_width = image.cols;
+        geometry->original_height = image.rows;
+        geometry->output_width = input_width;
+        geometry->output_height = input_height;
+        geometry->src_width = static_cast<float>(image.cols);
+        geometry->src_height = static_cast<float>(image.rows);
+        geometry->dst_x = left;
+        geometry->dst_y = top;
+        geometry->dst_width = resized_width;
+        geometry->dst_height = resized_height;
+    }
     return output_blob;
 }
 
@@ -256,7 +287,12 @@ cv::Mat preprocess_classification(
     const cv::Scalar& std,
     const cv::Size& resize_size,
     bool center_crop,
-    int interpolation) {
+    int interpolation,
+    vision_operators::ImagePreprocessGeometry* geometry) {
+    vision_operators::ImagePreprocessSpec spec;
+    spec.output_width = input_shape.second;
+    spec.output_height = input_shape.first;
+    auto actual = vision_operators::make_image_preprocess_geometry(spec, image.cols, image.rows);
     cv::Mat img = image;
 
     // Resize on uint8 first — much faster than resizing float32 data
@@ -268,11 +304,17 @@ cv::Mat preprocess_classification(
     if (center_crop && (resize_size.width > 0 && resize_size.height > 0)) {
         int y0 = (img.rows - input_shape.first) / 2;
         int x0 = (img.cols - input_shape.second) / 2;
+        actual.src_x = static_cast<float>(x0) * image.cols / img.cols;
+        actual.src_y = static_cast<float>(y0) * image.rows / img.rows;
+        actual.src_width = static_cast<float>(input_shape.second) * image.cols / img.cols;
+        actual.src_height = static_cast<float>(input_shape.first) * image.rows / img.rows;
         img = img(cv::Rect(x0, y0, input_shape.second, input_shape.first));
     } else {
         cv::resize(img, img, cv::Size(input_shape.second, input_shape.first),
                     0, 0, interpolation);
     }
+
+    if (geometry) *geometry = actual;
 
     if (img.type() == CV_8UC3) {
         vision_operators::ImagePreprocessSpec spec;

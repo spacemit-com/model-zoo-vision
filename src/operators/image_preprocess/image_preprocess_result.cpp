@@ -12,9 +12,11 @@ namespace vision_operators {
 ImagePreprocessResult::ImagePreprocessResult(
     cv::Mat tensor,
     PreprocessBackend backend,
+    const ImagePreprocessGeometry& geometry,
     std::function<void()> finish)
     : tensor_(std::move(tensor)),
         backend_(backend),
+        geometry_(geometry),
         finish_(std::move(finish))
 {
 }
@@ -28,6 +30,7 @@ ImagePreprocessResult::ImagePreprocessResult(
     ImagePreprocessResult&& other) noexcept
     : tensor_(std::move(other.tensor_)),
         backend_(other.backend_),
+        geometry_(other.geometry_),
         finish_(std::move(other.finish_))
 {
 }
@@ -39,6 +42,7 @@ ImagePreprocessResult& ImagePreprocessResult::operator=(
         finish();
         tensor_ = std::move(other.tensor_);
         backend_ = other.backend_;
+        geometry_ = other.geometry_;
         finish_ = std::move(other.finish_);
     }
     return *this;
@@ -53,6 +57,12 @@ PreprocessBackend
 ImagePreprocessResult::backend_used() const noexcept
 {
     return backend_;
+}
+
+const ImagePreprocessGeometry& ImagePreprocessResult::geometry() const
+{
+    geometry_.validate();
+    return geometry_;
 }
 
 void ImagePreprocessResult::complete()

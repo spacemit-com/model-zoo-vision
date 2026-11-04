@@ -160,7 +160,7 @@ int main()
     bool saw_same_bgr = false;
     auto bgr_result = run_cpu_image_preprocess(
         bgr,
-        [&](const cv::Mat& image) {
+        [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             saw_same_bgr = image.data == bgr.image.data;
             return image.clone();
         });
@@ -176,7 +176,7 @@ int main()
     try {
         (void)run_cpu_image_preprocess(
             bgr_dma,
-            [&](const cv::Mat& image) {
+            [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
                 dma_callback_called = true;
                 return image.clone();
             });
@@ -199,7 +199,7 @@ int main()
     bool saw_converted_bgr = false;
     auto nv12_result = run_cpu_image_preprocess(
         nv12,
-        [&](const cv::Mat& image) {
+        [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             saw_converted_bgr =
                 image.type() == CV_8UC3 &&
                 image.rows == 4 &&

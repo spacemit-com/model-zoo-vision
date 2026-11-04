@@ -64,7 +64,7 @@ void EmotionRecognizer::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
+cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -77,7 +77,7 @@ cv::Mat EmotionRecognizer::preprocess(const cv::Mat& image) {
     spec.output_rgb = false;
     spec.interpolation = vision_operators::PreprocessInterpolation::kNearest;
     spec.mean = {91.4953F, 103.8827F, 131.0912F};
-    return vision_operators::preprocess_bgr_to_nchw(image, spec);
+    return vision_operators::preprocess_bgr_to_nchw(image, spec, geometry);
 }
 
 vision_core::BaseModel::PreparedImage
@@ -92,8 +92,8 @@ EmotionRecognizer::prepare_input(
     spec.mean = {91.4953F, 103.8827F, 131.0912F};
     return prepare_image(
         input, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
 }
 

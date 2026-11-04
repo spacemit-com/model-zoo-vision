@@ -248,54 +248,6 @@ void PPOCRDetector::load_model() {
 // Detection (DBNet)
 // ---------------------------------------------------------------------------
 
-cv::Mat PPOCRDetector::det_preprocess(const cv::Mat& image, int* net_h, int* net_w) {
-    const int ori_h = image.rows;
-    const int ori_w = image.cols;
-
-    int rh = 0;
-    int rw = 0;
-    int canvas_h = 0;
-    int canvas_w = 0;
-    if (det_input_h_ > 0 && det_input_w_ > 0) {
-        // Fixed-shape det (NPU): keep aspect ratio (bilinear), then pad to HxW.
-        // Content is placed at top-left; pad is zeros on the right/bottom.
-        const float scale = std::min(
-            static_cast<float>(det_input_w_) / static_cast<float>(ori_w),
-            static_cast<float>(det_input_h_) / static_cast<float>(ori_h));
-        rw = std::max(1, static_cast<int>(std::round(ori_w * scale)));
-        rh = std::max(1, static_cast<int>(std::round(ori_h * scale)));
-        rw = std::min(rw, det_input_w_);
-        rh = std::min(rh, det_input_h_);
-        canvas_h = det_input_h_;
-        canvas_w = det_input_w_;
-    } else {
-        // Dynamic det: keep aspect ratio so the longer side <= det_limit_side_len,
-        // then align each side up to a multiple of 32 (DBNet stride requirement).
-        float ratio = static_cast<float>(std::max(ori_h, ori_w)) /
-            static_cast<float>(det_limit_side_len_);
-        rh = ori_h;
-        rw = ori_w;
-        if (ratio > 1.0f) {
-            rh = static_cast<int>(ori_h / ratio);
-            rw = static_cast<int>(ori_w / ratio);
-        }
-        rh = (rh + 31) / 32 * 32;
-        rw = (rw + 31) / 32 * 32;
-        canvas_h = rh;
-        canvas_w = rw;
-    }
-    det_resize_h_ = rh;
-    det_resize_w_ = rw;
-    *net_h = canvas_h;
-    *net_w = canvas_w;
-
-    return vision_operators::preprocess_bgr_to_nchw(
-        image,
-        make_ppocr_det_preprocess_spec(
-            canvas_w, canvas_h, rw, rh),
-        make_ppocr_det_cpu_transform());
-}
-
 std::vector<cv::Point> PPOCRDetector::unclip(const std::vector<cv::Point>& poly) {
     // Expand polygon outward by distance = |area| * unclip_ratio / perimeter
     // (PaddleOCR DBPostProcess / pyclipper offset).
@@ -390,7 +342,10 @@ void PPOCRDetector::sort_box_points(std::vector<cv::Point>& pts) {
 }
 
 std::vector<PPOCRDetector::TextBox> PPOCRDetector::db_postprocess(
-    const cv::Mat& prob_map, int ori_h, int ori_w, int net_h, int net_w) {
+    const cv::Mat& prob_map, const vision_operators::ImagePreprocessGeometry& geometry) {
+    geometry.validate();
+    const int ori_h = geometry.original_height;
+    const int ori_w = geometry.original_width;
     // Binarize, then dilate 3x3 to connect nearby strokes (PaddleOCR default).
     cv::Mat bin_map;
     cv::compare(prob_map, det_db_thresh_, bin_map, cv::CMP_GT);
@@ -403,8 +358,8 @@ std::vector<PPOCRDetector::TextBox> PPOCRDetector::db_postprocess(
 
     // Map boxes from network space back to the original image. For letterbox
     // (fixed det_input_*), scale uses the content size before pad, not net HxW.
-    const int map_h = (det_resize_h_ > 0) ? det_resize_h_ : net_h;
-    const int map_w = (det_resize_w_ > 0) ? det_resize_w_ : net_w;
+    const int map_h = geometry.dst_height;
+    const int map_w = geometry.dst_width;
     const float scale_x = static_cast<float>(ori_w) / static_cast<float>(map_w);
     const float scale_y = static_cast<float>(ori_h) / static_cast<float>(map_h);
 
@@ -732,31 +687,14 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
         net_h = resize_h;
         net_w = resize_w;
     }
-    det_resize_h_ = resize_h;
-    det_resize_w_ = resize_w;
     const vision_operators::ImagePreprocessSpec spec =
         make_ppocr_det_preprocess_spec(
             net_w, net_h, resize_w, resize_h);
     auto prepared = prepare_image(
         input, spec,
-        [this, net_h, net_w](const cv::Mat& bgr) {
-            int actual_height = 0;
-            int actual_width = 0;
-            cv::Mat tensor = det_preprocess(
-                bgr, &actual_height, &actual_width);
-            if (actual_height != net_h || actual_width != net_w) {
-                throw std::runtime_error(
-                    "PPOCRDetector: CPU preprocessing shape "
-                    "does not match the detection input shape");
-            }
-            const size_t expected_elements =
-                static_cast<size_t>(3) * net_h * net_w;
-            if (tensor.type() != CV_32F ||
-                tensor.total() != expected_elements) {
-                throw std::runtime_error(
-                    "PPOCRDetector: CPU preprocessing tensor "
-                    "has an unexpected element count");
-            }
+        [&spec](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            cv::Mat tensor = vision_operators::preprocess_bgr_to_nchw(
+                bgr, spec, make_ppocr_det_cpu_transform(), &geometry);
             return tensor;
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
@@ -774,6 +712,7 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
     std::vector<Ort::Value> det_out = session_->Run(
         Ort::RunOptions{nullptr}, input_node_names_.data(), &det_in, 1,
         output_node_names_.data(), output_node_names_.size());
+    prepared.complete();
     const auto t_inf1 = std::chrono::steady_clock::now();
     const double detector_infer_ms =
         std::chrono::duration<double, std::milli>(t_inf1 - t_inf0).count();
@@ -787,8 +726,7 @@ vision_common::TextResultList PPOCRDetector::detect_text_input(
     const int prob_w = static_cast<int>(pdims[pdims.size() - 1]);
     cv::Mat prob_map(prob_h, prob_w, CV_32FC1, prob);
     std::vector<TextBox> boxes = db_postprocess(
-        prob_map, original_height, original_width,
-        net_h, net_w);
+        prob_map, prepared.geometry());
     boxes = nms_boxes(std::move(boxes), det_box_nms_thresh_);
     const auto t_rec_begin = std::chrono::steady_clock::now();
     add_runtime_component_timing(

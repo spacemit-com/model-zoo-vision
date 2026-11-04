@@ -172,18 +172,20 @@ void YOLO26SegSegmentor::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLO26SegSegmentor::preprocess(const cv::Mat& bgr) const {
+cv::Mat YOLO26SegSegmentor::preprocess(const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry* geometry) const {
     return vision_common::letterbox_to_nchw_rgb_blob(
-        bgr, {input_height_, input_width_});
+        bgr, {input_height_, input_width_}, cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 vision_common::SegmentationResultList
 YOLO26SegSegmentor::postprocess(
     const std::vector<Ort::Value>& outputs,
-    const cv::Size& original_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float mask_threshold,
     int max_det) const {
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
     if (outputs.size() != 2 || !outputs[0].IsTensor() ||
         !outputs[1].IsTensor()) {
         throw std::runtime_error(
@@ -210,17 +212,6 @@ YOLO26SegSegmentor::postprocess(
     if (max_det == 0) {
         return {};
     }
-    const auto geometry =
-        vision_operators::make_image_preprocess_geometry(
-            make_preprocess_spec(input_width_, input_height_),
-            original_size.width, original_size.height);
-    if (geometry.dst_width <= 0 || geometry.dst_height <= 0) {
-        throw std::runtime_error("YOLO26-Seg letterbox geometry is empty");
-    }
-    const float scale_x =
-        static_cast<float>(original_size.width) / geometry.dst_width;
-    const float scale_y =
-        static_cast<float>(original_size.height) / geometry.dst_height;
     const float* rows = outputs[0].GetTensorData<float>();
     const int features = 6 + proto_channels_;
     std::vector<Candidate> candidates;
@@ -244,16 +235,16 @@ YOLO26SegSegmentor::postprocess(
             continue;
         }
         const float x1 = std::clamp(
-            (row[0] - geometry.dst_x) * scale_x,
+            geometry.restore_x(row[0]),
             0.0F, static_cast<float>(original_size.width));
         const float y1 = std::clamp(
-            (row[1] - geometry.dst_y) * scale_y,
+            geometry.restore_y(row[1]),
             0.0F, static_cast<float>(original_size.height));
         const float x2 = std::clamp(
-            (row[2] - geometry.dst_x) * scale_x,
+            geometry.restore_x(row[2]),
             0.0F, static_cast<float>(original_size.width));
         const float y2 = std::clamp(
-            (row[3] - geometry.dst_y) * scale_y,
+            geometry.restore_y(row[3]),
             0.0F, static_cast<float>(original_size.height));
         if (x2 <= x1 || y2 <= y1) {
             continue;
@@ -295,7 +286,7 @@ YOLO26SegSegmentor::postprocess(
             logits.ptr<float>(static_cast<int>(index)));
         cv::Mat mask = vision_common::restore_instance_mask(
             mask_logits, candidates[index].result.bbox,
-            original_size, mask_threshold);
+            geometry, mask_threshold);
         if (cv::countNonZero(mask) == 0) {
             continue;
         }
@@ -314,13 +305,15 @@ YOLO26SegSegmentor::segment_input(
     int max_det) {
     ensure_model_loaded();
     reset_runtime_profile();
-    const cv::Size original_size = validate_image_input(input);
+    validate_image_input(input);
     const auto total_start = std::chrono::steady_clock::now();
 
     const auto preprocess_start = std::chrono::steady_clock::now();
     auto prepared = prepare_image(
         input, make_preprocess_spec(input_width_, input_height_),
-        [this](const cv::Mat& bgr) { return preprocess(bgr); });
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
+        });
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(
@@ -336,7 +329,7 @@ YOLO26SegSegmentor::segment_input(
 
     const auto postprocess_start = std::chrono::steady_clock::now();
     auto results = postprocess(
-        outputs, original_size, conf_threshold,
+        outputs, prepared.geometry(), conf_threshold,
         mask_threshold, max_det);
     const auto postprocess_end = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(

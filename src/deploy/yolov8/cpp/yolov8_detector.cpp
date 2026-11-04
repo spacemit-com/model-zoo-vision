@@ -127,17 +127,13 @@ vision_common::DetectionResultList nms_and_scale(
     const std::vector<int>& labels,
     int num_classes,
     float iou_threshold,
-    const cv::Size& input_shape,
-    const cv::Size& orig_size) {
+    const vision_operators::ImagePreprocessGeometry& geometry) {
+    geometry.validate();
+    const cv::Size orig_size(geometry.original_width, geometry.original_height);
     if (boxes.empty()) {
         return {};
     }
 
-    const float gain = std::min(
-        static_cast<float>(input_shape.height) / static_cast<float>(orig_size.height),
-        static_cast<float>(input_shape.width) / static_cast<float>(orig_size.width));
-    const float pad_w = (static_cast<float>(input_shape.width) - orig_size.width * gain) / 2.0f;
-    const float pad_h = (static_cast<float>(input_shape.height) - orig_size.height * gain) / 2.0f;
     const float max_x = static_cast<float>(std::max(orig_size.width - 1, 1));
     const float max_y = static_cast<float>(std::max(orig_size.height - 1, 1));
 
@@ -177,10 +173,10 @@ vision_common::DetectionResultList nms_and_scale(
         for (int k : keep) {
             const size_t idx = cls_indices[static_cast<size_t>(k)];
             const cv::Rect2f& b = boxes[idx];
-            float x1 = (b.x - pad_w) / gain;
-            float y1 = (b.y - pad_h) / gain;
-            float x2 = (b.x + b.width - pad_w) / gain;
-            float y2 = (b.y + b.height - pad_h) / gain;
+            float x1 = geometry.restore_x(b.x);
+            float y1 = geometry.restore_y(b.y);
+            float x2 = geometry.restore_x(b.x + b.width);
+            float y2 = geometry.restore_y(b.y + b.height);
 
             x1 = std::clamp(x1, 0.0f, max_x);
             y1 = std::clamp(y1, 0.0f, max_y);
@@ -206,11 +202,10 @@ vision_common::DetectionResultList nms_and_scale(
 
 vision_common::DetectionResultList postprocess_single_output(
     Ort::Value& output,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
-    float iou_threshold,
-    int input_width,
-    int input_height) {
+    float iou_threshold) {
+    geometry.validate();
     if (!output || !output.IsTensor()) {
         throw std::runtime_error("YOLOv8 output must be a tensor");
     }
@@ -281,7 +276,7 @@ vision_common::DetectionResultList postprocess_single_output(
 
     return nms_and_scale(
         boxes, scores, labels, num_classes, iou_threshold,
-        cv::Size(input_width, input_height), orig_size);
+        geometry);
 }
 
 }  // namespace
@@ -363,7 +358,7 @@ void YOLOv8Detector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
+cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {
     if (image.empty()) {
         throw std::runtime_error("Input image is empty");
     }
@@ -373,7 +368,7 @@ cv::Mat YOLOv8Detector::preprocess(const cv::Mat& image) {
     const int input_height = static_cast<int>(input_shape_[2]);
     return vision_common::letterbox_to_nchw_rgb_blob(
         image,
-        std::make_pair(input_height, input_width));
+        std::make_pair(input_height, input_width), cv::Scalar(114, 114, 114), nullptr, geometry);
 }
 
 
@@ -396,11 +391,6 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
     ensure_model_loaded();
     reset_runtime_profile();
     const auto t0 = std::chrono::steady_clock::now();
-    const cv::Size original_size(
-        image.image.cols,
-        image.format == vision_core::ImagePixelFormat::kNv12
-            ? image.image.rows * 2 / 3
-            : image.image.rows);
 
     const auto t_pre0 = std::chrono::steady_clock::now();
     vision_operators::ImagePreprocessSpec spec;
@@ -416,8 +406,8 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
     spec.padding = {114.0F, 114.0F, 114.0F};
     auto prepared = prepare_image(
         image, spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto t_pre1 = std::chrono::steady_clock::now();
     const double preprocess_ms =
@@ -436,7 +426,7 @@ vision_common::DetectionResultList YOLOv8Detector::detect_input(
 
     const auto t_post0 = std::chrono::steady_clock::now();
     vision_common::DetectionResultList results =
-        postprocess(outputs, original_size, use_conf, use_iou);
+        postprocess(outputs, prepared.geometry(), use_conf, use_iou);
     vision_common::filter_and_limit_detections(results, max_det);
     const auto t_post1 = std::chrono::steady_clock::now();
     set_runtime_postprocess_ms(
@@ -469,28 +459,19 @@ std::vector<vision_core::ModelCapability> YOLOv8Detector::get_capabilities() con
 }
 
 void YOLOv8Detector::get_dets(
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     const float* boxes,
     const float* scores,
     const float* score_sum,
     const std::vector<int64_t>& dims,
-    int tensor_width,
-    int tensor_height,
     float conf_threshold,
     vision_common::DetectionResultList& objects) {
-    int grid_w = static_cast<int>(dims[2]);
-    int grid_h = static_cast<int>(dims[3]);
+    geometry.validate();
+    int grid_h = static_cast<int>(dims[2]);
+    int grid_w = static_cast<int>(dims[3]);
     int anchors_per_branch = grid_w * grid_h;
-    float scale_w = static_cast<float>(tensor_width) / static_cast<float>(grid_w);
-    float scale_h = static_cast<float>(tensor_height) / static_cast<float>(grid_h);
-
-    int orig_height = orig_size.height;
-    int orig_width = orig_size.width;
-    float scale2orign = std::min(
-        static_cast<float>(tensor_height) / static_cast<float>(orig_width),
-        static_cast<float>(tensor_width) / static_cast<float>(orig_height));
-    int pad_h = static_cast<int>((tensor_width - orig_height * scale2orign) / 2);
-    int pad_w = static_cast<int>((tensor_height - orig_width * scale2orign) / 2);
+    float scale_w = static_cast<float>(geometry.output_width) / static_cast<float>(grid_w);
+    float scale_h = static_cast<float>(geometry.output_height) / static_cast<float>(grid_h);
 
     for (int anchor_idx = 0; anchor_idx < anchors_per_branch; anchor_idx++) {
         if (score_sum[anchor_idx] < conf_threshold) {
@@ -509,10 +490,12 @@ void YOLOv8Detector::get_dets(
 
         if (classId >= 0) {
             auto [x1, y1, x2, y2] = vision_common::dfl_decode(boxes, anchor_idx,
-                anchors_per_branch, grid_h, scale_w, scale_h, scale2orign, pad_w, pad_h);
+                anchors_per_branch, grid_w, scale_w, scale_h);
 
             vision_common::DetectionResult result;
-            result.bbox = vision_common::BoundingBox{x1, y1, x2, y2};
+            result.bbox = vision_common::BoundingBox{
+                geometry.restore_x(x1), geometry.restore_y(y1),
+                geometry.restore_x(x2), geometry.restore_y(y2)};
             result.label = classId;
             result.score = max_score;
             objects.push_back(result);
@@ -522,29 +505,24 @@ void YOLOv8Detector::get_dets(
 
 vision_common::DetectionResultList YOLOv8Detector::postprocess(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& orig_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold) {
+    geometry.validate();
     if (outputs.empty()) {
         return {};
     }
-
-    const int input_height = static_cast<int>(input_shape_[2]);
-    const int input_width = static_cast<int>(input_shape_[3]);
 
     // outputs.size() == output_num_ (session output node count, fixed by the model graph):
     // 1 output  -> Ultralytics single-output export; otherwise -> multi-branch DFL heads.
     if (outputs.size() == 1) {
         return postprocess_single_output(
-            outputs[0], orig_size, conf_threshold, iou_threshold,
-            input_width, input_height);
+            outputs[0], geometry, conf_threshold, iou_threshold);
     }
 
     vision_common::DetectionResultList objects;
     const size_t output_num = outputs.size();
     constexpr int kTensorsPerBranch = 3;
-    const int inputWidth = static_cast<int>(input_shape_[3]);
-    const int inputHeight = static_cast<int>(input_shape_[2]);
 
     if (output_num % kTensorsPerBranch != 0) {
         throw std::runtime_error("YOLOv8 DFL outputs must be box/score/score_sum groups");
@@ -576,8 +554,8 @@ vision_common::DetectionResultList YOLOv8Detector::postprocess(
         const std::vector<int64_t> dims =
             outputs[i * kTensorsPerBranch].GetTensorTypeAndShapeInfo().GetShape();
 
-        get_dets(orig_size, boxes, branch_scores, score_sum, dims,
-            inputHeight, inputWidth, conf_threshold, objects);
+        get_dets(geometry, boxes, branch_scores, score_sum, dims,
+            conf_threshold, objects);
     }
 
     return vision_common::multi_class_nms(objects, iou_threshold);

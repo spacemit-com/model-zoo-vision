@@ -48,13 +48,10 @@ private:
     vision_common::SegmentationResultList segment_input(
         const vision_core::ImageInput& input);
 
-    cv::Mat preprocess(const cv::Mat& image, int& valid_h, int& valid_w);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry);
 
     cv::Mat postprocess_to_label_map(std::vector<Ort::Value>& outputs,
-                                        int origin_h,
-                                        int origin_w,
-                                        int valid_h,
-                                        int valid_w);
+        const vision_operators::ImagePreprocessGeometry& geometry);
 
     vision_common::SegmentationResultList split_semantic_masks(const cv::Mat& label_u8);
 

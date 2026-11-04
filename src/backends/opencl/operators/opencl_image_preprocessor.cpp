@@ -84,7 +84,7 @@ public:
         }
     }
 
-    cv::Mat process(const vision_core::ImageInput& input)
+    cv::Mat process(const vision_core::ImageInput& input, GeometryPlan& geometry)
     {
         validate_input(input);
         finish_cpu_read();
@@ -94,9 +94,9 @@ public:
         OutputSlot& output = output_ring_[output_index_];
         if (input.format ==
             vision_core::ImagePixelFormat::kBgr8) {
-            process_bgr(input, output.memory.get());
+            geometry = process_bgr(input, output.memory.get());
         } else {
-            process_nv12(input, output.memory.get());
+            geometry = process_nv12(input, output.memory.get());
         }
         check_cl(clFinish(queue_.get()), "clFinish");
 
@@ -198,7 +198,7 @@ private:
         }
     }
 
-    void process_nv12(
+    GeometryPlan process_nv12(
         const vision_core::ImageInput& input,
         cl_mem output)
     {
@@ -224,6 +224,7 @@ private:
             {imported->buffer.get(), output});
         enqueue(*imported, output, geometry);
         external_memory.release();
+        return geometry;
     }
 
     void ensure_bgr_input_buffer(size_t required_size)
@@ -243,7 +244,7 @@ private:
         bgr_input_capacity_ = required_size;
     }
 
-    void process_bgr(
+    GeometryPlan process_bgr(
         const vision_core::ImageInput& input,
         cl_mem output)
     {
@@ -292,6 +293,7 @@ private:
             output,
             geometry);
         external_memory.release();
+        return geometry;
     }
 
     void initialize_kernels()
@@ -766,9 +768,10 @@ OpenClImagePreprocessor::~OpenClImagePreprocessor() =
     default;
 
 cv::Mat OpenClImagePreprocessor::process(
-    const vision_core::ImageInput& input)
+    const vision_core::ImageInput& input,
+    vision_operators::ImagePreprocessGeometry& geometry)
 {
-    return impl_->process(input);
+    return impl_->process(input, geometry);
 }
 
 void OpenClImagePreprocessor::finish_cpu_read()

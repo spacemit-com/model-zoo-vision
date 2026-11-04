@@ -201,8 +201,8 @@ void YOLO26SemanticSegmentor::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLO26SemanticSegmentor::preprocess(
-    const cv::Mat& bgr) const {
+cv::Mat YOLO26SemanticSegmentor::preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry) const {
     if (bgr.empty() || bgr.type() != CV_8UC3 ||
         input_width_ <= 0 || input_height_ <= 0) {
         throw std::invalid_argument(
@@ -210,12 +210,14 @@ cv::Mat YOLO26SemanticSegmentor::preprocess(
     }
     return vision_operators::preprocess_bgr_to_nchw(
         bgr,
-        make_preprocess_spec(input_width_, input_height_));
+        make_preprocess_spec(input_width_, input_height_), geometry);
 }
 
 cv::Mat YOLO26SemanticSegmentor::decode_label_map(
     const Ort::Value& output,
-    const cv::Size& original_size) const {
+    const vision_operators::ImagePreprocessGeometry& geometry) const {
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
     if (!output.IsTensor() ||
         original_size.width <= 0 || original_size.height <= 0) {
         throw std::invalid_argument(
@@ -231,11 +233,6 @@ cv::Mat YOLO26SemanticSegmentor::decode_label_map(
             "YOLO26-Sem runtime output contract changed");
     }
 
-    const vision_operators::ImagePreprocessGeometry geometry =
-        vision_operators::make_image_preprocess_geometry(
-            make_preprocess_spec(input_width_, input_height_),
-            original_size.width,
-            original_size.height);
     if (geometry.dst_x < 0 || geometry.dst_y < 0 ||
         geometry.dst_x + geometry.dst_width > input_width_ ||
         geometry.dst_y + geometry.dst_height > input_height_) {
@@ -342,7 +339,7 @@ YOLO26SemanticSegmentor::split_semantic_masks(
 std::vector<vision::Segmentation>
 YOLO26SemanticSegmentor::segment(
     const vision_core::ImageInput& input) {
-    const cv::Size original_size = validate_image_input(input);
+    validate_image_input(input);
     ensure_model_loaded();
     reset_runtime_profile();
 
@@ -355,8 +352,8 @@ YOLO26SemanticSegmentor::segment(
     auto prepared = prepare_image(
         input,
         spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto preprocess_end =
         std::chrono::steady_clock::now();
@@ -376,7 +373,7 @@ YOLO26SemanticSegmentor::segment(
     const auto postprocess_begin =
         std::chrono::steady_clock::now();
     const cv::Mat label_map =
-        decode_label_map(outputs[0], original_size);
+        decode_label_map(outputs[0], prepared.geometry());
     std::vector<vision::Segmentation> results =
         split_semantic_masks(label_map);
     const auto postprocess_end =

@@ -11,6 +11,7 @@
 #include <opencv2/core.hpp>
 
 #include "image_preprocess_backend.h"
+#include "image_preprocess_geometry.h"
 
 namespace vision_operators {
 
@@ -19,6 +20,7 @@ public:
     ImagePreprocessResult(
         cv::Mat tensor,
         PreprocessBackend backend,
+        const ImagePreprocessGeometry& geometry,
         std::function<void()> finish = {});
     ~ImagePreprocessResult();
 
@@ -30,6 +32,8 @@ public:
 
     const cv::Mat& tensor() const noexcept;
     PreprocessBackend backend_used() const noexcept;
+    // Owned metadata remains valid after complete(), and moves with the result.
+    const ImagePreprocessGeometry& geometry() const;
     void complete();
 
 private:
@@ -37,6 +41,7 @@ private:
 
     cv::Mat tensor_;
     PreprocessBackend backend_{PreprocessBackend::kCpu};
+    ImagePreprocessGeometry geometry_;
     std::function<void()> finish_;
 };
 

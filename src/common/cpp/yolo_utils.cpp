@@ -15,8 +15,7 @@ namespace vision_common {
 
 std::tuple<float, float, float, float> dfl_decode(
     const float* boxes, int anchor_idx, int anchors,
-    int grid_w, float scale_w, float scale_h,
-    float scale2orign, int pad_w, int pad_h) {
+    int grid_w, float scale_w, float scale_h) {
     constexpr int kDflLen = 16;
     float xywh[4] = {0, 0, 0, 0};
     const size_t stride = static_cast<size_t>(anchors);
@@ -43,10 +42,10 @@ std::tuple<float, float, float, float> dfl_decode(
     int h_idx = anchor_idx / grid_w;
     int w_idx = anchor_idx % grid_w;
 
-    float x1 = ((w_idx - xywh[0] + 0.5f) * scale_w - pad_w) / scale2orign;
-    float y1 = ((h_idx - xywh[1] + 0.5f) * scale_h - pad_h) / scale2orign;
-    float x2 = ((w_idx + xywh[2] + 0.5f) * scale_w - pad_w) / scale2orign;
-    float y2 = ((h_idx + xywh[3] + 0.5f) * scale_h - pad_h) / scale2orign;
+    float x1 = (w_idx - xywh[0] + 0.5f) * scale_w;
+    float y1 = (h_idx - xywh[1] + 0.5f) * scale_h;
+    float x2 = (w_idx + xywh[2] + 0.5f) * scale_w;
+    float y2 = (h_idx + xywh[3] + 0.5f) * scale_h;
 
     return std::make_tuple(x1, y1, x2, y2);
 }
@@ -67,35 +66,14 @@ void xywh2xyxy(const float* xywh, float* xyxy) {
     xyxy[3] = y + h / 2.0f;  // y2
 }
 
-void scale_coords(const cv::Size& img1_shape, float* coords, const cv::Size& img0_shape) {
-    // Python: scale_coords(img1_shape, coords, img0_shape)
-    // img1_shape: (height, width) - preprocessed image shape
-    // img0_shape: (height, width) - original image shape
-    // cv::Size is (width, height), so we need to convert
-
-    // Python: gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])
-    // img1_shape[0] = height, img1_shape[1] = width
-    float gain = std::min(static_cast<float>(img1_shape.height) / img0_shape.height,
-                        static_cast<float>(img1_shape.width) / img0_shape.width);
-
-    // Python: pad =(img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2
-    // pad[0] = pad_w, pad[1] = pad_h
-    float pad_w = (img1_shape.width - img0_shape.width * gain) / 2.0f;
-    float pad_h = (img1_shape.height - img0_shape.height * gain) / 2.0f;
-
-    // Python: coords[[0, 2]] -= pad[0]  # x padding
-    // Python: coords[[1, 3]] -= pad[1]  # y padding
-    // Python: coords[:4] /= gain
-    coords[0] = (coords[0] - pad_w) / gain;  // x1
-    coords[1] = (coords[1] - pad_h) / gain;  // y1
-    coords[2] = (coords[2] - pad_w) / gain;  // x2
-    coords[3] = (coords[3] - pad_h) / gain;  // y2
-
-    // Clip to image bounds (same as Python clip_boxes)
-    coords[0] = std::max(0.0f, std::min(coords[0], static_cast<float>(img0_shape.width)));
-    coords[1] = std::max(0.0f, std::min(coords[1], static_cast<float>(img0_shape.height)));
-    coords[2] = std::max(0.0f, std::min(coords[2], static_cast<float>(img0_shape.width)));
-    coords[3] = std::max(0.0f, std::min(coords[3], static_cast<float>(img0_shape.height)));
+void scale_coords(
+    float* coords,
+    const vision_operators::ImagePreprocessGeometry& geometry) {
+    geometry.validate();
+    coords[0] = std::clamp(geometry.restore_x(coords[0]), 0.0f, static_cast<float>(geometry.original_width));
+    coords[1] = std::clamp(geometry.restore_y(coords[1]), 0.0f, static_cast<float>(geometry.original_height));
+    coords[2] = std::clamp(geometry.restore_x(coords[2]), 0.0f, static_cast<float>(geometry.original_width));
+    coords[3] = std::clamp(geometry.restore_y(coords[3]), 0.0f, static_cast<float>(geometry.original_height));
 }
 
 std::vector<std::vector<float>> flatten_yolo_tensor(
@@ -191,39 +169,6 @@ std::vector<std::vector<float>> process_box_dfl(
     }
 
     return boxes;
-}
-
-std::vector<std::vector<float>> scale_boxes_letterbox(
-    const std::vector<std::vector<float>>& boxes,
-    float ratio,
-    const std::pair<float, float>& pad,
-    const std::pair<int, int>& orig_shape) {
-    std::vector<std::vector<float>> scaled_boxes;
-    scaled_boxes.reserve(boxes.size());
-
-    float dw = pad.first;
-    float dh = pad.second;
-    int orig_w = orig_shape.second;
-    int orig_h = orig_shape.first;
-
-    for (const auto& box : boxes) {
-        if (box.size() < 4) continue;
-
-        float x1 = (box[0] - dw) / ratio;
-        float y1 = (box[1] - dh) / ratio;
-        float x2 = (box[2] - dw) / ratio;
-        float y2 = (box[3] - dh) / ratio;
-
-        // Clip to image bounds
-        x1 = std::max(0.0f, std::min(x1, static_cast<float>(orig_w)));
-        y1 = std::max(0.0f, std::min(y1, static_cast<float>(orig_h)));
-        x2 = std::max(0.0f, std::min(x2, static_cast<float>(orig_w)));
-        y2 = std::max(0.0f, std::min(y2, static_cast<float>(orig_h)));
-
-        scaled_boxes.push_back({x1, y1, x2, y2});
-    }
-
-    return scaled_boxes;
 }
 
 }  // namespace vision_common

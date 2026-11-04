@@ -165,13 +165,13 @@ void RTDETRDetector::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat RTDETRDetector::preprocess(const cv::Mat& bgr) const {
+cv::Mat RTDETRDetector::preprocess(const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry* geometry) const {
     if (bgr.empty() || bgr.type() != CV_8UC3) {
         throw std::invalid_argument(
             "RT-DETR expects a non-empty BGR8 image");
     }
     return vision_operators::preprocess_bgr_to_nchw(
-        bgr, make_preprocess_spec(input_width_, input_height_));
+        bgr, make_preprocess_spec(input_width_, input_height_), geometry);
 }
 
 vision_common::DetectionResultList RTDETRDetector::postprocess(
@@ -242,7 +242,9 @@ vision_common::DetectionResultList RTDETRDetector::infer_input(
     const auto preprocess_start = std::chrono::steady_clock::now();
     auto prepared = prepare_image(
         input, make_preprocess_spec(input_width_, input_height_),
-        [this](const cv::Mat& bgr) { return preprocess(bgr); });
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
+        });
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(
         std::chrono::duration<double, std::milli>(

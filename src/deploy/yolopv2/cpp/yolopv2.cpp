@@ -67,7 +67,7 @@ float detection_area(const vision::Detection& detection) {
 
 std::vector<vision::Detection> decode_detections(
     std::vector<Ort::Value>& outputs,
-    const cv::Size& original_size,
+    const vision_operators::ImagePreprocessGeometry& geometry,
     float conf_threshold,
     float iou_threshold,
     int max_det) {
@@ -160,21 +160,19 @@ std::vector<vision::Detection> decode_detections(
         if (static_cast<int>(kept.size()) >= max_det) break;
     }
 
-    const float scale_x =
-        static_cast<float>(original_size.width) / kInputWidth;
-    const float scale_y =
-        static_cast<float>(original_size.height) / kInputHeight;
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
     const float max_x = static_cast<float>(original_size.width);
     const float max_y = static_cast<float>(original_size.height);
     for (vision::Detection& detection : kept) {
         detection.bbox.x1 = std::rint(std::clamp(
-            detection.bbox.x1 * scale_x, 0.0F, max_x));
+            geometry.restore_x(detection.bbox.x1), 0.0F, max_x));
         detection.bbox.y1 = std::rint(std::clamp(
-            detection.bbox.y1 * scale_y, 0.0F, max_y));
+            geometry.restore_y(detection.bbox.y1), 0.0F, max_y));
         detection.bbox.x2 = std::rint(std::clamp(
-            detection.bbox.x2 * scale_x, 0.0F, max_x));
+            geometry.restore_x(detection.bbox.x2), 0.0F, max_x));
         detection.bbox.y2 = std::rint(std::clamp(
-            detection.bbox.y2 * scale_y, 0.0F, max_y));
+            geometry.restore_y(detection.bbox.y2), 0.0F, max_y));
     }
     return kept;
 }
@@ -339,7 +337,7 @@ vision_core::InferResponse YOLOPv2::infer_input(
     const auto preprocess_begin = std::chrono::steady_clock::now();
     auto prepared = prepare_image(
         input, spec,
-        [&spec](const cv::Mat& bgr) {
+        [&spec](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
             // Preserve the reference pipeline's two bilinear sampling stages.
             // Collapsing 1280x720 -> 512x288 into one direct resize changes
             // quantized detections and segmentation boundaries materially.
@@ -353,7 +351,12 @@ vision_core::InferResponse YOLOPv2::infer_input(
                     0.0, 0.0, cv::INTER_LINEAR);
                 source = &canonical;
             }
-            return vision_operators::preprocess_bgr_to_nchw(*source, spec);
+            cv::Mat tensor = vision_operators::preprocess_bgr_to_nchw(*source, spec, &geometry);
+            geometry.original_width = bgr.cols;
+            geometry.original_height = bgr.rows;
+            geometry.src_width = static_cast<float>(bgr.cols);
+            geometry.src_height = static_cast<float>(bgr.rows);
+            return tensor;
         });
     const auto preprocess_end = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(elapsed_ms(preprocess_begin, preprocess_end));
@@ -366,7 +369,7 @@ vision_core::InferResponse YOLOPv2::infer_input(
 
     const auto postprocess_begin = std::chrono::steady_clock::now();
     std::vector<vision::Detection> detections = decode_detections(
-        outputs, original_size, conf_threshold, iou_threshold, max_det);
+        outputs, prepared.geometry(), conf_threshold, iou_threshold, max_det);
     auto masks = decode_masks(outputs[3], outputs[4], original_size);
     vision_core::InferResponse response;
     response.results.reserve(detections.size() + 2);

@@ -36,7 +36,7 @@ public:
 
     void load_model() override;
 
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 
@@ -44,7 +44,7 @@ public:
 
     static std::unique_ptr<vision_core::BaseModel> create(const YAML::Node& config, bool lazy_load);
 
-    vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs, const cv::Size& face_size);
+    vision_common::PoseResultList postprocess(std::vector<Ort::Value>& outputs, const vision_operators::ImagePreprocessGeometry& geometry);
 
 protected:
     vision_core::InferResponse RunImpl(const vision_core::InferRequest& request) override;

@@ -202,8 +202,8 @@ void YOLO26DepthEstimator::load_model() {
     model_loaded_ = true;
 }
 
-cv::Mat YOLO26DepthEstimator::preprocess(
-    const cv::Mat& bgr) const {
+cv::Mat YOLO26DepthEstimator::preprocess(const cv::Mat& bgr,
+        vision_operators::ImagePreprocessGeometry* geometry) const {
     if (bgr.empty() || bgr.type() != CV_8UC3 ||
         input_width_ <= 0 || input_height_ <= 0) {
         throw std::invalid_argument(
@@ -211,12 +211,14 @@ cv::Mat YOLO26DepthEstimator::preprocess(
     }
     return vision_operators::preprocess_bgr_to_nchw(
         bgr,
-        make_preprocess_spec(input_width_, input_height_));
+        make_preprocess_spec(input_width_, input_height_), geometry);
 }
 
 cv::Mat YOLO26DepthEstimator::restore_depth(
     const Ort::Value& output,
-    const cv::Size& original_size) const {
+    const vision_operators::ImagePreprocessGeometry& geometry) const {
+    geometry.validate();
+    const cv::Size original_size(geometry.original_width, geometry.original_height);
     if (!output.IsTensor() ||
         original_size.width <= 0 || original_size.height <= 0) {
         throw std::invalid_argument(
@@ -232,11 +234,6 @@ cv::Mat YOLO26DepthEstimator::restore_depth(
             "YOLO26-Depth runtime output contract changed");
     }
 
-    const vision_operators::ImagePreprocessGeometry geometry =
-        vision_operators::make_image_preprocess_geometry(
-            make_preprocess_spec(input_width_, input_height_),
-            original_size.width,
-            original_size.height);
     if (geometry.dst_x < 0 || geometry.dst_y < 0 ||
         geometry.dst_width <= 0 || geometry.dst_height <= 0 ||
         geometry.dst_x + geometry.dst_width > input_width_ ||
@@ -282,7 +279,7 @@ cv::Mat YOLO26DepthEstimator::restore_depth(
 
 vision::DepthMap YOLO26DepthEstimator::estimate_depth(
     const vision_core::ImageInput& input) {
-    const cv::Size original_size = validate_image_input(input);
+    validate_image_input(input);
     ensure_model_loaded();
     reset_runtime_profile();
 
@@ -293,8 +290,8 @@ vision::DepthMap YOLO26DepthEstimator::estimate_depth(
     auto prepared = prepare_image(
         input,
         spec,
-        [this](const cv::Mat& bgr) {
-            return preprocess(bgr);
+        [this](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry& geometry) {
+            return preprocess(bgr, &geometry);
         });
     const auto preprocess_end = std::chrono::steady_clock::now();
 
@@ -309,7 +306,7 @@ vision::DepthMap YOLO26DepthEstimator::estimate_depth(
     }
 
     const auto postprocess_begin = std::chrono::steady_clock::now();
-    cv::Mat depth = restore_depth(outputs.front(), original_size);
+    cv::Mat depth = restore_depth(outputs.front(), prepared.geometry());
     vision::DepthMap result;
     result.map = std::make_shared<cv::Mat>(std::move(depth));
     const auto postprocess_end = std::chrono::steady_clock::now();

@@ -40,7 +40,8 @@ public:
         tensor_ = cv::Mat(4, dims, CV_32F);
     }
 
-    cv::Mat process(const vision_core::ImageInput& input) override
+    cv::Mat process(const vision_core::ImageInput& input,
+                    ImagePreprocessGeometry& geometry) override
     {
         if (active_)
             throw std::invalid_argument(
@@ -103,6 +104,7 @@ public:
         pack(g, stride);
         rgb_->end_cpu_read();
         active_ = true;
+        geometry = g;
         return tensor_;
     }
     void complete() override { active_ = false; }

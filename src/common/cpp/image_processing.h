@@ -16,6 +16,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "datatype.h"
+#include "operators/image_preprocess/image_preprocess_geometry.h"
 
 namespace vision_common {
 
@@ -41,7 +42,14 @@ float mask_logit_threshold(float threshold);
 // crop/threshold inside the bbox. Returns a full-size binary uint8 mask.
 cv::Mat restore_instance_mask(
     const cv::Mat& logits, const BoundingBox& box,
-    const cv::Size& original_size, float mask_threshold = 0.5f);
+    const vision_operators::ImagePreprocessGeometry& geometry,
+    float mask_threshold = 0.5f);
+
+// Project the actual content rectangle to a dense output grid. Boundaries
+// are rounded once; this does not perform fractional-padding resampling.
+cv::Rect preprocess_content_rect(
+    const vision_operators::ImagePreprocessGeometry& geometry,
+    const cv::Size& map_size);
 
 /**
  * @brief Letterbox preprocessing for YOLO models
@@ -70,7 +78,8 @@ cv::Mat letterbox_to_nchw_rgb_blob(
     const cv::Mat& image,
     const std::pair<int, int>& target_size,
     const cv::Scalar& pad_color = cv::Scalar(114, 114, 114),
-    cv::Mat* resized_scratch = nullptr
+    cv::Mat* resized_scratch = nullptr,
+    vision_operators::ImagePreprocessGeometry* geometry = nullptr
 );
 
 // Validate RGB normalization before loading a classification model.
@@ -94,7 +103,8 @@ cv::Mat preprocess_classification(
     const cv::Scalar& std = cv::Scalar(0.229f * 255.0f, 0.224f * 255.0f, 0.225f * 255.0f),
     const cv::Size& resize_size = cv::Size(0, 0),
     bool center_crop = true,
-    int interpolation = cv::INTER_LINEAR
+    int interpolation = cv::INTER_LINEAR,
+    vision_operators::ImagePreprocessGeometry* geometry = nullptr
 );
 
 /**

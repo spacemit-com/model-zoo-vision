@@ -11,6 +11,21 @@
 
 namespace vision_operators {
 
+void ImagePreprocessGeometry::validate() const
+{
+    if (original_width <= 0 || original_height <= 0 ||
+        output_width <= 0 || output_height <= 0 ||
+        !std::isfinite(src_x) || !std::isfinite(src_y) ||
+        !std::isfinite(src_width) || !std::isfinite(src_height) ||
+        src_width <= 0.0F || src_height <= 0.0F ||
+        dst_x < 0 || dst_y < 0 || dst_width <= 0 || dst_height <= 0 ||
+        dst_width > output_width || dst_height > output_height ||
+        dst_x > output_width - dst_width ||
+        dst_y > output_height - dst_height) {
+        throw std::invalid_argument("invalid image preprocess geometry");
+    }
+}
+
 FitResizeDimensions calculate_fit_resize_dimensions(
     float source_width,
     float source_height,
@@ -58,6 +73,10 @@ ImagePreprocessGeometry make_image_preprocess_geometry(
     }
 
     ImagePreprocessGeometry geometry;
+    geometry.original_width = input_width;
+    geometry.original_height = input_height;
+    geometry.output_width = spec.output_width;
+    geometry.output_height = spec.output_height;
     geometry.src_width = static_cast<float>(input_width);
     geometry.src_height = static_cast<float>(input_height);
     geometry.dst_width = spec.output_width;

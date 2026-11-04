@@ -37,7 +37,7 @@ class PreAcquireFailure final
     : public vision_operators::ImagePreprocessor {
 public:
     cv::Mat process(
-        const vision_core::ImageInput&) override
+        const vision_core::ImageInput&, vision_operators::ImagePreprocessGeometry&) override
     {
         ++calls_;
         throw vision_operators::
@@ -57,7 +57,7 @@ class InvalidInputFailure final
     : public vision_operators::ImagePreprocessor {
 public:
     cv::Mat process(
-        const vision_core::ImageInput&) override
+        const vision_core::ImageInput&, vision_operators::ImagePreprocessGeometry&) override
     {
         ++calls_;
         throw std::invalid_argument(
@@ -76,7 +76,7 @@ class CompletionFailure final
     : public vision_operators::ImagePreprocessor {
 public:
     cv::Mat process(
-        const vision_core::ImageInput&) override
+        const vision_core::ImageInput&, vision_operators::ImagePreprocessGeometry&) override
     {
         const int shape[] = {1, 3, 4, 4};
         return cv::Mat::zeros(4, shape, CV_32F);
@@ -92,7 +92,7 @@ class SuccessfulPreprocessor final
     : public vision_operators::ImagePreprocessor {
 public:
     cv::Mat process(
-        const vision_core::ImageInput&) override
+        const vision_core::ImageInput&, vision_operators::ImagePreprocessGeometry&) override
     {
         ++calls_;
         const int shape[] = {1, 3, 4, 4};
@@ -138,7 +138,7 @@ int main()
     auto bgr_opencl_result = dispatcher.process(
         input,
         spec,
-        [&](const cv::Mat& image) {
+        [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             cpu_called = true;
             return image.clone();
         });
@@ -161,7 +161,7 @@ int main()
     auto auto_bgr_result = auto_bgr_dispatcher.process(
         input,
         spec,
-        [&](const cv::Mat& image) {
+        [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             auto_bgr_cpu_called = true;
             return image.clone();
         });
@@ -195,7 +195,7 @@ int main()
                 (void)invalid_input_dispatcher.process(
                     invalid_layout_input,
                     spec,
-                    [&](const cv::Mat& image) {
+                    [&](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
                         invalid_layout_cpu_called = true;
                         return image.clone();
                     });
@@ -243,7 +243,7 @@ int main()
         auto fallback_result = fallback_dispatcher.process(
             nv12_dma,
             spec,
-            [&](const cv::Mat& bgr) {
+            [&](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
                 if (bgr.type() == CV_8UC3) {
                     ++fallback_cpu_calls;
                 }
@@ -262,7 +262,7 @@ int main()
         auto later_fallback = fallback_dispatcher.process(
             nv12_dma,
             spec,
-            [&](const cv::Mat& bgr) {
+            [&](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
                 if (bgr.type() == CV_8UC3) {
                     ++fallback_cpu_calls;
                 }
@@ -288,7 +288,7 @@ int main()
                 lifetime_dispatcher.process(
                     nv12_dma,
                     spec,
-                    [](const cv::Mat& bgr) {
+                    [](const cv::Mat& bgr, vision_operators::ImagePreprocessGeometry&) {
                         return bgr.clone();
                     }));
         }
@@ -313,7 +313,7 @@ int main()
         auto batched_result = batched_dispatcher.process(
             nv12_dma,
             batched_spec,
-            [&](const cv::Mat&) {
+            [&](const cv::Mat&, vision_operators::ImagePreprocessGeometry&) {
                 batched_cpu_called = true;
                 const int shape[] = {2, 3, 4, 4};
                 return cv::Mat::zeros(4, shape, CV_32F);
@@ -348,7 +348,7 @@ int main()
     auto cpu_result = cpu_only_dispatcher.process(
         input,
         spec,
-        [](const cv::Mat& image) {
+        [](const cv::Mat& image, vision_operators::ImagePreprocessGeometry&) {
             return image.clone();
         });
     check(

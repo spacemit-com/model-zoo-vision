@@ -32,7 +32,7 @@ public:
     ~Mobileclip2Encoder() override = default;
 
     void load_model() override;
-    cv::Mat preprocess(const cv::Mat& image);
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
     std::vector<vision_core::ModelCapability> get_capabilities() const override;

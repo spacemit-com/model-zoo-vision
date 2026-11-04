@@ -46,13 +46,7 @@ protected:
         const vision_core::InferRequest& request) override;
 
 private:
-    struct LetterboxGeometry {
-        float ratio = 1.0F;
-        int left = 0;
-        int top = 0;
-    };
-
-    cv::Mat preprocess(const cv::Mat& image) const;
+    cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr) const;
     std::vector<Ort::Value> run_session_two_inputs(
         const cv::Mat& image_tensor);
     vision_common::DetectionResultList detect_input(
@@ -60,11 +54,8 @@ private:
         float conf_threshold, int max_det = -1);
     vision_common::DetectionResultList postprocess(
         std::vector<Ort::Value>& outputs,
-        const cv::Size& original_size,
-        const LetterboxGeometry& geometry,
+        const vision_operators::ImagePreprocessGeometry& geometry,
         float conf_threshold) const;
-    LetterboxGeometry calculate_geometry(
-        const cv::Size& original_size) const;
 
     float conf_threshold_;
     int num_threads_;

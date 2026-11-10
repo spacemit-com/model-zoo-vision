@@ -73,6 +73,7 @@ void Siglip2Encoder::init_text_session() {
     opts.SetIntraOpNumThreads(num_threads_);
     opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     if (provider_ == "SpaceMITExecutionProvider") {
+        (void)vision_core::shared_ort_env();
         Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(opts);
         if (!status.IsOK()) {
             std::cerr << "SpaceMIT EP init failed (SigLIP2 text): " << status.GetErrorMessage()

@@ -50,6 +50,7 @@ public:
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(threads_);
         if (provider_ == "SpaceMITExecutionProvider") {
+            (void)vision_core::shared_ort_env();
             Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(options);
             if (!status.IsOK())
                 throw std::runtime_error(status.GetErrorMessage());

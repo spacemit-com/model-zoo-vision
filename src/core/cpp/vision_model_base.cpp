@@ -230,6 +230,9 @@ void BaseModel::init_session(
 
     model_path_ = resolve_and_check_model_path(model_path_);
 
+    // The shared Ort::Env must exist before SessionOptionsSpaceMITEnvInit so that
+    // SpaceMIT custom-op schemas are registered against it.
+    Ort::Env& env = shared_ort_env();
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(num_threads);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -242,7 +245,7 @@ void BaseModel::init_session(
         }
     }
 
-    session_ = std::make_unique<Ort::Session>(shared_ort_env(), model_path_.c_str(), session_options);
+    session_ = std::make_unique<Ort::Session>(env, model_path_.c_str(), session_options);
     if (provider == "SpaceMITExecutionProvider") {
         std::cout << "SpaceMIT EP initialized: " << model_path_ << std::endl;
     }

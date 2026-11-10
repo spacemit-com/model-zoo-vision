@@ -210,6 +210,7 @@ void PPOCRDetector::load_model() {
     rec_opts.SetIntraOpNumThreads(num_threads_);
     rec_opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     if (provider_ == "SpaceMITExecutionProvider") {
+        (void)vision_core::shared_ort_env();
         Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(rec_opts);
         if (!status.IsOK()) {
             throw std::runtime_error(

@@ -92,6 +92,7 @@ void configure_session_options(
     options->SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
     if (provider == "SpaceMITExecutionProvider") {
+        (void)vision_core::shared_ort_env();
         Ort::Status status =
             Ort::SessionOptionsSpaceMITEnvInit(*options);
         if (!status.IsOK()) {

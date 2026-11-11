@@ -117,9 +117,9 @@ YOLO26DepthEstimator::YOLO26DepthEstimator(
     : BaseModel(model_path, lazy_load),
         num_threads_(num_threads),
         provider_(std::move(provider)) {
-    if (num_threads_ <= 0) {
+    if (num_threads_ < 0) {
         throw std::invalid_argument(
-            "YOLO26-Depth num_threads must be positive");
+            "YOLO26-Depth num_threads must be nonnegative");
     }
     enable_accelerated_image_preprocess();
     if (!lazy_load) {

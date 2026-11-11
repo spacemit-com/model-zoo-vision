@@ -79,30 +79,6 @@ std::string resolve_auxiliary_model_path(const std::string& raw_path) {
     return std::filesystem::path(path).lexically_normal().string();
 }
 
-void configure_session_options(
-    Ort::SessionOptions* options,
-    int num_threads,
-    const std::string& provider,
-    const char* role) {
-    if (options == nullptr || num_threads <= 0) {
-        throw std::invalid_argument(
-            "NanoTracker session options are invalid");
-    }
-    options->SetIntraOpNumThreads(num_threads);
-    options->SetGraphOptimizationLevel(
-        GraphOptimizationLevel::ORT_ENABLE_ALL);
-    if (provider == "SpaceMITExecutionProvider") {
-        (void)vision_core::shared_ort_env();
-        Ort::Status status =
-            Ort::SessionOptionsSpaceMITEnvInit(*options);
-        if (!status.IsOK()) {
-            throw std::runtime_error(
-                std::string("SpaceMIT EP init failed (NanoTrack ") +
-                role + "): " + status.GetErrorMessage());
-        }
-    }
-}
-
 void collect_node_names(
     Ort::Session* session,
     bool inputs,
@@ -167,9 +143,9 @@ float padded_size(float width, float height) {
 }
 
 void validate_params(const NanoTrackParams& params) {
-    if (params.num_threads <= 0 ||
+    if (params.num_threads < 0 ||
         params.template_num_threads <= 0 ||
-        params.head_num_threads <= 0 ||
+        params.head_num_threads < 0 ||
         !std::isfinite(params.context_amount) ||
         params.context_amount < 0.0f ||
         !std::isfinite(params.penalty_k) ||
@@ -325,22 +301,16 @@ void NanoTracker::initialize_auxiliary_sessions() {
         resolve_auxiliary_model_path(head_model_path_);
 
     Ort::SessionOptions template_options;
-    configure_session_options(
-        &template_options,
-        params_.template_num_threads,
-        "CPUExecutionProvider",
-        "template backbone");
+    configure_session_options(template_options, 1);
+    template_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     template_session_ = std::make_unique<Ort::Session>(
         vision_core::shared_ort_env(),
         template_model_path_.c_str(),
         template_options);
 
     Ort::SessionOptions head_options;
-    configure_session_options(
-        &head_options,
-        params_.head_num_threads,
-        provider_,
-        "head");
+    configure_session_options(head_options, 2);
+    head_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     head_session_ = std::make_unique<Ort::Session>(
         vision_core::shared_ort_env(),
         head_model_path_.c_str(),
@@ -376,6 +346,12 @@ void NanoTracker::load_model() {
     if (model_loaded_) {
         return;
     }
+    release();
+    prepare_session_configs({
+        {params_.num_threads, provider_},
+        {params_.template_num_threads, "CPUExecutionProvider"},
+        {params_.head_num_threads, provider_},
+    });
     init_session(params_.num_threads, provider_);
     initialize_auxiliary_sessions();
 

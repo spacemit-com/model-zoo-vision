@@ -84,10 +84,10 @@ YOLO26SegSegmentor::YOLO26SegSegmentor(
         conf_threshold_ < 0.0F || conf_threshold_ > 1.0F ||
         !std::isfinite(mask_threshold_) ||
         mask_threshold_ <= 0.0F || mask_threshold_ > 1.0F ||
-        num_threads_ <= 0) {
+        num_threads_ < 0) {
         throw std::invalid_argument(
             "YOLO26-Seg conf must be in [0,1], mask in (0,1], and "
-            "num_threads must be positive");
+            "num_threads must be nonnegative");
     }
     enable_accelerated_image_preprocess();
     if (!lazy_load) {

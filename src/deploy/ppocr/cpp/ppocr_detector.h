@@ -53,6 +53,7 @@ public:
     virtual ~PPOCRDetector() = default;
 
     void load_model() override;
+    void release() override;
 
     std::vector<vision_core::InferIntent> supported_intents() const override;
 

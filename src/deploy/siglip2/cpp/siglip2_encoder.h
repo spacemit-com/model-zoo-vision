@@ -32,6 +32,7 @@ public:
     ~Siglip2Encoder() override = default;
 
     void load_model() override;
+    void release() override;
     cv::Mat preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry = nullptr);
 
     std::vector<vision_core::InferIntent> supported_intents() const override;

@@ -13,7 +13,6 @@
 #include <variant>
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
-#include "spacemit_ort_env.h"  // NOLINT(build/include_order)
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -70,16 +69,8 @@ Siglip2Encoder::Siglip2Encoder(const std::string& vision_model_path,
 
 void Siglip2Encoder::init_text_session() {
     Ort::SessionOptions opts;
-    opts.SetIntraOpNumThreads(num_threads_);
+    configure_session_options(opts, 1);
     opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    if (provider_ == "SpaceMITExecutionProvider") {
-        (void)vision_core::shared_ort_env();
-        Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(opts);
-        if (!status.IsOK()) {
-            std::cerr << "SpaceMIT EP init failed (SigLIP2 text): " << status.GetErrorMessage()
-                << std::endl;
-        }
-    }
 
     text_session_ = std::make_unique<Ort::Session>(
         vision_core::shared_ort_env(), text_model_path_.c_str(), opts);
@@ -107,10 +98,22 @@ void Siglip2Encoder::load_model() {
     if (model_loaded_) {
         return;
     }
+    release();
+    prepare_session_configs({{num_threads_, provider_}, {num_threads_, provider_}});
     init_session(num_threads_, provider_);
     init_text_session();
     tokenizer_ = std::make_unique<GemmaTokenizer>(tokenizer_path_);
     model_loaded_ = true;
+}
+
+void Siglip2Encoder::release() {
+    text_session_.reset();
+    tokenizer_.reset();
+    text_input_names_.clear();
+    text_output_names_.clear();
+    text_input_names_str_.clear();
+    text_output_names_str_.clear();
+    BaseModel::release();
 }
 
 cv::Mat Siglip2Encoder::preprocess(const cv::Mat& image, vision_operators::ImagePreprocessGeometry* geometry) {

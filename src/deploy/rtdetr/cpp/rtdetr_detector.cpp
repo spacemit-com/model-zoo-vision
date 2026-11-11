@@ -71,10 +71,10 @@ RTDETRDetector::RTDETRDetector(
         num_threads_(num_threads),
         provider_(provider) {
     if (conf_threshold_ < 0.0F || conf_threshold_ > 1.0F ||
-        num_threads_ <= 0) {
+        num_threads_ < 0) {
         throw std::invalid_argument(
             "RT-DETR conf_threshold must be in [0,1] and "
-            "num_threads must be positive");
+            "num_threads must be nonnegative");
     }
     enable_accelerated_image_preprocess();
     if (!lazy_load) {

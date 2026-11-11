@@ -17,6 +17,7 @@
 
 #include "spacemit_ort_env.h"
 #include "vision_infer_types.h"
+#include "vision_session_config.h"
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "operators/image_preprocess/image_preprocess_dispatcher.h"
 #include "operators/image_preprocess/image_preprocess_result.h"
@@ -49,8 +50,6 @@ struct RuntimeProfile {
 enum class ModelCapability {
     kDraw,
 };
-
-Ort::Env& shared_ort_env();
 
 /**
  * @brief Base class for all vision models
@@ -209,6 +208,11 @@ protected:
         int num_threads = 4,
         const std::string& provider = "SpaceMITExecutionProvider");
 
+    // Composite models declare all sessions before loading the first one.
+    void prepare_session_configs(const std::vector<SessionRequest>& requests);
+    void configure_session_options(
+        Ort::SessionOptions& options, size_t session_index = 0) const;
+
     /**
      * @brief Run ONNX Runtime inference
      * @thread_safety NOT thread-safe: updates this model's runtime profile.
@@ -247,6 +251,7 @@ protected:
         uint64_t calls = 1);
 
 private:
+    std::vector<SessionConfig> session_configs_;
     bool accelerated_image_preprocess_enabled_{false};
     vision_operators::PreprocessOpenClSampling
         preprocess_opencl_sampling_{

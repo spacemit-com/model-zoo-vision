@@ -21,8 +21,6 @@
 #include <opencv2/geometry.hpp>  // OpenCV 5: contour/hull/minAreaRect/getPerspectiveTransform
 #endif
 
-#include "spacemit_ort_env.h"  // NOLINT(build/include_order)
-
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
 #include "operators/image_preprocess/rvv_image_pack.h"
 #include "vision_model_config.h"
@@ -200,6 +198,8 @@ void PPOCRDetector::load_model() {
     if (model_loaded_) {
         return;
     }
+    release();
+    prepare_session_configs({{num_threads_, provider_}, {num_threads_, provider_}});
     // Detection session (BaseModel::session_). Input is dynamic HxW, so
     // input_shape_ from init_session is unreliable; detect_text builds the shape
     // per image and calls session_->Run directly.
@@ -207,16 +207,8 @@ void PPOCRDetector::load_model() {
     init_session(num_threads_, provider_);
 
     Ort::SessionOptions rec_opts;
-    rec_opts.SetIntraOpNumThreads(num_threads_);
+    configure_session_options(rec_opts, 1);
     rec_opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    if (provider_ == "SpaceMITExecutionProvider") {
-        (void)vision_core::shared_ort_env();
-        Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(rec_opts);
-        if (!status.IsOK()) {
-            throw std::runtime_error(
-                std::string("SpaceMIT EP init failed (rec): ") + status.GetErrorMessage());
-        }
-    }
     std::cout << provider_ << " (rec): " << rec_model_path_ << std::endl;
     // rec_model_path_ / dict_path_ arrive already resolved: the factory expands
     // any default_params key ending in "_path" via resolveResourcePath before create().
@@ -243,6 +235,16 @@ void PPOCRDetector::load_model() {
     load_dict(dict_path_);
     validate_dict_size();
     model_loaded_ = true;
+}
+
+void PPOCRDetector::release() {
+    rec_session_.reset();
+    rec_input_names_.clear();
+    rec_output_names_.clear();
+    rec_input_names_str_.clear();
+    rec_output_names_str_.clear();
+    dict_.clear();
+    BaseModel::release();
 }
 
 // ---------------------------------------------------------------------------

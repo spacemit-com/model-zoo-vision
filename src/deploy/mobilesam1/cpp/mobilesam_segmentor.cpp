@@ -32,7 +32,7 @@ public:
         decoder_path_ = params["decoder_model_path"].as<std::string>();
         threads_ = vision_core::yaml_utils::getInt(params, "num_threads", 4);
         provider_ = vision_core::yaml_utils::getProvider(config);
-        if (threads_ <= 0 || decoder_path_.empty()) {
+        if (threads_ < 0 || decoder_path_.empty()) {
             throw std::invalid_argument("MobileSAM invalid configuration");
         }
         if (!lazy) load_model();
@@ -46,15 +46,11 @@ public:
 
     void load_model() override {
         if (model_loaded_) return;
+        release();
+        prepare_session_configs({{threads_, provider_}, {threads_, provider_}});
         init_session(threads_, provider_);
         Ort::SessionOptions options;
-        options.SetIntraOpNumThreads(threads_);
-        if (provider_ == "SpaceMITExecutionProvider") {
-            (void)vision_core::shared_ort_env();
-            Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(options);
-            if (!status.IsOK())
-                throw std::runtime_error(status.GetErrorMessage());
-        }
+        configure_session_options(options, 1);
         decoder_ = std::make_unique<Ort::Session>(
             vision_core::shared_ort_env(), decoder_path_.c_str(), options);
         if (session_->GetInputCount() != 1 || session_->GetOutputCount() != 1 ||

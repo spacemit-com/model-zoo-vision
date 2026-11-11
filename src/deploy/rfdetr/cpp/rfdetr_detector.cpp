@@ -126,9 +126,9 @@ RFDETRDetector::RFDETRDetector(
         throw std::invalid_argument(
             "RF-DETR conf_threshold must be in [0,1]");
     }
-    if (max_det_ <= 0 || num_threads_ <= 0) {
+    if (max_det_ <= 0 || num_threads_ < 0) {
         throw std::invalid_argument(
-            "RF-DETR max_det and num_threads must be positive");
+            "RF-DETR max_det must be positive and num_threads nonnegative");
     }
     enable_accelerated_image_preprocess();
     if (!lazy_load) {

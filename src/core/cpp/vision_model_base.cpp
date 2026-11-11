@@ -92,11 +92,6 @@ static std::string resolve_and_check_model_path(const std::string& raw_path) {
     }
 }
 
-Ort::Env& shared_ort_env() {
-    static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "VisionModel");
-    return env;
-}
-
 BaseModel::BaseModel(const std::string& model_path, bool lazy_load)
     : model_path_(model_path), model_loaded_(false), lazy_load_(lazy_load) {
 #ifdef DEBUG
@@ -119,6 +114,7 @@ void BaseModel::warmup() {
 void BaseModel::release() {
     image_preprocess_dispatcher_.reset();
     session_.reset();
+    session_configs_.clear();
     input_shape_.clear();
     input_node_names_.clear();
     output_node_names_.clear();
@@ -215,6 +211,22 @@ void BaseModel::ensure_model_loaded() {
     }
 }
 
+void BaseModel::prepare_session_configs(
+    const std::vector<SessionRequest>& requests) {
+    if (session_ || requests.empty()) {
+        throw std::logic_error("Session configuration must precede model loading");
+    }
+    session_configs_ = plan_session_configs(requests);
+}
+
+void BaseModel::configure_session_options(
+    Ort::SessionOptions& options, size_t session_index) const {
+    if (session_index >= session_configs_.size()) {
+        throw std::logic_error("Model session was not included in its core plan");
+    }
+    vision_core::configure_session_options(options, session_configs_[session_index]);
+}
+
 void BaseModel::init_session(
     int num_threads,
     const std::string& provider) {
@@ -230,20 +242,13 @@ void BaseModel::init_session(
 
     model_path_ = resolve_and_check_model_path(model_path_);
 
-    // The shared Ort::Env must exist before SessionOptionsSpaceMITEnvInit so that
-    // SpaceMIT custom-op schemas are registered against it.
+    if (session_configs_.empty()) {
+        prepare_session_configs({{num_threads, provider}});
+    }
     Ort::Env& env = shared_ort_env();
     Ort::SessionOptions session_options;
-    session_options.SetIntraOpNumThreads(num_threads);
+    configure_session_options(session_options);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-
-    if (provider == "SpaceMITExecutionProvider") {
-        Ort::Status status = Ort::SessionOptionsSpaceMITEnvInit(session_options);
-        if (!status.IsOK()) {
-            throw std::runtime_error(
-                "SpaceMIT EP init failed: " + std::string(status.GetErrorMessage()));
-        }
-    }
 
     session_ = std::make_unique<Ort::Session>(env, model_path_.c_str(), session_options);
     if (provider == "SpaceMITExecutionProvider") {

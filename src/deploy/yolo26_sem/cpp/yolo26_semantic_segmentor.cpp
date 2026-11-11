@@ -111,7 +111,7 @@ YOLO26SemanticSegmentor::YOLO26SemanticSegmentor(
         num_threads_(num_threads),
         num_classes_(num_classes),
         provider_(std::move(provider)) {
-    if (num_threads_ <= 0 ||
+    if (num_threads_ < 0 ||
         num_classes_ <= 0 || num_classes_ > 256) {
         throw std::invalid_argument(
             "YOLO26-Sem parameters are invalid");

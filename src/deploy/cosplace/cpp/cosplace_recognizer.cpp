@@ -64,8 +64,8 @@ std::unique_ptr<vision_core::BaseModel> CosPlaceRecognizer::create(const YAML::N
     }
 
     int num_threads = vision_core::yaml_utils::getInt(default_params, "num_threads", 4);
-    if (num_threads <= 0) {
-        throw std::runtime_error("default_params.num_threads must be positive for CosPlaceRecognizer");
+    if (num_threads < 0) {
+        throw std::runtime_error("default_params.num_threads must be nonnegative for CosPlaceRecognizer");
     }
     std::string provider = vision_core::yaml_utils::getProvider(config);
 

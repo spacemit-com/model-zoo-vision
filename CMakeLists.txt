@@ -154,7 +154,7 @@ endif()
 # Source Files
 # ============================================================================
 
-file(GLOB_RECURSE VISION_CORE_SOURCES "src/core/cpp/*.cpp")
+file(GLOB_RECURSE VISION_CORE_SOURCES CONFIGURE_DEPENDS "src/core/cpp/*.cpp")
 set(VISION_SERVICE_SOURCES
     src/vision_service.cpp
 )
@@ -211,6 +211,7 @@ add_library(vision SHARED
 target_link_libraries(vision
     ${LIBS}
     "${OPENBLAS_LIB}"
+    ${CMAKE_DL_LIBS}
 )
 
 if(VISION_WITH_OPENCL)

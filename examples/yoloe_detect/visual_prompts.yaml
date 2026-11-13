@@ -1,0 +1,11 @@
+# Reference images and boxes; this is prompt data, not a model configuration.
+# Coordinates refer to the ORIGINAL reference image, before letterboxing.
+- class_name: person
+  image_path: ~/.cache/assets/image/014_bus.jpg
+  bboxes:
+    - [221.52, 405.80, 344.98, 857.54]
+    - [50.00, 399.00, 240.00, 900.00]
+- class_name: bus
+  image_path: ~/.cache/assets/image/014_bus.jpg
+  bboxes:
+    - [17.00, 231.00, 801.00, 768.00]

@@ -34,6 +34,14 @@ struct BoundingBox {
     float y2 = 0.0f;
 };
 
+// Named reference image for open-vocabulary detection. Boxes are xyxy in the
+// reference image's original pixels. Examples may share a class name.
+struct VisualPrompt {
+    std::string class_name;
+    cv::Mat image;  // BGR8; readable and unmodified until Infer() returns
+    std::vector<BoundingBox> bboxes;
+};
+
 struct KeyPoint {
     float x = 0.0f;
     float y = 0.0f;
@@ -279,6 +287,10 @@ struct VisionServiceRequest {
     std::vector<int> point_labels;
 
     VisionServiceInferParams params;
+
+    // YOLOE detection: examples alone select visual prompting; examples plus
+    // explicit text prompts select fusion. Empty keeps text/default behavior.
+    std::vector<vision::VisualPrompt> visual_prompts;
 };
 
 // Unified inference response.

@@ -535,6 +535,52 @@ PYBIND11_MODULE(_vision_service_cpp, m) {
             py::kw_only(),
             py::arg("params") = VisionServiceInferParams{})
         .def(
+            "infer_image_visual_prompts",
+            [](VisionService& self, const py::array& image,
+                const std::vector<std::string>& prompts,
+                const py::list& references,
+                std::optional<float> conf, std::optional<float> iou,
+                const VisionServiceInferParams& params) {
+                VisionServiceRequest request{};
+                request.image = NumpyToMatBgr(image);
+                request.prompts = prompts;
+                request.params = MakeParams(conf, iou, params);
+                for (const auto& entry : references) {
+                    const auto reference = py::cast<py::dict>(entry);
+                    if (!reference.contains("class_name") ||
+                        !reference.contains("image") ||
+                        !reference.contains("bboxes")) {
+                        throw std::invalid_argument(
+                            "Visual prompt needs class_name, image and bboxes");
+                    }
+                    vision::VisualPrompt visual;
+                    visual.class_name =
+                        reference["class_name"].cast<std::string>();
+                    visual.image = NumpyToMatBgr(
+                        reference["image"].cast<py::array>());
+                    const auto boxes = reference["bboxes"].cast<
+                        std::vector<std::vector<float>>>();
+                    for (const auto& box : boxes) {
+                        if (box.size() != 4) {
+                            throw std::invalid_argument(
+                                "Each visual box must have 4 coordinates");
+                        }
+                        visual.bboxes.push_back(
+                            {box[0], box[1], box[2], box[3]});
+                    }
+                    request.visual_prompts.push_back(std::move(visual));
+                }
+                PyResponse response;
+                const auto status = CallWithoutGil([&] {
+                    return self.Infer(request, &response);
+                });
+                return MakeFlatResponse(status, std::move(response));
+            },
+            py::arg("image_bgr_uint8"), py::arg("prompts"),
+            py::arg("visual_prompts"),
+            py::arg("conf") = py::none(), py::arg("iou") = py::none(),
+            py::kw_only(), py::arg("params") = VisionServiceInferParams{})
+        .def(
             "infer_image_points",
             [](VisionService& self, const py::array& arr,
                 const std::vector<std::vector<float>>& points,

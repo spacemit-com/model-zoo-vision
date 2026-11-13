@@ -95,15 +95,35 @@ config_model_path() {
 }
 
 sibling_weights() {
-  # Given a model file, echo other *.onnx in the same dir (same family).
-  local model="$1"
+  # Keep alternate primary weights, but not explicitly configured auxiliaries.
+  local model="$1" cfg="$2"
   local dir
   dir="$(dirname "$model")"
   [[ -d "$dir" ]] || return 0
-  local f
+  local -a auxiliary_paths=()
+  mapfile -t auxiliary_paths < <(awk '
+    /^[[:space:]]+[[:alnum:]_]+_path[[:space:]]*:/ {
+      value = $0
+      sub(/^[^:]*:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+#.*$/, "", value)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (value ~ /^".*"$/ || value ~ /^\047.*\047$/)
+        value = substr(value, 2, length(value) - 2)
+      print value
+    }
+  ' "$cfg")
+  local f auxiliary is_auxiliary
   for f in "$dir"/*.onnx; do
     [[ -e "$f" ]] || continue
-    [[ "$f" == "$model" ]] && continue
+    [[ "$f" -ef "$model" ]] && continue
+    is_auxiliary=0
+    for auxiliary in "${auxiliary_paths[@]}"; do
+      if [[ "$f" -ef "$(expand_tilde "$auxiliary")" ]]; then
+        is_auxiliary=1
+        break
+      fi
+    done
+    [[ "$is_auxiliary" -eq 1 ]] && continue
     echo "$f"
   done
 }
@@ -241,7 +261,7 @@ list_models() {
       while IFS= read -r sib; do
         [[ -z "$sib" ]] && continue
         printf '  %-42s    + sibling %s\n' "" "${sib/#$HOME/~}"
-      done < <(sibling_weights "$model")
+      done < <(sibling_weights "$model" "$cfg")
     fi
   done
 }
@@ -288,7 +308,7 @@ else
       while IFS= read -r sib; do
         [[ -z "$sib" ]] && continue
         run_one_model "${label}:$(basename "$sib" .q.onnx)" "$cfg" "$sib" "$IMAGE"
-      done < <(sibling_weights "$default_model")
+      done < <(sibling_weights "$default_model" "$cfg")
     fi
   done
 fi

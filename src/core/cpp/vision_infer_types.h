@@ -95,6 +95,7 @@ struct InferParams {
     std::vector<std::string> prompts;
     std::vector<cv::Point2f> point_coords;
     std::vector<int> point_labels;
+    std::vector<vision::VisualPrompt> visual_prompts;
 };
 
 // For probability-valued overrides only. Nonpositive finite values preserve

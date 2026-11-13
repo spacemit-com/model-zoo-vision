@@ -218,6 +218,7 @@ class VisionServiceNative:
         prompts: Optional[List[str]] = None,
         *,
         params: Optional[object] = None,
+        visual_prompts: Optional[List[dict]] = None,
     ) -> Tuple[object, List]:
         """Run image inference; returns flat ``VisionServiceResult`` list for compatibility.
 
@@ -230,10 +231,37 @@ class VisionServiceNative:
         text labels to set/override the vocabulary for this call. Empty/None -> use the
         model's configured default vocabulary. Ignored by other models. Requires a numpy
         image (not a path).
+
+        ``visual_prompts`` is a list of dictionaries with ``class_name``,
+        a uint8 BGR numpy ``image``, and xyxy ``bboxes`` in reference-image
+        pixels. YOLOE detection uses visual prompting when only these are
+        supplied, and fusion when explicit ``prompts`` are also supplied.
         """
         if params is None:
             params = VisionServiceInferParams()
-        if prompts:
+        if visual_prompts:
+            if isinstance(image_or_path, str):
+                raise TypeError("visual_prompts requires a numpy target image")
+            arr = np.ascontiguousarray(image_or_path)
+            if arr.dtype != np.uint8:
+                raise TypeError("image must be uint8 BGR (HxWx3)")
+            references = []
+            for reference in visual_prompts:
+                if not isinstance(reference, dict) or not all(
+                    key in reference for key in ("class_name", "image", "bboxes")
+                ):
+                    raise ValueError(
+                        "Visual prompt needs class_name, image and bboxes"
+                    )
+                ref_image = np.ascontiguousarray(reference["image"])
+                if ref_image.dtype != np.uint8:
+                    raise TypeError("reference image must be uint8 BGR (HxWx3)")
+                references.append({**reference, "image": ref_image})
+            status, results, response = self._svc.infer_image_visual_prompts(
+                image_bgr_uint8=arr, prompts=list(prompts or []),
+                visual_prompts=references, conf=conf, iou=iou, params=params,
+            )
+        elif prompts:
             arr = np.ascontiguousarray(image_or_path)
             if arr.dtype != np.uint8:
                 raise TypeError("image must be uint8 BGR (HxWx3)")

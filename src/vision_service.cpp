@@ -584,6 +584,7 @@ VisionServiceStatus VisionService::Infer(
         infer_params.prompts = request.prompts;  // open-vocabulary text (YOLO-World)
         infer_params.point_coords = request.point_coords;
         infer_params.point_labels = request.point_labels;
+        infer_params.visual_prompts = request.visual_prompts;
 
         vision_core::InferRequest internal_request{std::move(input), intent, infer_params};
         vision_core::InferResponse internal_response = model->Run(internal_request);

@@ -14,6 +14,7 @@
 #
 # Optional FPS gate: set VISION_PERF_MIN_FPS to assert every measured model
 # meets the threshold.
+# Requires Python 3 and PyYAML (also declared in tests/requirements.txt).
 
 set -uo pipefail
 
@@ -75,50 +76,76 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-expand_tilde() {
-  # Expand a leading ~ to $HOME.
-  local p="$1"
-  if [[ "$p" == "~"* ]]; then
-    printf '%s' "${HOME}${p:1}"
-  else
-    printf '%s' "$p"
-  fi
-}
+# First entry is the primary model; remaining entries are configured auxiliaries.
+CONFIG_PATHS=()
 
-config_model_path() {
-  # Extract the first model_path: from a config yaml, tilde-expanded.
+load_config_paths() {
+  # Parse once per config, preserving quoted paths, aliases and flow mappings.
   local cfg="$1"
-  local raw
-  raw="$(grep -m1 -E '^[[:space:]]*model_path:' "$cfg" | sed -E 's/^[[:space:]]*model_path:[[:space:]]*//; s/[[:space:]]*(#.*)?$//')"
-  [[ -z "$raw" ]] && return 1
-  expand_tilde "$raw"
+  local parser_pid
+  CONFIG_PATHS=()
+  mapfile -d '' -t CONFIG_PATHS < <(python3 - "$cfg" <<'PY'
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    print("ERROR: PyYAML is required; install it with python3 -m pip install PyYAML", file=sys.stderr)
+    sys.exit(1)
+
+
+def model_path(value, name):
+    if value is None:
+        return ""
+    if not isinstance(value, str) or "\0" in value:
+        raise ValueError(f"{name} must be a path string")
+    return os.path.expanduser(value)
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        config = yaml.safe_load(stream)
+    if config is None:
+        config = {}
+    if not isinstance(config, dict):
+        raise ValueError("config must be a YAML mapping")
+    params = config.get("default_params")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise ValueError("default_params must be a YAML mapping")
+    paths = [model_path(config.get("model_path"), "model_path")]
+    for key, value in params.items():
+        if isinstance(key, str) and key.endswith("_path"):
+            paths.append(model_path(value, f"default_params.{key}"))
+    sys.stdout.buffer.write(b"".join(path.encode("utf-8") + b"\0" for path in paths))
+except (OSError, UnicodeError, ValueError, yaml.YAMLError) as error:
+    print(f"ERROR: cannot read model paths from {sys.argv[1]}: {error}", file=sys.stderr)
+    sys.exit(1)
+PY
+  )
+  parser_pid=$!
+  # Process-substitution failures do not propagate through mapfile itself.
+  if ! wait "$parser_pid"; then
+    CONFIG_PATHS=()
+    return 1
+  fi
 }
 
 sibling_weights() {
   # Keep alternate primary weights, but not explicitly configured auxiliaries.
-  local model="$1" cfg="$2"
+  local model="$1"
   local dir
   dir="$(dirname "$model")"
   [[ -d "$dir" ]] || return 0
-  local -a auxiliary_paths=()
-  mapfile -t auxiliary_paths < <(awk '
-    /^[[:space:]]+[[:alnum:]_]+_path[[:space:]]*:/ {
-      value = $0
-      sub(/^[^:]*:[[:space:]]*/, "", value)
-      sub(/[[:space:]]+#.*$/, "", value)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if (value ~ /^".*"$/ || value ~ /^\047.*\047$/)
-        value = substr(value, 2, length(value) - 2)
-      print value
-    }
-  ' "$cfg")
   local f auxiliary is_auxiliary
   for f in "$dir"/*.onnx; do
     [[ -e "$f" ]] || continue
     [[ "$f" -ef "$model" ]] && continue
     is_auxiliary=0
-    for auxiliary in "${auxiliary_paths[@]}"; do
-      if [[ "$f" -ef "$(expand_tilde "$auxiliary")" ]]; then
+    for auxiliary in "${CONFIG_PATHS[@]:1}"; do
+      if [[ "$f" -ef "$auxiliary" ]]; then
         is_auxiliary=1
         break
       fi
@@ -186,7 +213,7 @@ run_one_model() {
   # Resolve the model that will actually be used (override or config default).
   local effective_model="$model"
   if [[ -z "$effective_model" ]]; then
-    effective_model="$(config_model_path "$cfg" || true)"
+    effective_model="${CONFIG_PATHS[0]}"
   fi
 
   if [[ -z "$effective_model" ]]; then
@@ -243,10 +270,15 @@ run_one_model() {
 list_models() {
   echo "Configs under examples/*/config/*.yaml and model availability:"
   echo "------------------------------------------------------------------"
-  local cfg model status
+  local cfg model status failed=0
   for cfg in examples/*/config/*.yaml; do
     [[ -e "$cfg" ]] || continue
-    model="$(config_model_path "$cfg" || true)"
+    if ! load_config_paths "$cfg"; then
+      printf '  %-42s -> ERROR (invalid config)\n' "$cfg"
+      failed=1
+      continue
+    fi
+    model="${CONFIG_PATHS[0]}"
     if [[ -z "$model" ]]; then
       status="NO model_path"
     elif [[ -f "$model" ]]; then
@@ -261,14 +293,15 @@ list_models() {
       while IFS= read -r sib; do
         [[ -z "$sib" ]] && continue
         printf '  %-42s    + sibling %s\n' "" "${sib/#$HOME/~}"
-      done < <(sibling_weights "$model" "$cfg")
+      done < <(sibling_weights "$model")
     fi
   done
+  return "$failed"
 }
 
 if [[ "$LIST_ONLY" -eq 1 ]]; then
   list_models
-  exit 0
+  exit $?
 fi
 
 # ---- locate benchmark + libs ----
@@ -293,6 +326,7 @@ RAW_LOG="tests/output/infer_perf_raw.log"
 
 # ---- single-model mode (explicit --config) ----
 if [[ -n "$CONFIG" ]]; then
+  load_config_paths "$CONFIG" || exit 1
   label="$(basename "$(dirname "$(dirname "$CONFIG")")")"
   run_one_model "$label" "$CONFIG" "$MODEL" "$IMAGE"
 else
@@ -300,7 +334,14 @@ else
   for cfg in examples/*/config/*.yaml; do
     [[ -e "$cfg" ]] || continue
     label="$(basename "$(dirname "$(dirname "$cfg")")")"
-    default_model="$(config_model_path "$cfg" || true)"
+    if ! load_config_paths "$cfg"; then
+      TOTAL=$((TOTAL + 1))
+      FAILED=$((FAILED + 1))
+      echo "[FAIL] $label: cannot read config ($cfg)"
+      printf '%-22s | %-44s | %-10s | %s\n' "$label" "(invalid config)" "FAIL" "$cfg" >> "$SUMMARY"
+      continue
+    fi
+    default_model="${CONFIG_PATHS[0]}"
     # Primary weight (config default).
     run_one_model "$label" "$cfg" "" "$IMAGE"
     # A+ sibling weights of the same family (only if default model exists).
@@ -308,7 +349,7 @@ else
       while IFS= read -r sib; do
         [[ -z "$sib" ]] && continue
         run_one_model "${label}:$(basename "$sib" .q.onnx)" "$cfg" "$sib" "$IMAGE"
-      done < <(sibling_weights "$default_model" "$cfg")
+      done < <(sibling_weights "$default_model")
     fi
   done
 fi

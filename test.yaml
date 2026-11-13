@@ -51,6 +51,9 @@ tests:
     scopes: [scheduled]
     timeout_s: 600
     workdir: module
+    python_env:
+      install:
+        - pyyaml
     artifacts:
       - tests/output/infer_perf.txt
     command: |

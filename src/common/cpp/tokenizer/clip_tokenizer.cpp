@@ -3,13 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 // C++ port of clip/simple_tokenizer.py. Every step mirrors the Python source;
-// see yoloe_clip_tokenizer.hpp.
-#include "yoloe_clip_tokenizer.hpp"
+// see clip_tokenizer.h for the compatibility mode and ftfy limitation.
+#include "tokenizer/clip_tokenizer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <climits>
 #include <cstdint>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -18,8 +20,11 @@
 #include <utility>
 #include <vector>
 
-#include "html_entities.hpp"
-#include "unicode_tables.hpp"
+#include "tokenizer/detail/html_entities.h"
+#include "tokenizer/detail/unicode_tables.h"
+
+namespace vision_common {
+namespace unicode_tables = tokenizer_detail;
 
 namespace {
 
@@ -95,9 +100,9 @@ template <size_t N> bool in_ranges(const unicode_tables::CodeRange (&r)[N], char
         r, r + N, static_cast<uint32_t>(c), [](uint32_t v, const unicode_tables::CodeRange& x) { return v < x.lo; });
     return it != r && c <= (it - 1)->hi;
 }
-bool is_letter(char32_t c) { return in_ranges(unicode_tables::kLetter, c); } // regex \p{L}
-bool is_number(char32_t c) { return in_ranges(unicode_tables::kNumber, c); } // regex \p{N}
-bool is_re_space(char32_t c) { return in_ranges(unicode_tables::kSpace, c); } // regex \s
+bool is_letter(char32_t c) { return in_ranges(unicode_tables::kLetter, c); }    // regex \p{L}
+bool is_number(char32_t c) { return in_ranges(unicode_tables::kNumber, c); }    // regex \p{N}
+bool is_re_space(char32_t c) { return in_ranges(unicode_tables::kSpace, c); }   // regex \s
 bool is_py_space(char32_t c) { return in_ranges(unicode_tables::kPySpace, c); } // str.isspace / str.strip
 
 bool is_cased(char32_t c) { return in_ranges(unicode_tables::kCased, c); }
@@ -348,7 +353,10 @@ std::vector<std::string> split_chars(const std::string& token) {
 
 } // namespace
 
-ClipTokenizer::ClipTokenizer(const std::string& merges_path) {
+ClipTokenizer::ClipTokenizer(const std::string& merges_path, ClipTokenizerMode mode) : mode_(mode) {
+    if (mode_ != ClipTokenizerMode::kClip && mode_ != ClipTokenizerMode::kLegacy) {
+        throw std::invalid_argument("Invalid CLIP tokenizer compatibility mode");
+    }
     std::vector<int> bs;
     std::vector<char32_t> cs = bytes_to_unicode_order(bs);
     byte_encoder_.assign(256, "");
@@ -368,6 +376,14 @@ ClipTokenizer::ClipTokenizer(const std::string& merges_path) {
     std::string line;
     int rank = 0;
     while (std::getline(f, line)) {
+        if (mode_ == ClipTokenizerMode::kLegacy) {
+            std::istringstream stream(line);
+            std::string a, b;
+            if (stream >> a >> b) {
+                bpe_ranks_[pair_key(a, b)] = rank++;
+            }
+            continue;
+        }
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (line.empty())
@@ -379,8 +395,18 @@ ClipTokenizer::ClipTokenizer(const std::string& merges_path) {
         bpe_ranks_.emplace(pair_key(a, b), rank++);
         vocab.push_back(a + b);
     }
-    if (rank != 49152 - 256 - 2)
+    if (mode_ == ClipTokenizerMode::kLegacy) {
+        std::vector<std::pair<int, std::string>> ranked;
+        for (const auto& entry : bpe_ranks_)
+            ranked.emplace_back(entry.second, entry.first);
+        std::sort(ranked.begin(), ranked.end());
+        for (auto& entry : ranked) {
+            entry.second.erase(entry.second.find('\x01'), 1);
+            vocab.push_back(std::move(entry.second));
+        }
+    } else if (rank != 49152 - 256 - 2) {
         throw std::runtime_error("expected 48894 merges, got " + std::to_string(rank));
+    }
     vocab.push_back("<|startoftext|>");
     vocab.push_back("<|endoftext|>");
     for (size_t i = 0; i < vocab.size(); ++i)
@@ -393,7 +419,15 @@ std::string ClipTokenizer::bpe(const std::string& token) const {
     if (auto it = cache_.find(token); it != cache_.end()) {
         return it->second;
     }
-    std::vector<std::string> word = split_chars(token);
+    if (token.empty())
+        return "</w>";
+    std::vector<std::string> word;
+    if (mode_ == ClipTokenizerMode::kLegacy) {
+        for (char c : token)
+            word.emplace_back(1, c);
+    } else {
+        word = split_chars(token);
+    }
     word.back() += "</w>";
     if (word.size() == 1)
         return token + "</w>"; // `if not pairs` in Python
@@ -432,48 +466,58 @@ std::string ClipTokenizer::bpe(const std::string& token) const {
     return out;
 }
 
-std::vector<int32_t> ClipTokenizer::encode(const std::string& text) const {
-    // basic_clean: ftfy.fix_text (not ported) -> html.unescape x2 -> strip
-    U32 t = py_strip(html_unescape(html_unescape(utf8_decode(text))));
-    // whitespace_clean: re.sub(r'\s+', ' ') -> strip ; then .lower()
-    U32 ws;
-    for (size_t i = 0; i < t.size();) {
-        if (is_re_space(t[i])) {
-            ws.push_back(U' ');
-            while (i < t.size() && is_re_space(t[i]))
-                ++i;
-        } else {
-            ws.push_back(t[i++]);
+std::vector<int64_t> ClipTokenizer::encode_body(const std::string& text) const {
+    std::vector<std::string> pieces;
+    if (mode_ == ClipTokenizerMode::kLegacy) {
+        std::string lower = text;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const std::regex words(R"(\S+)");
+        for (auto it = std::sregex_iterator(lower.begin(), lower.end(), words); it != std::sregex_iterator(); ++it)
+            pieces.push_back(it->str());
+    } else {
+        // basic_clean: ftfy.fix_text (not ported) -> html.unescape x2 -> strip
+        U32 t = py_strip(html_unescape(html_unescape(utf8_decode(text))));
+        // whitespace_clean: re.sub(r'\s+', ' ') -> strip ; then .lower()
+        U32 ws;
+        for (size_t i = 0; i < t.size();) {
+            if (is_re_space(t[i])) {
+                ws.push_back(U' ');
+                while (i < t.size() && is_re_space(t[i]))
+                    ++i;
+            } else {
+                ws.push_back(t[i++]);
+            }
+        }
+        t = py_lower(py_strip(ws));
+
+        for (const U32& piece : findall(t)) {
+            pieces.push_back(utf8_encode(piece));
         }
     }
-    t = py_lower(py_strip(ws));
 
-    std::vector<int32_t> ids;
-    for (const U32& piece : findall(t)) {
+    std::vector<int64_t> ids;
+    for (const auto& piece : pieces) {
         std::string mapped;
-        for (unsigned char b : utf8_encode(piece))
+        for (unsigned char b : piece)
             mapped += byte_encoder_[b];
         std::istringstream ss(bpe(mapped));
         std::string tok;
         while (ss >> tok) {
             auto it = encoder_.find(tok);
-            if (it == encoder_.end())
+            if (it == encoder_.end()) {
+                if (mode_ == ClipTokenizerMode::kLegacy)
+                    continue;
                 throw std::runtime_error("token not in vocab: " + tok); // Python raises KeyError
+            }
             ids.push_back(it->second);
         }
     }
     return ids;
 }
 
-std::vector<int32_t> ClipTokenizer::tokenize(const std::string& text, int context_length) const {
-    std::vector<int32_t> tokens{kSot};
-    std::vector<int32_t> body = encode(text);
-    tokens.insert(tokens.end(), body.begin(), body.end());
-    tokens.push_back(kEot);
-    if (static_cast<int>(tokens.size()) > context_length) {
-        tokens.resize(context_length);
-        tokens.back() = kEot;
-    }
-    tokens.resize(context_length, 0);
-    return tokens;
+TokenizedText ClipTokenizer::Encode(const std::string& text, const TokenizerOptions& options) {
+    return Finalize(encode_body(text), options, {kSot, kEot, 0});
 }
+
+} // namespace vision_common

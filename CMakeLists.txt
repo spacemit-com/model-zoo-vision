@@ -158,7 +158,7 @@ file(GLOB_RECURSE VISION_CORE_SOURCES CONFIGURE_DEPENDS "src/core/cpp/*.cpp")
 set(VISION_SERVICE_SOURCES
     src/vision_service.cpp
 )
-file(GLOB_RECURSE CV_COMMON_SOURCES "src/common/cpp/*.cpp")
+file(GLOB_RECURSE CV_COMMON_SOURCES CONFIGURE_DEPENDS "src/common/cpp/*.cpp")
 file(GLOB_RECURSE VISION_OPERATOR_SOURCES CONFIGURE_DEPENDS
     "src/operators/*.cpp"
 )

@@ -13,6 +13,7 @@
 #include <variant>
 
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "tokenizer/gemma_tokenizer.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -102,7 +103,7 @@ void Siglip2Encoder::load_model() {
     prepare_session_configs({{num_threads_, provider_}, {num_threads_, provider_}});
     init_session(num_threads_, provider_);
     init_text_session();
-    tokenizer_ = std::make_unique<GemmaTokenizer>(tokenizer_path_);
+    tokenizer_ = std::make_unique<vision_common::GemmaTokenizer>(tokenizer_path_);
     model_loaded_ = true;
 }
 
@@ -221,12 +222,17 @@ vision_common::EmbeddingResult Siglip2Encoder::encode_text(const std::string& te
     const auto t_pre0 = std::chrono::steady_clock::now();
     std::string lower = text;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    const std::vector<int64_t> ids = tokenizer_->encode(lower, kTextMaxLen);
+    vision_common::TokenizerOptions options;
+    options.max_length = kTextMaxLen;
+    options.truncation = true;
+    options.add_special_tokens = true;
+    options.padding = vision_common::TokenizerPadding::kMaxLength;
+    const auto encoded = tokenizer_->Encode(lower, options);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<float> embedding = run_text(ids);
+    std::vector<float> embedding = run_text(encoded.input_ids);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 

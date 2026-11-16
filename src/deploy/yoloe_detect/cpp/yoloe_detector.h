@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "vision_model_base.h"
-#include "yoloe_clip_tokenizer.hpp"
+#include "tokenizer/tokenizer.h"
 
 namespace YAML {
 class Node;
@@ -49,7 +49,7 @@ private:
     int threads_ = 8, prompt_threads_ = 2, reference_side_ = 0;
     float confidence_ = 0.2F;
     std::unique_ptr<Ort::Session> text_session_, vpe_session_;
-    std::unique_ptr<ClipTokenizer> tokenizer_;
+    std::unique_ptr<vision_common::ITokenizer> tokenizer_;
     std::vector<std::string> defaults_, labels_;
     std::vector<vision::VisualPrompt> cached_visuals_;
     std::vector<float> prompt_data_;

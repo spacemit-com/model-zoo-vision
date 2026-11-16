@@ -9,7 +9,7 @@ model archive and pulled by scripts/download_models.sh, just like the ONNX
 files. This script is only for (re)producing that artifact once from a
 HuggingFace tokenizer.json, after which it should be uploaded to the archive.
 
-Output format (must match src/deploy/siglip2/cpp/gemma_tokenizer.cpp):
+Output format (must match src/common/cpp/tokenizer/gemma_tokenizer.cpp):
     uint32  vocab_size                       (little-endian)
     for id in 0 .. vocab_size-1:
         uint16  token_len,  bytes token      (UTF-8, no terminator)

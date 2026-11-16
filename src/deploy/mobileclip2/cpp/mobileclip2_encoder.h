@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "clip_tokenizer.hpp"
+#include "tokenizer/tokenizer.h"
 #include "embedding_utils.h"
 #include "vision_model_base.h"
 
@@ -59,7 +59,7 @@ private:
     int sequence_len_ = 77;
 
     std::unique_ptr<Ort::Session> text_session_;
-    std::unique_ptr<CLIPTokenizer> tokenizer_;
+    std::unique_ptr<vision_common::ITokenizer> tokenizer_;
     Ort::AllocatorWithDefaultOptions allocator_;
     std::vector<const char*> text_input_names_;
     std::vector<const char*> text_output_names_;

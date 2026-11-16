@@ -11,13 +11,15 @@
 #include <unordered_map>
 #include <vector>
 
-namespace vision_deploy {
+#include "tokenizer/tokenizer.h"
 
-class GemmaTokenizer {
+namespace vision_common {
+
+class GemmaTokenizer final : public ITokenizer {
 public:
     explicit GemmaTokenizer(const std::string& bin_path);
 
-    std::vector<int64_t> encode(const std::string& text, int max_len = 64) const;
+    TokenizedText Encode(const std::string& text, const TokenizerOptions& options = {}) override;
 
     static constexpr int kPadId = 0;
     static constexpr int kEosId = 1;
@@ -30,6 +32,6 @@ private:
     std::unordered_map<std::string, int32_t> merge_rank_;
 };
 
-}  // namespace vision_deploy
+} // namespace vision_common
 
-#endif  // GEMMA_TOKENIZER_H
+#endif // GEMMA_TOKENIZER_H

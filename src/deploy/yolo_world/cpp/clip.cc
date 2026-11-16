@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "tokenizer/clip_tokenizer.h"
 #include "vision_model_base.h"
 
 namespace vision_deploy {
@@ -42,7 +43,8 @@ CLIP::CLIP(const std::string& text_model_path, const std::string& bpe_merges_pat
         output_names_[i] = output_names_str_[i].c_str();
     }
 
-    tokenizer_ = std::make_unique<CLIPTokenizer>(bpe_merges_path);
+    tokenizer_ = std::make_unique<vision_common::ClipTokenizer>(
+        bpe_merges_path, vision_common::ClipTokenizerMode::kLegacy);
     sequence_len_ = 77;
 }
 
@@ -56,8 +58,13 @@ std::vector<std::vector<float>> CLIP::encode(const std::vector<std::string>& tex
     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
     for (const auto& text : texts) {
-        std::vector<int32_t> ids = tokenizer_->tokenize(text)[0];
-        std::vector<int64_t> token(ids.begin(), ids.end());
+        vision_common::TokenizerOptions options;
+        options.max_length = static_cast<size_t>(sequence_len_);
+        options.truncation = true;
+        options.add_special_tokens = true;
+        options.padding = vision_common::TokenizerPadding::kMaxLength;
+        auto encoded = tokenizer_->Encode(text, options);
+        auto& token = encoded.input_ids;
 
         Ort::Value input_tensor = Ort::Value::CreateTensor<int64_t>(
             memory_info, token.data(), token.size(), input_shape.data(), input_shape.size());

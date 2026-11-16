@@ -18,6 +18,7 @@
 
 #include "common/cpp/embedding_utils.h"
 #include "operators/image_preprocess/cpu_image_preprocessor.h"
+#include "tokenizer/clip_tokenizer.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -256,7 +257,7 @@ void YOLOEDetector::load_model() {
 void YOLOEDetector::open_text() {
     if (text_session_)
         return;
-    auto tokenizer = std::make_unique<ClipTokenizer>(merges_path_);
+    auto tokenizer = std::make_unique<vision_common::ClipTokenizer>(merges_path_);
     Ort::SessionOptions options;
     configure_session_options(options, 1);
     options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -316,8 +317,14 @@ std::vector<float> YOLOEDetector::run_encoder(
 std::vector<float> YOLOEDetector::encode_text(const std::vector<std::string>& names) {
     open_text();
     std::vector<int64_t> ids;
+    vision_common::TokenizerOptions options;
+    options.max_length = 77;
+    options.truncation = true;
+    options.add_special_tokens = true;
+    options.padding = vision_common::TokenizerPadding::kMaxLength;
     for (const auto& name : names) {
-        const auto tokens = tokenizer_->tokenize(name);
+        const auto encoded = tokenizer_->Encode(name, options);
+        const auto& tokens = encoded.input_ids;
         ids.insert(ids.end(), tokens.begin(), tokens.end());
     }
     const std::array<int64_t, 2> shape{static_cast<int64_t>(names.size()), 77};

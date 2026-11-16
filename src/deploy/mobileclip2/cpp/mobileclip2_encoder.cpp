@@ -14,6 +14,7 @@
 #include <variant>
 
 #include "spacemit_ort_env.h"  // NOLINT(build/include_order)
+#include "tokenizer/clip_tokenizer.h"
 #include "vision_model_config.h"
 #include "vision_model_factory.h"
 
@@ -103,7 +104,8 @@ void Mobileclip2Encoder::load_model() {
     }
     init_session(num_threads_, provider_);
     init_text_session();
-    tokenizer_ = std::make_unique<CLIPTokenizer>(bpe_merges_path_);
+    tokenizer_ = std::make_unique<vision_common::ClipTokenizer>(
+        bpe_merges_path_, vision_common::ClipTokenizerMode::kLegacy);
     sequence_len_ = kTextMaxLen;
     model_loaded_ = true;
 }
@@ -225,13 +227,17 @@ vision_common::EmbeddingResult Mobileclip2Encoder::encode_text(const std::string
     const auto t0 = std::chrono::steady_clock::now();
 
     const auto t_pre0 = std::chrono::steady_clock::now();
-    const std::vector<int32_t> ids32 = tokenizer_->tokenize(text, sequence_len_)[0];
-    std::vector<int64_t> ids(ids32.begin(), ids32.end());
+    vision_common::TokenizerOptions options;
+    options.max_length = static_cast<size_t>(sequence_len_);
+    options.truncation = true;
+    options.add_special_tokens = true;
+    options.padding = vision_common::TokenizerPadding::kMaxLength;
+    const auto encoded = tokenizer_->Encode(text, options);
     const auto t_pre1 = std::chrono::steady_clock::now();
     set_runtime_preprocess_ms(std::chrono::duration<double, std::milli>(t_pre1 - t_pre0).count());
 
     const auto t_infer0 = std::chrono::steady_clock::now();
-    std::vector<float> embedding = run_text(ids);
+    std::vector<float> embedding = run_text(encoded.input_ids);
     const auto t_infer1 = std::chrono::steady_clock::now();
     set_runtime_model_infer_ms(std::chrono::duration<double, std::milli>(t_infer1 - t_infer0).count());
 

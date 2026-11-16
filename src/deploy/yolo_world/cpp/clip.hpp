@@ -15,7 +15,7 @@
 
 #include <onnxruntime_cxx_api.h>  // NOLINT(build/include_order)
 
-#include "clip_tokenizer.hpp"
+#include "tokenizer/tokenizer.h"
 
 namespace vision_deploy {
 
@@ -29,7 +29,7 @@ public:
     std::vector<std::vector<float>> encode(const std::vector<std::string>& texts);
 
 private:
-    std::unique_ptr<CLIPTokenizer> tokenizer_;
+    std::unique_ptr<vision_common::ITokenizer> tokenizer_;
     std::unique_ptr<Ort::Session> session_;
     Ort::AllocatorWithDefaultOptions allocator_;
 

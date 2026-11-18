@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "embedding_utils.h"
-#include "gemma_tokenizer.h"
+#include "tokenizer/tokenizer.h"
 #include "vision_model_base.h"
 
 namespace YAML {
@@ -59,7 +59,7 @@ private:
     std::string provider_;
 
     std::unique_ptr<Ort::Session> text_session_;
-    std::unique_ptr<GemmaTokenizer> tokenizer_;
+    std::unique_ptr<vision_common::ITokenizer> tokenizer_;
     Ort::AllocatorWithDefaultOptions allocator_;
     std::vector<const char*> text_input_names_;
     std::vector<const char*> text_output_names_;

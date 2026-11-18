@@ -22,7 +22,7 @@ if [ -z "$ASSET_PATHS" ]; then
   exit 0
 fi
 
-download_one() {
+download_one() (
   rel="$1"
   dest="$CACHE/$rel"
   mkdir -p "$(dirname "$dest")"
@@ -32,15 +32,19 @@ download_one() {
   fi
   url="$BASE_URL/$rel"
   echo "  >>> $rel"
+  partial=$(mktemp "$dest.part.XXXXXX")
+  trap 'rm -f "$partial"' 0
+  trap 'exit 1' HUP INT TERM
   if command -v wget >/dev/null 2>&1; then
-    wget -q --show-progress -O "$dest" "$url"
+    wget -q --show-progress -O "$partial" "$url"
   elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$dest" "$url"
+    curl -fsSL -o "$partial" "$url"
   else
     echo "Error: need wget or curl."
     exit 1
   fi
-}
+  mv -f "$partial" "$dest"
+)
 
 for path in $ASSET_PATHS; do
   case "$path" in
